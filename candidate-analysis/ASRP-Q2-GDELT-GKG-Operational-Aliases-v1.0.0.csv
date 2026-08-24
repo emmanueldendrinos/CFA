@@ -1,0 +1,46 @@
+base_asset_id,alias_text,alias_type,requires_crypto_context,mapping_tier,rationale
+XXBT,Bitcoin,manual_core_name,False,manual_core_exploratory,Canonical market name required because the captured current symbol lookup selected an unrelated XBT token.
+XXBT,BTC,manual_core_symbol,True,manual_symbol_contextual,Common news symbol differs from Kraken's XBT symbol and requires explicit crypto context.
+XETH,Ethereum,manual_core_name,False,manual_core_exploratory,Canonical market name required because the captured current symbol lookup returned many bridged ETH candidates.
+SOL,Solana,manual_core_name,False,manual_core_exploratory,Canonical market name.
+ADA,Cardano,manual_core_name,False,manual_core_exploratory,Canonical market name; ambiguous current candidates are otherwise excluded.
+XXDG,Dogecoin,manual_core_name,False,manual_core_exploratory,Canonical market name.
+XXDG,DOGE,manual_core_symbol,True,manual_symbol_contextual,Common news symbol differs from Kraken's XDG symbol and requires explicit crypto context.
+XXRP,Ripple,manual_core_name,False,manual_core_exploratory,Issuer and ecosystem name associated with XRP; retained as exploratory mapping evidence.
+DOT,Polkadot,manual_core_name,False,manual_core_exploratory,Canonical market name.
+AVAX,Avalanche,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+LINK,Chainlink,manual_core_name,False,manual_core_exploratory,Canonical market name.
+XLTC,Litecoin,manual_core_name,False,manual_core_exploratory,Canonical market name.
+BCH,Bitcoin Cash,manual_core_name,False,manual_core_exploratory,Canonical market name.
+XXMR,Monero,manual_core_name,False,manual_core_exploratory,Canonical market name.
+TRX,Tron,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+XETC,Ethereum Classic,manual_core_name,False,manual_core_exploratory,Canonical market name.
+XXLM,Stellar,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+ATOM,Cosmos,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+UNI,Uniswap,manual_core_name,False,manual_core_exploratory,Canonical market name.
+SHIB,Shiba Inu,manual_core_name,False,manual_core_exploratory,Canonical market name.
+BNB,Binance Coin,manual_core_name,False,manual_core_exploratory,Canonical historical name.
+USDT,Tether,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+USDC,USD Coin,manual_core_name,False,manual_core_exploratory,Canonical market name.
+DAI,Dai,manual_core_name,True,manual_core_contextual,Short common name requires crypto context.
+POL,Polygon,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+ARB,Arbitrum,manual_core_name,False,manual_core_exploratory,Canonical market name.
+OP,Optimism,manual_core_name,True,manual_core_contextual,Common-word name requires crypto context.
+APT,Aptos,manual_core_name,False,manual_core_exploratory,Canonical market name.
+NEAR,Near Protocol,manual_core_name,False,manual_core_exploratory,Use the full protocol name rather than the common word Near.
+FIL,Filecoin,manual_core_name,False,manual_core_exploratory,Canonical market name.
+ICP,Internet Computer,manual_core_name,False,manual_core_exploratory,Canonical market name.
+ALGO,Algorand,manual_core_name,False,manual_core_exploratory,Canonical market name.
+EOS,EOS,manual_core_name,True,manual_core_contextual,Short acronym requires crypto context.
+MKR,MakerDAO,manual_core_name,False,manual_core_exploratory,Distinct protocol name preferred over the common word Maker.
+SUI,Sui,manual_core_name,True,manual_core_contextual,Short name requires crypto context.
+TON,Toncoin,manual_core_name,False,manual_core_exploratory,Canonical market name.
+CRO,Cronos,manual_core_name,False,manual_core_exploratory,Canonical market name.
+PEPE,Pepe,manual_core_name,True,manual_core_contextual,Meme name requires crypto context.
+BONK,Bonk,manual_core_name,True,manual_core_contextual,Common-word meme name requires crypto context.
+AAVE,Aave,manual_core_name,False,manual_core_exploratory,Canonical market name.
+INJ,Injective,manual_core_name,False,manual_core_exploratory,Canonical market name.
+TIA,Celestia,manual_core_name,False,manual_core_exploratory,Canonical market name.
+RENDER,Render Network,manual_core_name,False,manual_core_exploratory,Full protocol name avoids the common word Render.
+TAO,Bittensor,manual_core_name,False,manual_core_exploratory,Canonical market name.
+FET,Artificial Superintelligence Alliance,manual_core_name,False,manual_core_exploratory,Current project name retained as exploratory mapping evidence.
