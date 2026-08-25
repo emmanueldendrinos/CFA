@@ -22,8 +22,8 @@ jobs:
       run:
         shell: powershell
     env:
-      EXPECTED_SCRIPT_SHA256: 6b9ac35f9b650a7daa7e4604aa7ee872adaa9816704d90edd604995576f3e82d
-      EXPECTED_SCRIPT_BYTES: '80999'
+      EXPECTED_SCRIPT_SHA256: c12eb959185c53660394f8dc968e50ea8db9275ba13592ead439f1e26aeec3f3
+      EXPECTED_SCRIPT_BYTES: '82206'
       EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
       SCRIPT_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1
       GZIP_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1.gz
