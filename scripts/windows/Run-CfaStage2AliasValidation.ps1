@@ -15,8 +15,8 @@ function Get-LatestValidAliasRun{
  }
  return $null
 }
-function Invoke-Child{param([string]$Path,[string[]]$Arguments);& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments;$code=$LASTEXITCODE;if($code-ne0){throw "Child failed $code: $Path"}}
-function Invoke-AliasScan{param([string]$Path,[string[]]$Arguments);& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments;$code=$LASTEXITCODE;if($code-eq0){return 'PASS'};if($code-eq2){return 'FAIL'};throw "Alias scan execution failed $code: $Path"}
+function Invoke-Child{param([string]$Path,[string[]]$Arguments);& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments;$code=$LASTEXITCODE;if($code-ne0){throw "Child failed ${code}: $Path"}}
+function Invoke-AliasScan{param([string]$Path,[string[]]$Arguments);& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments;$code=$LASTEXITCODE;if($code-eq0){return 'PASS'};if($code-eq2){return 'FAIL'};throw "Alias scan execution failed ${code}: $Path"}
 function Invoke-SelfTest{$root=Join-Path([System.IO.Path]::GetTempPath())('cfa-alias-run-'+[guid]::NewGuid().ToString('N'));try{$p=Join-Path $root 'gdelt-alias-validation\20260101-test';New-Item -ItemType Directory -Path $p -Force|Out-Null;[System.IO.File]::WriteAllText((Join-Path $p 'validation-summary.csv'),"archive_files`n7163`n");$rows=@();for($i=1;$i-le45;$i++){$rows+=[pscustomobject]@{base_asset_id=('A'+$i)}};$rows|Export-Csv (Join-Path $p 'alias-validation.csv') -NoTypeInformation;foreach($n in @('alias-samples.csv','archive-scan.csv')){[System.IO.File]::WriteAllText((Join-Path $p $n),"x`n")};$r=Get-LatestValidAliasRun (Join-Path $root 'gdelt-alias-validation');if($null-eq$r-or$r.Name-ne'20260101-test'){throw 'reuse detection'};Write-Host 'SELF-TEST: PASS'}finally{Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue}}
 if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
 
