@@ -65,7 +65,7 @@ function Get-TextForReceipt {
 
 function Add-EvidenceHash {
     param(
-        [Parameter(Mandatory)][System.Collections.Generic.List[object]]$HashRows,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$HashRows,
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$RunId,
         [Parameter(Mandatory)][string]$Path
@@ -82,7 +82,7 @@ function Add-EvidenceHash {
 function Add-CsvSection {
     param(
         [Parameter(Mandatory)][System.Text.StringBuilder]$Builder,
-        [Parameter(Mandatory)][System.Collections.Generic.List[object]]$HashRows,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$HashRows,
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$RunId,
         [Parameter(Mandatory)][string]$Title,
