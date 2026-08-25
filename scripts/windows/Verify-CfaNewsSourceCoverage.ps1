@@ -5,7 +5,8 @@ param(
     [ValidateRange(1,65535)][int]$PgPort = 5432,
     [string]$PgUser = 'postgres',
     [ValidateRange(5,300)][int]$StatementTimeoutSeconds = 60,
-    [string]$OutputRoot = ''
+    [string]$OutputRoot = '',
+    [switch]$SelfTest
 )
 
 Set-StrictMode -Version Latest
@@ -44,9 +45,31 @@ function Invoke-PsqlCsv {
     return Invoke-PsqlText -PsqlExe $PsqlExe -Database $Database -Sql "COPY (`n$Query`n) TO STDOUT WITH (FORMAT CSV, HEADER TRUE);"
 }
 
+function Get-NonNullHashUniquenessStatus {
+    param([long]$NonNullRows,[long]$DistinctNonNullHashes)
+    if ($NonNullRows -eq $DistinctNonNullHashes) { return 'PASS' }
+    return 'FAIL'
+}
+
+function Invoke-SelfTest {
+    if ((Get-NonNullHashUniquenessStatus -NonNullRows 366 -DistinctNonNullHashes 366) -ne 'PASS') {
+        throw 'Self-test failed: unique non-null payload hashes were rejected.'
+    }
+    if ((Get-NonNullHashUniquenessStatus -NonNullRows 366 -DistinctNonNullHashes 365) -ne 'FAIL') {
+        throw 'Self-test failed: duplicate non-null payload hashes were not detected.'
+    }
+    Write-Host 'SELF-TEST: PASS'
+}
+
+if ($SelfTest) {
+    try { Invoke-SelfTest; exit 0 }
+    catch { Write-Host 'SELF-TEST: FAIL'; Write-Host $_.Exception.Message; if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }; exit 1 }
+}
+
 $oldPassword = $env:PGPASSWORD
 $oldPgOptions = $env:PGOPTIONS
 $bstr = [IntPtr]::Zero
+$ownsPassword = $false
 
 try {
     $documents = [Environment]::GetFolderPath('MyDocuments')
@@ -58,9 +81,13 @@ try {
     Write-Host "Using psql: $psql"
     Write-Host "Evidence directory: $runDir"
 
-    $securePassword = Read-Host "PostgreSQL password for '$PgUser'" -AsSecureString
-    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-    $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    if ([string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
+        $securePassword = Read-Host "PostgreSQL password for '$PgUser'" -AsSecureString
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+        $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        $ownsPassword = $true
+    }
+
     $env:PGOPTIONS = "-c default_transaction_read_only=on -c statement_timeout=$($StatementTimeoutSeconds * 1000)"
 
     $version = Invoke-PsqlText -PsqlExe $psql -Database 'asrp' -Sql 'SHOW server_version;'
@@ -113,7 +140,8 @@ ORDER BY installed_at_utc
     $objectsCsv = Invoke-PsqlCsv -PsqlExe $psql -Database 'asrp' -Query @'
 SELECT
     count(*)::bigint AS exact_object_rows,
-    count(DISTINCT payload_sha256)::bigint AS distinct_payload_sha256,
+    count(*) FILTER (WHERE payload_sha256 IS NOT NULL)::bigint AS non_null_payload_sha256_rows,
+    count(DISTINCT payload_sha256) FILTER (WHERE payload_sha256 IS NOT NULL)::bigint AS distinct_non_null_payload_sha256,
     count(*) FILTER (WHERE payload_sha256 IS NULL)::bigint AS null_payload_sha256_rows,
     min(archive_timestamp_utc) AS min_archive_timestamp_utc,
     max(archive_timestamp_utc) AS max_archive_timestamp_utc
@@ -167,13 +195,15 @@ ORDER BY relation_name
         $exactObjects = [long]$objects.exact_object_rows
         $selectedObjects = [long]$protocol.selected_object_count
         $expectedObjects = [long]$run.expected_object_count
+        $nonNullHashRows = [long]$objects.non_null_payload_sha256_rows
+        $distinctNonNullHashes = [long]$objects.distinct_non_null_payload_sha256
 
         $checks.Add([pscustomobject]@{ check_id='RUN_STATUS_COMPLETE'; status=if(([string]$run.status) -eq 'completed'){'PASS'}else{'FAIL'}; observed=[string]$run.status; expected='completed' })
         $checks.Add([pscustomobject]@{ check_id='RUN_COMPLETED_TIMESTAMP'; status=if([string]::IsNullOrWhiteSpace([string]$run.completed_at_utc)){'FAIL'}else{'PASS'}; observed=[string]$run.completed_at_utc; expected='non-null' })
         $checks.Add([pscustomobject]@{ check_id='SELECTED_VS_EXPECTED_OBJECTS'; status=if($selectedObjects -eq $expectedObjects){'PASS'}else{'FAIL'}; observed=$selectedObjects; expected=$expectedObjects })
         $checks.Add([pscustomobject]@{ check_id='ACQUIRED_VS_SELECTED_OBJECTS'; status=if($exactObjects -eq $selectedObjects){'PASS'}else{'FAIL'}; observed=$exactObjects; expected=$selectedObjects })
         $checks.Add([pscustomobject]@{ check_id='PAYLOAD_HASH_NULLS'; status=if([long]$objects.null_payload_sha256_rows -eq 0){'PASS'}else{'FAIL'}; observed=$objects.null_payload_sha256_rows; expected='0' })
-        $checks.Add([pscustomobject]@{ check_id='PAYLOAD_HASH_UNIQUENESS'; status=if([long]$objects.distinct_payload_sha256 -eq $exactObjects){'PASS'}else{'FAIL'}; observed=$objects.distinct_payload_sha256; expected=$exactObjects })
+        $checks.Add([pscustomobject]@{ check_id='PAYLOAD_HASH_NON_NULL_UNIQUENESS'; status=(Get-NonNullHashUniquenessStatus -NonNullRows $nonNullHashRows -DistinctNonNullHashes $distinctNonNullHashes); observed=$distinctNonNullHashes; expected=$nonNullHashRows })
 
         if (-not [string]::IsNullOrWhiteSpace([string]$objects.max_archive_timestamp_utc)) {
             $maxArchive = [datetimeoffset]::Parse([string]$objects.max_archive_timestamp_utc)
@@ -212,9 +242,13 @@ catch {
     Write-Host ''
     Write-Host 'READ-ONLY NEWS SOURCE COVERAGE VERIFICATION: FAIL'
     Write-Host $_.Exception.Message
+    if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
+    exit 1
 }
 finally {
     if ($null -eq $oldPgOptions) { Remove-Item Env:PGOPTIONS -ErrorAction SilentlyContinue } else { $env:PGOPTIONS = $oldPgOptions }
     if ($bstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-    if ($null -eq $oldPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $oldPassword }
+    if ($ownsPassword) {
+        if ($null -eq $oldPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $oldPassword }
+    }
 }
