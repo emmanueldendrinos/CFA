@@ -84,14 +84,36 @@ function Get-FileSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-CandidateValue {
+    param(
+        [AllowNull()][object]$Candidate,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($null -eq $Candidate) { return $null }
+
+    if ($Candidate -is [System.Collections.IDictionary]) {
+        if ($Candidate.Contains($Name)) { return $Candidate[$Name] }
+        return $null
+    }
+
+    $property = $Candidate.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 function Test-CandidateRecord {
     param([AllowNull()][object]$Candidate)
 
     if ($null -eq $Candidate) { return $false }
-    if (-not ($Candidate -is [System.Collections.IDictionary])) { return $false }
 
     foreach ($key in @('source_container','local_member_path','local_sha256','expected_sha256','hash_match')) {
-        if (-not $Candidate.Contains($key)) { return $false }
+        if ($Candidate -is [System.Collections.IDictionary]) {
+            if (-not $Candidate.Contains($key)) { return $false }
+        }
+        elseif ($null -eq $Candidate.PSObject.Properties[$key]) {
+            return $false
+        }
     }
     return $true
 }
@@ -108,8 +130,8 @@ function Get-MatchingLocationSummary {
             continue
         }
 
-        $container = [string]$match['source_container']
-        $memberPath = [string]$match['local_member_path']
+        $container = [string](Get-CandidateValue -Candidate $match -Name 'source_container')
+        $memberPath = [string](Get-CandidateValue -Candidate $match -Name 'local_member_path')
         if ([string]::IsNullOrWhiteSpace($container) -or [string]::IsNullOrWhiteSpace($memberPath)) {
             $invalid++
             continue
@@ -136,24 +158,49 @@ function Initialize-ZipSupport {
 function Invoke-SelfTest {
     Initialize-ZipSupport
 
-    $candidateA = @{
+    $candidateHashtable = @{
         source_container = 'sample.zip'
         local_member_path = 'sample.csv'
         local_sha256 = ('a' * 64)
         expected_sha256 = ('a' * 64)
         hash_match = $true
     }
-    $candidateMalformed = @{ hash_match = $true }
+    $candidateObject = [pscustomobject]@{
+        source_container = 'sample-2.zip'
+        local_member_path = 'sample-2.csv'
+        local_sha256 = ('b' * 64)
+        expected_sha256 = ('b' * 64)
+        hash_match = $true
+    }
+    $candidateMalformed = [pscustomobject]@{ hash_match = $true }
 
-    if (-not (Test-CandidateRecord -Candidate $candidateA)) {
-        throw 'Self-test failed: valid candidate was rejected.'
+    if (-not (Test-CandidateRecord -Candidate $candidateHashtable)) {
+        throw 'Self-test failed: valid hashtable candidate was rejected.'
+    }
+    if (-not (Test-CandidateRecord -Candidate $candidateObject)) {
+        throw 'Self-test failed: valid PSCustomObject candidate was rejected.'
     }
     if (Test-CandidateRecord -Candidate $candidateMalformed) {
         throw 'Self-test failed: malformed candidate was accepted.'
     }
 
-    $locationSummary = Get-MatchingLocationSummary -Matches @($candidateA,$candidateMalformed)
-    if ($locationSummary.text -ne 'sample.zip::sample.csv') {
+    $candidateList = New-Object System.Collections.Generic.List[object]
+    $candidateList.Add($candidateHashtable)
+    $candidateList.Add($candidateObject)
+    $candidateList.Add($candidateMalformed)
+
+    $validCandidates = @($candidateList | Where-Object { Test-CandidateRecord -Candidate $_ })
+    if ($validCandidates.Count -ne 2) {
+        throw "Self-test failed: expected two valid candidates after Generic.List pipeline round-trip, found $($validCandidates.Count)."
+    }
+
+    $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
+    if ($matches.Count -ne 2) {
+        throw "Self-test failed: expected two hash matches after Generic.List pipeline round-trip, found $($matches.Count)."
+    }
+
+    $locationSummary = Get-MatchingLocationSummary -Matches @($candidateHashtable,$candidateObject,$candidateMalformed)
+    if ($locationSummary.text -ne 'sample.zip::sample.csv;sample-2.zip::sample-2.csv') {
         throw "Self-test failed: unexpected location summary '$($locationSummary.text)'."
     }
     if ([int]$locationSummary.invalid_count -ne 1) {
@@ -404,7 +451,7 @@ ORDER BY import_run_id, source_member_ordinal
                     foreach ($target in $targets) {
                         $targetOrdinal = [string]$target['ordinal']
                         $targetExpectedHash = [string]$target['expected_sha256']
-                        $memberResults[$targetOrdinal].Add(@{
+                        $memberResults[$targetOrdinal].Add([pscustomobject]@{
                             source_container = $relative
                             local_member_path = $entry.FullName
                             local_sha256 = $entryHash
@@ -425,7 +472,7 @@ ORDER BY import_run_id, source_member_ordinal
                 foreach ($target in $expectedByBaseName[$base]) {
                     $targetOrdinal = [string]$target['ordinal']
                     $targetExpectedHash = [string]$target['expected_sha256']
-                    $memberResults[$targetOrdinal].Add(@{
+                    $memberResults[$targetOrdinal].Add([pscustomobject]@{
                         source_container = $relative
                         local_member_path = $relative
                         local_sha256 = $fileHash
@@ -449,7 +496,7 @@ ORDER BY import_run_id, source_member_ordinal
         $candidates = $memberResults[$ordinal]
         $validCandidates = @($candidates | Where-Object { Test-CandidateRecord -Candidate $_ })
         $invalidCandidateCount = $candidates.Count - $validCandidates.Count
-        $matches = @($validCandidates | Where-Object { $_['hash_match'] -eq $true })
+        $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
 
         if ($invalidCandidateCount -gt 0) {
             $status = 'UNVERIFIED_CANDIDATE_SHAPE'
@@ -529,7 +576,7 @@ ORDER BY import_run_id, source_member_ordinal
     Write-Host "UNVERIFIED_CANDIDATE_SHAPE      : $shapeUnverified"
     Write-Host ''
     Write-Host '=== ARCHIVE RECONCILIATION ==='
-    $archiveRows | Format-Table -AutoSize
+    $archiveRows | Format-List import_run_id,source_archive_relative_path,expected_source_archive_sha256,matching_local_file_count,matching_local_files,status
     Write-Host ''
     Write-Host "Evidence directory: $runDir"
     Write-Host 'READ-ONLY KRAKEN RECONCILIATION: COMPLETE'
