@@ -106,6 +106,18 @@ jobs:
       - name: Runtime self-test Stage 2 alias runner under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Run-CfaStage2AliasValidation.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 alias byte diagnostic under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage2AliasEncoding.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 alias diagnostic publisher under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Publish-CfaStage2AliasDiagnostics.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 alias diagnostic sync under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Sync-CfaStage2AliasDiagnostics.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 alias diagnostic runner under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage2AliasDiagnostics.ps1 -SelfTest
 
       - name: Export current CFA SoT authority snapshot
         shell: powershell
