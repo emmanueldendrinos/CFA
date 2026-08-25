@@ -3,6 +3,7 @@
 param(
     [string]$RepoRoot = '',
     [string]$PgUser = 'postgres',
+    [switch]$RecoverNewsSource,
     [switch]$SelfTest
 )
 
@@ -10,10 +11,16 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Get-LatestRun {
-    param([string]$ParentPath)
-    if (-not (Test-Path -LiteralPath $ParentPath -PathType Container)) { throw "Evidence directory missing: $ParentPath" }
+    param([string]$ParentPath,[switch]$Optional)
+    if (-not (Test-Path -LiteralPath $ParentPath -PathType Container)) {
+        if ($Optional) { return $null }
+        throw "Evidence directory missing: $ParentPath"
+    }
     $runs = @(Get-ChildItem -LiteralPath $ParentPath -Directory -Force | Sort-Object Name -Descending)
-    if ($runs.Count -eq 0) { throw "No evidence run found under: $ParentPath" }
+    if ($runs.Count -eq 0) {
+        if ($Optional) { return $null }
+        throw "No evidence run found under: $ParentPath"
+    }
     return $runs[0]
 }
 
@@ -48,6 +55,16 @@ function Invoke-Child {
     if ($code -ne 0) { throw ('Child script failed with exit code ' + $code + ': ' + $ScriptPath) }
 }
 
+function Invoke-GateChild {
+    param([string]$ScriptPath,[string[]]$Arguments)
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) { throw "Required gate script missing: $ScriptPath" }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments
+    $code = $LASTEXITCODE
+    if ($code -eq 0) { return 'PASS' }
+    if ($code -eq 2) { return 'FAIL' }
+    throw ('Gate script execution failed with exit code ' + $code + ': ' + $ScriptPath)
+}
+
 function Get-ReferenceGate {
     param([string]$RepoRootPath)
     $path = Join-Path $RepoRootPath 'docs\evidence\reference-source-reconciliation.json'
@@ -57,6 +74,22 @@ function Get-ReferenceGate {
     return 'FAIL'
 }
 
+function Get-CfaSourceGateFromEvidence {
+    param([string]$EvidenceRoot)
+    $run = Get-LatestRun -ParentPath (Join-Path $EvidenceRoot 'gdelt-q2-source-verification') -Optional
+    if ($null -eq $run) { return 'UNVERIFIED' }
+    $path = Join-Path $run.FullName 'source-verification-checks.csv'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'UNVERIFIED' }
+    return Get-StatusGate -Rows @(Import-Csv -LiteralPath $path)
+}
+
+function Resolve-NewsGate {
+    param([string]$LegacyGate,[string]$CfaSourceGate)
+    if ($CfaSourceGate -eq 'PASS') { return 'PASS' }
+    if ($CfaSourceGate -eq 'FAIL') { return 'FAIL' }
+    return $LegacyGate
+}
+
 function Invoke-SelfTest {
     $rowsPass = @([pscustomobject]@{status='PASS'},[pscustomobject]@{status='PASS'})
     $rowsFail = @([pscustomobject]@{status='PASS'},[pscustomobject]@{status='FAIL'})
@@ -64,6 +97,9 @@ function Invoke-SelfTest {
     if ((Get-StatusGate -Rows $rowsPass) -ne 'PASS') { throw 'Self-test failed: PASS gate.' }
     if ((Get-StatusGate -Rows $rowsFail) -ne 'FAIL') { throw 'Self-test failed: FAIL gate.' }
     if ((Get-StatusGate -Rows $rowsUnverified) -ne 'UNVERIFIED') { throw 'Self-test failed: UNVERIFIED gate.' }
+    if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'PASS') -ne 'PASS') { throw 'Self-test failed: CFA source PASS must supersede rejected legacy source.' }
+    if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'FAIL') -ne 'FAIL') { throw 'Self-test failed: CFA source FAIL.' }
+    if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'UNVERIFIED') -ne 'FAIL') { throw 'Self-test failed: legacy gate fallback.' }
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -92,12 +128,20 @@ try {
         $ownsPassword = $true
     }
 
-    Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaNewsSourceCoverage.ps1') -Arguments @('-PgUser',$PgUser)
-    Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Diagnose-CfaNewsAcquisition.ps1') -Arguments @('-PgUser',$PgUser)
+    $legacyGate = 'UNVERIFIED'
+    $cfaSourceGate = Get-CfaSourceGateFromEvidence -EvidenceRoot $evidenceRoot
 
-    $coverageRun = Get-LatestRun -ParentPath (Join-Path $evidenceRoot 'news-source-coverage')
-    $coverageRows = @(Import-Csv -LiteralPath (Join-Path $coverageRun.FullName 'coverage-checks.csv'))
-    $newsGate = Get-StatusGate -Rows $coverageRows
+    if ($RecoverNewsSource) {
+        Write-Host 'CFA news-source recovery mode: enabled'
+        Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Acquire-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
+        $cfaSourceGate = Invoke-GateChild -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
+    } else {
+        Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaNewsSourceCoverage.ps1') -Arguments @('-PgUser',$PgUser)
+        Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Diagnose-CfaNewsAcquisition.ps1') -Arguments @('-PgUser',$PgUser)
+        $coverageRun = Get-LatestRun -ParentPath (Join-Path $evidenceRoot 'news-source-coverage')
+        $coverageRows = @(Import-Csv -LiteralPath (Join-Path $coverageRun.FullName 'coverage-checks.csv'))
+        $legacyGate = Get-StatusGate -Rows $coverageRows
+    }
 
     if ($ownsPassword) {
         if ($null -eq $oldPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $oldPassword }
@@ -109,6 +153,14 @@ try {
     Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Sync-CfaEvidence.ps1') -Arguments @()
 
     $referenceGate = Get-ReferenceGate -RepoRootPath $RepoRoot
+    if ($legacyGate -eq 'UNVERIFIED') {
+        $legacyRun = Get-LatestRun -ParentPath (Join-Path $evidenceRoot 'news-source-coverage') -Optional
+        if ($null -ne $legacyRun) {
+            $legacyPath = Join-Path $legacyRun.FullName 'coverage-checks.csv'
+            if (Test-Path -LiteralPath $legacyPath -PathType Leaf) { $legacyGate = Get-StatusGate -Rows @(Import-Csv -LiteralPath $legacyPath) }
+        }
+    }
+    $newsGate = Resolve-NewsGate -LegacyGate $legacyGate -CfaSourceGate $cfaSourceGate
     $advanceGate = if ($referenceGate -eq 'PASS' -and $newsGate -eq 'PASS') { 'PASS' } else { 'BLOCKED' }
 
     Write-Host ''
@@ -118,6 +170,8 @@ try {
     Write-Host "CFA-S1-005 Reference SHA-256 reconciliation  : $referenceGate"
     Write-Host 'CFA-S1-006 Original Kraken quarters          : PASS'
     Write-Host 'CFA-S1-008 Direct market coverage            : PASS'
+    Write-Host "Legacy news acquisition completeness         : $legacyGate"
+    Write-Host "CFA-owned GDELT Q2 source completeness       : $cfaSourceGate"
     Write-Host "CFA-S1-010 News source completeness          : $newsGate"
     Write-Host "CFA-S1-009 Advance to identity approval      : $advanceGate"
     Write-Host ''
