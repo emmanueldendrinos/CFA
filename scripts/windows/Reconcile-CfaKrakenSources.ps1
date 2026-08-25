@@ -5,7 +5,8 @@ param(
     [ValidateRange(1,65535)][int]$PgPort = 5432,
     [string]$PgUser = 'postgres',
     [string]$SourceRoot = '',
-    [string]$OutputRoot = ''
+    [string]$OutputRoot = '',
+    [switch]$SelfTest
 )
 
 Set-StrictMode -Version Latest
@@ -83,6 +84,133 @@ function Get-FileSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-CandidateRecord {
+    param([AllowNull()][object]$Candidate)
+
+    if ($null -eq $Candidate) { return $false }
+    if (-not ($Candidate -is [System.Collections.IDictionary])) { return $false }
+
+    foreach ($key in @('source_container','local_member_path','local_sha256','expected_sha256','hash_match')) {
+        if (-not $Candidate.Contains($key)) { return $false }
+    }
+    return $true
+}
+
+function Get-MatchingLocationSummary {
+    param([Parameter(Mandatory)][object[]]$Matches)
+
+    $locations = New-Object System.Collections.Generic.List[string]
+    [int]$invalid = 0
+
+    foreach ($match in $Matches) {
+        if (-not (Test-CandidateRecord -Candidate $match)) {
+            $invalid++
+            continue
+        }
+
+        $container = [string]$match['source_container']
+        $memberPath = [string]$match['local_member_path']
+        if ([string]::IsNullOrWhiteSpace($container) -or [string]::IsNullOrWhiteSpace($memberPath)) {
+            $invalid++
+            continue
+        }
+
+        $locations.Add($container + '::' + $memberPath)
+    }
+
+    return [pscustomobject]@{
+        text = ($locations -join ';')
+        invalid_count = $invalid
+    }
+}
+
+function Initialize-ZipSupport {
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+
+    if ($null -eq ('System.IO.Compression.ZipFile' -as [type])) {
+        throw 'System.IO.Compression.ZipFile is unavailable after loading compression assemblies.'
+    }
+}
+
+function Invoke-SelfTest {
+    Initialize-ZipSupport
+
+    $candidateA = @{
+        source_container = 'sample.zip'
+        local_member_path = 'sample.csv'
+        local_sha256 = ('a' * 64)
+        expected_sha256 = ('a' * 64)
+        hash_match = $true
+    }
+    $candidateMalformed = @{ hash_match = $true }
+
+    if (-not (Test-CandidateRecord -Candidate $candidateA)) {
+        throw 'Self-test failed: valid candidate was rejected.'
+    }
+    if (Test-CandidateRecord -Candidate $candidateMalformed) {
+        throw 'Self-test failed: malformed candidate was accepted.'
+    }
+
+    $locationSummary = Get-MatchingLocationSummary -Matches @($candidateA,$candidateMalformed)
+    if ($locationSummary.text -ne 'sample.zip::sample.csv') {
+        throw "Self-test failed: unexpected location summary '$($locationSummary.text)'."
+    }
+    if ([int]$locationSummary.invalid_count -ne 1) {
+        throw "Self-test failed: expected one invalid candidate, found $($locationSummary.invalid_count)."
+    }
+
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-zip-selftest-' + [guid]::NewGuid().ToString('N'))
+    $sourceDir = Join-Path $tempRoot 'source'
+    $zipPath = Join-Path $tempRoot 'sample.zip'
+
+    try {
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $sourceDir 'sample.csv') -Value '1,2,3' -Encoding ASCII
+        Compress-Archive -Path (Join-Path $sourceDir 'sample.csv') -DestinationPath $zipPath -Force
+
+        $archive = $null
+        try {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+            if ($archive.Entries.Count -ne 1) {
+                throw "Self-test failed: expected one ZIP entry, found $($archive.Entries.Count)."
+            }
+            $entryStream = $null
+            try {
+                $entryStream = $archive.Entries[0].Open()
+                $hash = Get-StreamSha256 -Stream $entryStream
+            }
+            finally {
+                if ($null -ne $entryStream) { $entryStream.Dispose() }
+            }
+            if ($hash -notmatch '^[0-9a-f]{64}$') {
+                throw 'Self-test failed: ZIP entry SHA-256 was malformed.'
+            }
+        }
+        finally {
+            if ($null -ne $archive) { $archive.Dispose() }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host 'SELF-TEST: PASS'
+}
+
+if ($SelfTest) {
+    try {
+        Invoke-SelfTest
+        exit 0
+    }
+    catch {
+        Write-Host 'SELF-TEST: FAIL'
+        Write-Host $_.Exception.Message
+        if (-not [string]::IsNullOrWhiteSpace($_.ScriptStackTrace)) { Write-Host $_.ScriptStackTrace }
+        exit 1
+    }
+}
+
 $oldPassword = $env:PGPASSWORD
 $oldPgOptions = $env:PGOPTIONS
 $bstr = [IntPtr]::Zero
@@ -99,14 +227,7 @@ try {
         throw "Kraken source root does not exist: $SourceRoot"
     }
 
-    # Windows PowerShell 5.1 does not reliably preload these assemblies.
-    # Load both explicitly before any ZIP types are referenced at runtime.
-    Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-
-    if ($null -eq ('System.IO.Compression.ZipFile' -as [type])) {
-        throw 'System.IO.Compression.ZipFile is unavailable after loading compression assemblies.'
-    }
+    Initialize-ZipSupport
 
     $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).ProviderPath
     $runDir = Join-Path $OutputRoot ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
@@ -180,7 +301,7 @@ ORDER BY import_run_id, source_member_ordinal
         }
         $expectedHash = $expectedHash.ToLowerInvariant()
 
-        $record = [pscustomobject]@{
+        $record = @{
             ordinal = $ordinal
             member_path_raw = $rawPath
             normalized_path = $normalized
@@ -202,8 +323,8 @@ ORDER BY import_run_id, source_member_ordinal
     }
 
     # Prefer the exact archive filename recorded by PostgreSQL. This avoids
-    # hashing/opening unrelated Kraken quarters. If it is absent, fall back to
-    # ZIP files so renamed copies can still be investigated.
+    # hashing/opening unrelated quarters. Only fall back to all ZIP files if
+    # the recorded source archive filename is absent locally.
     $expectedArchiveNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($run in $runs) {
         $archivePath = [string]$run.source_archive_relative_path
@@ -215,9 +336,7 @@ ORDER BY import_run_id, source_member_ordinal
         }
     }
 
-    $exactArchiveCandidates = @(
-        $allLocalFiles | Where-Object { $expectedArchiveNames.Contains($_.Name) }
-    )
+    $exactArchiveCandidates = @($allLocalFiles | Where-Object { $expectedArchiveNames.Contains($_.Name) })
 
     if ($exactArchiveCandidates.Count -gt 0) {
         $filesToInspect = $exactArchiveCandidates
@@ -252,8 +371,6 @@ ORDER BY import_run_id, source_member_ordinal
         if ($extension -eq '.zip') {
             $archive = $null
             try {
-                # ZipFile.OpenRead is supported by Windows PowerShell 5.1 once
-                # System.IO.Compression and FileSystem are explicitly loaded.
                 $archive = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
 
                 foreach ($entry in $archive.Entries) {
@@ -285,12 +402,14 @@ ORDER BY import_run_id, source_member_ordinal
                     }
 
                     foreach ($target in $targets) {
-                        $memberResults[$target.ordinal].Add([pscustomobject]@{
+                        $targetOrdinal = [string]$target['ordinal']
+                        $targetExpectedHash = [string]$target['expected_sha256']
+                        $memberResults[$targetOrdinal].Add(@{
                             source_container = $relative
                             local_member_path = $entry.FullName
                             local_sha256 = $entryHash
-                            expected_sha256 = $target.expected_sha256
-                            hash_match = ($entryHash -eq $target.expected_sha256)
+                            expected_sha256 = $targetExpectedHash
+                            hash_match = ($entryHash -eq $targetExpectedHash)
                         })
                     }
                 }
@@ -304,12 +423,14 @@ ORDER BY import_run_id, source_member_ordinal
             if ($expectedByBaseName.ContainsKey($base)) {
                 $candidateCount++
                 foreach ($target in $expectedByBaseName[$base]) {
-                    $memberResults[$target.ordinal].Add([pscustomobject]@{
+                    $targetOrdinal = [string]$target['ordinal']
+                    $targetExpectedHash = [string]$target['expected_sha256']
+                    $memberResults[$targetOrdinal].Add(@{
                         source_container = $relative
                         local_member_path = $relative
                         local_sha256 = $fileHash
-                        expected_sha256 = $target.expected_sha256
-                        hash_match = ($fileHash -eq $target.expected_sha256)
+                        expected_sha256 = $targetExpectedHash
+                        hash_match = ($fileHash -eq $targetExpectedHash)
                     })
                 }
             }
@@ -321,13 +442,20 @@ ORDER BY import_run_id, source_member_ordinal
     $missing = 0
     $mismatched = 0
     $ambiguous = 0
+    $shapeUnverified = 0
 
     foreach ($m in $members) {
         $ordinal = [string]$m.source_member_ordinal
         $candidates = $memberResults[$ordinal]
-        $matches = @($candidates | Where-Object { $_.hash_match -eq $true })
+        $validCandidates = @($candidates | Where-Object { Test-CandidateRecord -Candidate $_ })
+        $invalidCandidateCount = $candidates.Count - $validCandidates.Count
+        $matches = @($validCandidates | Where-Object { $_['hash_match'] -eq $true })
 
-        if ($matches.Count -eq 1) {
+        if ($invalidCandidateCount -gt 0) {
+            $status = 'UNVERIFIED_CANDIDATE_SHAPE'
+            $shapeUnverified++
+        }
+        elseif ($matches.Count -eq 1) {
             $status = 'PASS'
             $matched++
         }
@@ -335,7 +463,7 @@ ORDER BY import_run_id, source_member_ordinal
             $status = 'AMBIGUOUS'
             $ambiguous++
         }
-        elseif ($candidates.Count -eq 0) {
+        elseif ($validCandidates.Count -eq 0) {
             $status = 'MISSING'
             $missing++
         }
@@ -349,14 +477,23 @@ ORDER BY import_run_id, source_member_ordinal
             $expectedHash = [string]$m.observed_content_sha256
         }
 
+        $locationSummary = Get-MatchingLocationSummary -Matches $matches
+        if ([int]$locationSummary.invalid_count -gt 0 -and $status -eq 'PASS') {
+            $status = 'UNVERIFIED_CANDIDATE_SHAPE'
+            $matched--
+            $shapeUnverified++
+        }
+
         $resultRows.Add([pscustomobject]@{
             source_member_ordinal = $ordinal
             member_path_raw = [string]$m.member_path_raw
             expected_sha256 = $expectedHash.ToLowerInvariant()
             candidate_count = $candidates.Count
+            valid_candidate_count = $validCandidates.Count
+            invalid_candidate_shape_count = $invalidCandidateCount + [int]$locationSummary.invalid_count
             matching_candidate_count = $matches.Count
             status = $status
-            matching_locations = ($matches | ForEach-Object { "$($_.source_container)::$($_.local_member_path)" }) -join ';'
+            matching_locations = [string]$locationSummary.text
         })
     }
 
@@ -370,7 +507,7 @@ ORDER BY import_run_id, source_member_ordinal
             source_archive_relative_path = $run.source_archive_relative_path
             expected_source_archive_sha256 = $expectedArchiveHash
             matching_local_file_count = $matchingLocal.Count
-            matching_local_files = ($matchingLocal | ForEach-Object { $_.relative_path }) -join ';'
+            matching_local_files = ($matchingLocal | ForEach-Object { [string]$_.relative_path }) -join ';'
             status = if ($matchingLocal.Count -eq 1) { 'PASS' } elseif ($matchingLocal.Count -gt 1) { 'AMBIGUOUS' } else { 'UNVERIFIED' }
         })
     }
@@ -381,14 +518,15 @@ ORDER BY import_run_id, source_member_ordinal
 
     Write-Host ''
     Write-Host '=== KRAKEN MEMBER RECONCILIATION ==='
-    Write-Host "Database manifest members : $($members.Count)"
-    Write-Host "Local files discovered    : $($allLocalFiles.Count)"
-    Write-Host "Archive files inspected   : $($filesToInspect.Count)"
-    Write-Host "Candidate member objects  : $candidateCount"
-    Write-Host "PASS                      : $matched"
-    Write-Host "MISSING                   : $missing"
-    Write-Host "HASH_MISMATCH             : $mismatched"
-    Write-Host "AMBIGUOUS                 : $ambiguous"
+    Write-Host "Database manifest members       : $($members.Count)"
+    Write-Host "Local files discovered          : $($allLocalFiles.Count)"
+    Write-Host "Archive files inspected         : $($filesToInspect.Count)"
+    Write-Host "Candidate member objects        : $candidateCount"
+    Write-Host "PASS                            : $matched"
+    Write-Host "MISSING                         : $missing"
+    Write-Host "HASH_MISMATCH                   : $mismatched"
+    Write-Host "AMBIGUOUS                       : $ambiguous"
+    Write-Host "UNVERIFIED_CANDIDATE_SHAPE      : $shapeUnverified"
     Write-Host ''
     Write-Host '=== ARCHIVE RECONCILIATION ==='
     $archiveRows | Format-Table -AutoSize
@@ -401,6 +539,9 @@ catch {
     Write-Host ''
     Write-Host 'READ-ONLY KRAKEN RECONCILIATION: FAIL'
     Write-Host $_.Exception.Message
+    if (-not [string]::IsNullOrWhiteSpace($_.ScriptStackTrace)) {
+        Write-Host $_.ScriptStackTrace
+    }
 }
 finally {
     if ($null -eq $oldPgOptions) {
