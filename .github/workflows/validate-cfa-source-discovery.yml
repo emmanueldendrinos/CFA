@@ -3,8 +3,8 @@ name: Validate CFA source discovery under native Windows PowerShell 5.1
 on:
   pull_request:
     paths:
-      - validation/cfa-source-discovery/**
-      - .github/workflows/validate-cfa-source-discovery.yml
+      - 'validation/cfa-source-discovery/**'
+      - '.github/workflows/validate-cfa-source-discovery.yml'
   workflow_dispatch:
 
 permissions:
@@ -25,8 +25,8 @@ jobs:
       EXPECTED_SCRIPT_SHA256: 6b9ac35f9b650a7daa7e4604aa7ee872adaa9816704d90edd604995576f3e82d
       EXPECTED_SCRIPT_BYTES: '80999'
       EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
-      SCRIPT_PATH: ${{ runner.temp }}\CFA-Source-Discovery-v1.0.0.ps1
-      GZIP_PATH: ${{ runner.temp }}\CFA-Source-Discovery-v1.0.0.ps1.gz
+      SCRIPT_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1
+      GZIP_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +41,7 @@ jobs:
               throw "Required Windows PowerShell Desktop 5.1; found $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)."
           }
           New-Item -ItemType Directory -Path $env:EVIDENCE_DIR -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path -Parent $env:SCRIPT_PATH) -Force | Out-Null
           $PSVersionTable | Out-String | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'powershell-version.txt') -Encoding UTF8
 
       - name: Reconstruct exact script and verify identity
@@ -144,6 +145,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cfa-source-discovery-native-ps51-${{ github.run_id }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ github.workspace }}\validation-evidence
           if-no-files-found: error
           retention-days: 30
