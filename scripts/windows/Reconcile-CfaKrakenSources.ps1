@@ -70,7 +70,7 @@ $bstr = [IntPtr]::Zero
 
 try {
     $documents = [Environment]::GetFolderPath('MyDocuments')
-    if ([string]::IsNullOrWhiteSpace($SourceRoot)) { $SourceRoot = Join-Path $documents 'Kraken' }
+    if ([string]::IsNullOrWhiteSpace($SourceRoot)) { $SourceRoot = Join-Path $documents 'Projects\Kraken' }
     if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $documents 'CFA-local\kraken-reconciliation' }
     if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) { throw "Kraken source root does not exist: $SourceRoot" }
 
