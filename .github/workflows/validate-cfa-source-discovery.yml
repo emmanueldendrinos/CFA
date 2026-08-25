@@ -1,0 +1,149 @@
+name: Validate CFA source discovery under native Windows PowerShell 5.1
+
+on:
+  pull_request:
+    paths:
+      - validation/cfa-source-discovery/**
+      - .github/workflows/validate-cfa-source-discovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfa-source-discovery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-native-ps51:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+    env:
+      EXPECTED_SCRIPT_SHA256: 6b9ac35f9b650a7daa7e4604aa7ee872adaa9816704d90edd604995576f3e82d
+      EXPECTED_SCRIPT_BYTES: '80999'
+      EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
+      SCRIPT_PATH: ${{ runner.temp }}\CFA-Source-Discovery-v1.0.0.ps1
+      GZIP_PATH: ${{ runner.temp }}\CFA-Source-Discovery-v1.0.0.ps1.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert native Windows PowerShell Desktop 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+              [int]$PSVersionTable.PSVersion.Major -ne 5 -or
+              [int]$PSVersionTable.PSVersion.Minor -ne 1) {
+              throw "Required Windows PowerShell Desktop 5.1; found $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)."
+          }
+          New-Item -ItemType Directory -Path $env:EVIDENCE_DIR -Force | Out-Null
+          $PSVersionTable | Out-String | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'powershell-version.txt') -Encoding UTF8
+
+      - name: Reconstruct exact script and verify identity
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $partDirectory = Join-Path $env:GITHUB_WORKSPACE 'validation\cfa-source-discovery'
+          $parts = @(Get-ChildItem -LiteralPath $partDirectory -File -Filter 'script.part*.b64' | Sort-Object Name)
+          if ($parts.Count -ne 4) { throw "Expected 4 payload parts; observed $($parts.Count)." }
+          $expectedNames = @('script.part01.b64','script.part02.b64','script.part03.b64','script.part04.b64')
+          if ((@($parts.Name) -join "`n") -cne ($expectedNames -join "`n")) { throw 'Payload part names or order differ.' }
+          $encoded = (($parts | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -ErrorAction Stop }) -join '') -replace '\s',''
+          [IO.File]::WriteAllBytes($env:GZIP_PATH, [Convert]::FromBase64String($encoded))
+          $inputStream = [IO.File]::OpenRead($env:GZIP_PATH)
+          try {
+              $gzip = New-Object IO.Compression.GZipStream($inputStream, [IO.Compression.CompressionMode]::Decompress)
+              try {
+                  $outputStream = [IO.File]::Create($env:SCRIPT_PATH)
+                  try { $gzip.CopyTo($outputStream) }
+                  finally { $outputStream.Dispose() }
+              }
+              finally { $gzip.Dispose() }
+          }
+          finally { $inputStream.Dispose() }
+          $item = Get-Item -LiteralPath $env:SCRIPT_PATH -ErrorAction Stop
+          $hash = (Get-FileHash -LiteralPath $env:SCRIPT_PATH -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+          if ([long]$item.Length -ne [long]$env:EXPECTED_SCRIPT_BYTES) {
+              throw "Decoded script byte count differs: $($item.Length)."
+          }
+          if ($hash -cne $env:EXPECTED_SCRIPT_SHA256) {
+              throw "Decoded script SHA-256 differs: $hash."
+          }
+          $hash | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'script-sha256.txt') -Encoding ASCII
+          [string]$item.Length | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'script-bytes.txt') -Encoding ASCII
+
+      - name: Parse every token with native Windows PowerShell 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $tokens = $null
+          $parseErrors = $null
+          [Management.Automation.Language.Parser]::ParseFile($env:SCRIPT_PATH, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          @($parseErrors) | ForEach-Object { $_.ToString() } | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-errors.txt') -Encoding UTF8
+          if (@($parseErrors).Count -ne 0) {
+              throw "Native Windows PowerShell 5.1 parsing failed with $(@($parseErrors).Count) error(s)."
+          }
+          [pscustomobject][ordered]@{
+              token_count = @($tokens).Count
+              parse_error_count = @($parseErrors).Count
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-summary.json') -Encoding UTF8
+
+      - name: Audit read-only surface
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $text = Get-Content -LiteralPath $env:SCRIPT_PATH -Raw -ErrorAction Stop
+          $required = @(
+              'default_transaction_read_only=on',
+              "transaction_read_only -cne 'on'",
+              'No database password is accepted by this script',
+              'SOURCE_FILE_TO_POSTGRES_RECONCILIATION_UNVERIFIED',
+              '[switch]$SelfTest'
+          )
+          foreach ($literal in $required) {
+              if (-not $text.Contains($literal)) { throw "Required read-only control is absent: $literal" }
+          }
+          $forbiddenPatterns = @(
+              '(?im)^\s*param\s*\([^)]*\$(?:password|pgpassword)\b',
+              '(?im)\bpsql(?:\.exe)?\b[^\r\n]*(?:-c|--command)[^\r\n]*\b(?:insert|update|delete|drop|alter|truncate|create|grant|revoke|copy\s+[^\r\n]*\s+from)\b'
+          )
+          foreach ($pattern in $forbiddenPatterns) {
+              [void][regex]::new($pattern)
+              if ([regex]::IsMatch($text, $pattern)) { throw "Forbidden mutation or credential surface matched: $pattern" }
+          }
+          'PASS' | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'read-only-surface.txt') -Encoding ASCII
+
+      - name: Run exact script self-test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $output = @(& "$PSHOME\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $env:SCRIPT_PATH -SelfTest 2>&1)
+          $exitCode = $LASTEXITCODE
+          $output | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'self-test.log') -Encoding UTF8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { throw "Exact script self-test failed with exit code $exitCode." }
+          if (($output -join "`n") -notmatch 'PASS: CFA source-discovery self-test completed') {
+              throw 'Exact script self-test did not emit the required PASS marker.'
+          }
+
+      - name: Verify self-test did not contact PostgreSQL or require source data
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $log = Get-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'self-test.log') -Raw -ErrorAction Stop
+          if ($log -notmatch 'PostgreSQL connections attempted: 0') { throw 'Self-test did not prove zero PostgreSQL connections.' }
+          if ($log -notmatch 'Kraken source bytes copied: 0') { throw 'Self-test did not prove zero Kraken source-byte copies.' }
+          'PASS' | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'offline-boundary.txt') -Encoding ASCII
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfa-source-discovery-native-ps51-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
