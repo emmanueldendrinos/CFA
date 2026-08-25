@@ -142,15 +142,15 @@ function Write-EvidenceSnapshot {
     [void]$builder.AppendLine('')
     [void]$builder.AppendLine('## Source runs')
     [void]$builder.AppendLine('')
-    [void]$builder.AppendLine("- Kraken reconciliation run: `$($krakenRun.Name)`.")
-    [void]$builder.AppendLine("- News source coverage run: `$($newsRun.Name)`.")
+    [void]$builder.AppendLine("- Kraken reconciliation run: $($krakenRun.Name).")
+    [void]$builder.AppendLine("- News source coverage run: $($newsRun.Name).")
     [void]$builder.AppendLine('')
 
     [void]$builder.AppendLine('## Kraken reconciliation summary')
     [void]$builder.AppendLine('')
     [void]$builder.AppendLine("- Manifest member rows: $($krakenMembers.Count).")
     foreach ($status in @('PASS','MISSING','HASH_MISMATCH','AMBIGUOUS','UNVERIFIED_CANDIDATE_SHAPE')) {
-        [void]$builder.AppendLine("- $status: $(Get-StatusCount -Rows $krakenMembers -Status $status).")
+        [void]$builder.AppendLine("- $($status): $(Get-StatusCount -Rows $krakenMembers -Status $status).")
     }
     [void]$builder.AppendLine("- Archive PASS: $(Get-StatusCount -Rows $krakenArchives -Status 'PASS').")
     [void]$builder.AppendLine('')
@@ -181,7 +181,7 @@ function Write-EvidenceSnapshot {
     [void]$builder.AppendLine('| Category | Run ID | File | SHA-256 |')
     [void]$builder.AppendLine('|---|---|---|---|')
     foreach ($row in $hashRows) {
-        [void]$builder.AppendLine("| $($row.category) | `$($row.run_id)` | `$($row.file_name)` | `$($row.sha256)` |")
+        [void]$builder.AppendLine("| $($row.category) | $($row.run_id) | $($row.file_name) | $($row.sha256) |")
     }
     [void]$builder.AppendLine('')
 
@@ -245,7 +245,7 @@ function Invoke-SelfTest {
 
         $receipt = [System.IO.File]::ReadAllText($result.receipt_path)
         foreach ($expectedText in @(
-            'Kraken reconciliation run: `20260101-010101-testkraken`',
+            'Kraken reconciliation run: 20260101-010101-testkraken',
             '- PASS: 2.',
             '- Coverage checks FAIL: 1.',
             '1,error,boom',
