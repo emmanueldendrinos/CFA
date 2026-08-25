@@ -95,7 +95,9 @@ function Sql-Literal {
     param([AllowNull()][object]$Value)
     if ($null -eq $Value) { return 'NULL' }
     if ($Value -is [int] -or $Value -is [long]) { return [string]$Value }
-    return "'" + ([string]$Value).Replace("'","''") + "'"
+    $text = [string]$Value
+    if ([string]::IsNullOrEmpty($text)) { return 'NULL' }
+    return "'" + $text.Replace("'","''") + "'"
 }
 
 function Convert-HexToBase64 {
@@ -377,6 +379,9 @@ function Invoke-SelfTest {
     if ((Get-ContractSha256) -notmatch '^[0-9a-f]{64}$') { throw 'Self-test failed: contract hash.' }
     if ((Convert-HexToBase64 -Hex 'd41d8cd98f00b204e9800998ecf8427e') -ne '1B2M2Y8AsgTpgAmY7PhCfg==') { throw 'Self-test failed: MD5 conversion.' }
     if ((Normalize-SqlSubquery -Query "SELECT 1;`r`n") -ne 'SELECT 1') { throw 'Self-test failed: SQL normalization.' }
+    if ((Sql-Literal $null) -ne 'NULL') { throw 'Self-test failed: null SQL literal.' }
+    if ((Sql-Literal '') -ne 'NULL') { throw 'Self-test failed: empty optional metadata SQL literal.' }
+    if ((Sql-Literal 'PASS') -ne "'PASS'") { throw 'Self-test failed: non-empty SQL literal.' }
 
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-gdelt-source-selftest-' + [guid]::NewGuid().ToString('N'))
     try {
@@ -390,8 +395,9 @@ function Invoke-SelfTest {
         }
         finally { $zip.Dispose() }
         if ((Test-ZipStructure -Path $zipPath) -ne 1) { throw 'Self-test failed: ZIP structure.' }
-        $r = New-DownloadResult -ObjectKey '20250401000000' -Status 'integrity_failed' -HttpStatus 200 -ExpectedLength 10 -ObservedSize $null -Sha256 $null -ProviderMd5 $null -ObservedMd5 $null -Md5Status $null -RelativePath $null -ZipEntryCount $null -ErrorCode 'e_test'
-        if ([string]$r.status -ne 'integrity_failed') { throw 'Self-test failed: result classification.' }
+        $r = New-DownloadResult -ObjectKey '20250401000000' -Status 'provider_missing' -HttpStatus 404 -ExpectedLength $null -ObservedSize $null -Sha256 $null -ProviderMd5 $null -ObservedMd5 $null -Md5Status $null -RelativePath $null -ZipEntryCount $null -ErrorCode $null
+        if ([string]$r.status -ne 'provider_missing') { throw 'Self-test failed: provider-missing result classification.' }
+        if ((Sql-Literal $r.provider_md5_status) -ne 'NULL') { throw 'Self-test failed: provider-missing MD5 status must serialize as SQL NULL.' }
         Write-Host 'SELF-TEST: PASS'
     }
     finally { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
