@@ -101,7 +101,7 @@ jobs:
           $required = @(
               'default_transaction_read_only=on',
               "transaction_read_only -cne 'on'",
-              'No database password is accepted by this script',
+              'This script has no password parameter.',
               'SOURCE_FILE_TO_POSTGRES_RECONCILIATION_UNVERIFIED',
               '[switch]$SelfTest'
           )
