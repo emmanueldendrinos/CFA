@@ -5,7 +5,7 @@ param(
     [string]$OutputRoot = '',
     [ValidateRange(1,20)][int]$MaxHttpAttempts = 6,
     [ValidateRange(1,100)][int]$MaxTickerPages = 50,
-    [ValidateRange(500,10000)][int]$RequestDelayMilliseconds = 2500,
+    [ValidateRange(1000,15000)][int]$RequestDelayMilliseconds = 3000,
     [switch]$SelfTest
 )
 
@@ -42,13 +42,13 @@ function Invoke-CgGet {
             $body=$response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
             if($response.IsSuccessStatusCode){ return $body }
             if($status -eq 429 -or $status -ge 500){
-                if($attempt -lt $MaxHttpAttempts){ Start-Sleep -Seconds ([Math]::Min(60,[Math]::Pow(2,$attempt))); continue }
+                if($attempt -lt $MaxHttpAttempts){ Start-Sleep -Seconds ([Math]::Min(120,[Math]::Pow(2,$attempt))); continue }
             }
             throw "CoinGecko HTTP $status for $Url"
         }
         catch {
             if($attempt -ge $MaxHttpAttempts){ throw }
-            Start-Sleep -Seconds ([Math]::Min(60,[Math]::Pow(2,$attempt)))
+            Start-Sleep -Seconds ([Math]::Min(120,[Math]::Pow(2,$attempt)))
         }
         finally { if($null -ne $response){$response.Dispose()} }
     }
@@ -115,8 +115,6 @@ function Invoke-SelfTest {
 if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
 
 $client=$null
-$keyBstr=[IntPtr]::Zero
-$demoKey=$null
 try {
     if([string]::IsNullOrWhiteSpace($RepoRoot)){$RepoRoot=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))}
     $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
@@ -138,21 +136,12 @@ try {
         $pairByBase[$id].quote_symbols[[string]$p.quote_exchange_symbol]=$true
     }
 
-    $demoKey=[string]$env:CG_DEMO_API_KEY
-    if([string]::IsNullOrWhiteSpace($demoKey)){
-        $secureKey=Read-Host 'CoinGecko Demo API key' -AsSecureString
-        $keyBstr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-        $demoKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyBstr)
-    }
-    if([string]::IsNullOrWhiteSpace($demoKey)){throw 'CoinGecko Demo API key is required.'}
-
     $handler=New-Object System.Net.Http.HttpClientHandler
     $client=New-Object System.Net.Http.HttpClient -ArgumentList $handler
     $client.Timeout=[TimeSpan]::FromSeconds(120)
     [void]$client.DefaultRequestHeaders.UserAgent.ParseAdd('CFA-identity-evidence/1.0')
-    [void]$client.DefaultRequestHeaders.Add('x-cg-demo-api-key',$demoKey)
-    $demoKey=$null
 
+    Write-Host 'CoinGecko API mode: keyless public (no account/API key)'
     Write-Host 'Acquiring CoinGecko active coins list...'
     $coinsJson=Invoke-CgGet -Client $client -Url $CoinsListUrl
     $coinsPath=Join-Path $runDir 'coins-list.json';Write-Utf8NoBom $coinsPath $coinsJson
@@ -196,7 +185,7 @@ try {
     $sourceRows=@();$sourceRows += [pscustomobject]@{file_name='coins-list.json';sha256=(Get-FileHash $coinsPath -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item $coinsPath).Length;record_count=$coins.Count;source_url=$CoinsListUrl}
     foreach($pf in $pageFiles){$pageNo=[int]([regex]::Match([System.IO.Path]::GetFileName($pf),'(\d{3})').Groups[1].Value);$json=[System.IO.File]::ReadAllText($pf);$o=$json|ConvertFrom-Json;$sourceRows += [pscustomobject]@{file_name=[System.IO.Path]::GetFileName($pf);sha256=(Get-FileHash $pf -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item $pf).Length;record_count=@($o.tickers).Count;source_url=$KrakenTickersTemplate.Replace('{page}',[string]$pageNo)}}
     $sourceRows|Export-Csv -LiteralPath (Join-Path $runDir 'source-files.csv') -NoTypeInformation -Encoding UTF8
-    @([pscustomobject]@{run_id=$runId;api_tier='public_demo';authentication='x-cg-demo-api-key_header';coins_list_records=$coins.Count;kraken_ticker_records=$allTickers.Count;ticker_pages=$pageFiles.Count;approved_current_kraken_pair_bridge=$approve;unverified_multiple_bridges=$multi;unverified_no_bridge=$noBridge;candidate_assets=$candidates.Count;retrieved_at_utc=[datetimeoffset]::UtcNow.ToString('o')}) | Export-Csv -LiteralPath (Join-Path $runDir 'run-summary.csv') -NoTypeInformation -Encoding UTF8
+    @([pscustomobject]@{run_id=$runId;api_tier='keyless_public';authentication='none';coins_list_records=$coins.Count;kraken_ticker_records=$allTickers.Count;ticker_pages=$pageFiles.Count;approved_current_kraken_pair_bridge=$approve;unverified_multiple_bridges=$multi;unverified_no_bridge=$noBridge;candidate_assets=$candidates.Count;retrieved_at_utc=[datetimeoffset]::UtcNow.ToString('o')}) | Export-Csv -LiteralPath (Join-Path $runDir 'run-summary.csv') -NoTypeInformation -Encoding UTF8
     Write-Host "Evidence directory: $runDir"
     Write-Host "Candidate assets: $($candidates.Count)"
     Write-Host "Kraken ticker records: $($allTickers.Count)"
@@ -206,8 +195,4 @@ try {
     Write-Host 'CFA COINGECKO IDENTITY EVIDENCE ACQUISITION: PASS'
 }
 catch{Write-Host 'CFA COINGECKO IDENTITY EVIDENCE ACQUISITION: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}
-finally{
-    $demoKey=$null
-    if($keyBstr -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyBstr)}
-    if($null -ne $client){$client.Dispose()}
-}
+finally{if($null -ne $client){$client.Dispose()}}
