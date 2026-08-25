@@ -6,12 +6,14 @@ on:
       - 'scripts/**/*.ps1'
       - 'CFA-SoT.xlsx'
       - 'candidate-analysis/*.csv'
+      - 'docs/evidence/stage2-coingecko-bridge-evidence.csv'
       - '.github/workflows/powershell-parse.yml'
   pull_request:
     paths:
       - 'scripts/**/*.ps1'
       - 'CFA-SoT.xlsx'
       - 'candidate-analysis/*.csv'
+      - 'docs/evidence/stage2-coingecko-bridge-evidence.csv'
       - '.github/workflows/powershell-parse.yml'
 
 permissions:
@@ -95,6 +97,9 @@ jobs:
       - name: Runtime self-test Stage 2 runner under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Run-CfaStage2.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 mapping decision resolver under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Resolve-CfaStage2Mappings.ps1 -SelfTest
 
       - name: Export current CFA SoT authority snapshot
         shell: powershell
@@ -115,6 +120,12 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Review-CfaStage2Identity.ps1'
           if ($LASTEXITCODE -ne 0) { throw "Stage 2 structural reviewer failed with exit $LASTEXITCODE." }
 
+      - name: Resolve evidence-based Stage 2 mapping decisions
+        shell: powershell
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Resolve-CfaStage2Mappings.ps1'
+          if ($LASTEXITCODE -ne 0) { throw "Stage 2 mapping resolver failed with exit $LASTEXITCODE." }
+
       - name: Commit generated authority/reconciliation/Stage 2 evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
@@ -123,10 +134,12 @@ jobs:
             'docs/evidence/sot-authority-snapshot.md','docs/evidence/sot-authority-snapshot.json',
             'docs/evidence/reference-source-reconciliation.md','docs/evidence/reference-source-reconciliation.json',
             'docs/evidence/stage2-identity-review.md','docs/evidence/stage2-identity-review.json',
+            'docs/evidence/stage2-mapping-decisions.md','docs/evidence/stage2-mapping-decisions.json',
             'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv',
             'candidate-analysis/ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv',
             'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv',
-            'candidate-analysis/CFA-Stage2-CoinGecko-Review-Queue.csv','candidate-analysis/CFA-Stage2-Alias-Review.csv'
+            'candidate-analysis/CFA-Stage2-CoinGecko-Review-Queue.csv','candidate-analysis/CFA-Stage2-Alias-Review.csv',
+            'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv'
           )
           git -c core.autocrlf=false add -- $allowed
           $staged = @(git diff --cached --name-only)
@@ -134,7 +147,7 @@ jobs:
             foreach ($path in $staged) { if ($allowed -notcontains $path) { throw "Unexpected staged path: $path" } }
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Update CFA source and Stage 2 structural evidence'
+            git commit -m 'Update CFA Stage 2 structural and mapping evidence'
             git pull --rebase origin main
             git push origin HEAD:main
           }
