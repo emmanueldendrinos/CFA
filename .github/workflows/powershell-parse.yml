@@ -99,6 +99,22 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
 
+      - name: Runtime self-test CoinGecko identity acquisition under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Acquire-CfaCoinGeckoIdentityEvidence.ps1 -SelfTest
+
+      - name: Runtime self-test Stage 2 evidence publisher under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Publish-CfaStage2Evidence.ps1 -SelfTest
+
+      - name: Runtime self-test Stage 2 evidence sync under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Sync-CfaStage2Evidence.ps1 -SelfTest
+
+      - name: Runtime self-test Stage 2 runner under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage2.ps1 -SelfTest
+
       - name: Export current CFA SoT authority snapshot
         shell: powershell
         run: .\scripts\windows\Export-CfaSoTAuthority.ps1
