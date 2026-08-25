@@ -5,7 +5,7 @@ param(
     [string]$OutputRoot = '',
     [ValidateRange(1,20)][int]$MaxHttpAttempts = 6,
     [ValidateRange(1,100)][int]$MaxTickerPages = 50,
-    [ValidateRange(100,10000)][int]$RequestDelayMilliseconds = 1800,
+    [ValidateRange(500,10000)][int]$RequestDelayMilliseconds = 2500,
     [switch]$SelfTest
 )
 
@@ -83,6 +83,7 @@ function Get-BridgeDecision {
         if($null -ne $market -and $null -ne $market.Value){$marketId=Get-StringProperty $market.Value 'identifier'}
         if($marketId -ne 'kraken'){continue}
         if((Get-BoolProperty $t 'is_anomaly')){continue}
+        if((Get-BoolProperty $t 'is_stale')){continue}
         $base=Get-StringProperty $t 'base'
         $target=Get-StringProperty $t 'target'
         if(-not $base.Equals($BaseSymbol,[StringComparison]::OrdinalIgnoreCase)){continue}
@@ -99,18 +100,23 @@ function Get-BridgeDecision {
 }
 
 function Invoke-SelfTest {
-    $ticker=[pscustomobject]@{base='ABC';target='USD';coin_id='coin-a';is_anomaly=$false;market=[pscustomobject]@{identifier='kraken'}}
+    $ticker=[pscustomobject]@{base='ABC';target='USD';coin_id='coin-a';is_anomaly=$false;is_stale=$false;market=[pscustomobject]@{identifier='kraken'}}
     $r=Get-BridgeDecision -CandidateIds @('coin-a','coin-b') -Tickers @($ticker) -BaseSymbol 'ABC' -QuoteSymbols @('USD')
     if($r.decision -ne 'APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE' -or $r.approved_candidate_id -ne 'coin-a'){throw 'bridge decision'}
-    $ticker2=[pscustomobject]@{base='ABC';target='USD';coin_id='coin-b';is_anomaly=$false;market=[pscustomobject]@{identifier='kraken'}}
+    $ticker2=[pscustomobject]@{base='ABC';target='USD';coin_id='coin-b';is_anomaly=$false;is_stale=$false;market=[pscustomobject]@{identifier='kraken'}}
     $r2=Get-BridgeDecision -CandidateIds @('coin-a','coin-b') -Tickers @($ticker,$ticker2) -BaseSymbol 'ABC' -QuoteSymbols @('USD')
     if($r2.decision -ne 'UNVERIFIED_MULTIPLE_KRAKEN_PAIR_BRIDGES'){throw 'ambiguous bridge'}
+    $stale=[pscustomobject]@{base='ABC';target='USD';coin_id='coin-a';is_anomaly=$false;is_stale=$true;market=[pscustomobject]@{identifier='kraken'}}
+    $r3=Get-BridgeDecision -CandidateIds @('coin-a') -Tickers @($stale) -BaseSymbol 'ABC' -QuoteSymbols @('USD')
+    if($r3.decision -ne 'UNVERIFIED_NO_CURRENT_KRAKEN_PAIR_BRIDGE'){throw 'stale ticker exclusion'}
     Write-Host 'SELF-TEST: PASS'
 }
 
 if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
 
 $client=$null
+$keyBstr=[IntPtr]::Zero
+$demoKey=$null
 try {
     if([string]::IsNullOrWhiteSpace($RepoRoot)){$RepoRoot=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))}
     $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
@@ -132,10 +138,20 @@ try {
         $pairByBase[$id].quote_symbols[[string]$p.quote_exchange_symbol]=$true
     }
 
+    $demoKey=[string]$env:CG_DEMO_API_KEY
+    if([string]::IsNullOrWhiteSpace($demoKey)){
+        $secureKey=Read-Host 'CoinGecko Demo API key' -AsSecureString
+        $keyBstr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+        $demoKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyBstr)
+    }
+    if([string]::IsNullOrWhiteSpace($demoKey)){throw 'CoinGecko Demo API key is required.'}
+
     $handler=New-Object System.Net.Http.HttpClientHandler
     $client=New-Object System.Net.Http.HttpClient -ArgumentList $handler
     $client.Timeout=[TimeSpan]::FromSeconds(120)
     [void]$client.DefaultRequestHeaders.UserAgent.ParseAdd('CFA-identity-evidence/1.0')
+    [void]$client.DefaultRequestHeaders.Add('x-cg-demo-api-key',$demoKey)
+    $demoKey=$null
 
     Write-Host 'Acquiring CoinGecko active coins list...'
     $coinsJson=Invoke-CgGet -Client $client -Url $CoinsListUrl
@@ -143,6 +159,7 @@ try {
     $coins=@($coinsJson|ConvertFrom-Json)
     $coinById=@{}
     foreach($coin in $coins){$id=Get-StringProperty $coin 'id';if(-not [string]::IsNullOrWhiteSpace($id)){$coinById[$id]=$coin}}
+    Start-Sleep -Milliseconds $RequestDelayMilliseconds
 
     $allTickers=@();$pageFiles=@();$page=1
     while($page -le $MaxTickerPages){
@@ -179,7 +196,7 @@ try {
     $sourceRows=@();$sourceRows += [pscustomobject]@{file_name='coins-list.json';sha256=(Get-FileHash $coinsPath -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item $coinsPath).Length;record_count=$coins.Count;source_url=$CoinsListUrl}
     foreach($pf in $pageFiles){$pageNo=[int]([regex]::Match([System.IO.Path]::GetFileName($pf),'(\d{3})').Groups[1].Value);$json=[System.IO.File]::ReadAllText($pf);$o=$json|ConvertFrom-Json;$sourceRows += [pscustomobject]@{file_name=[System.IO.Path]::GetFileName($pf);sha256=(Get-FileHash $pf -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item $pf).Length;record_count=@($o.tickers).Count;source_url=$KrakenTickersTemplate.Replace('{page}',[string]$pageNo)}}
     $sourceRows|Export-Csv -LiteralPath (Join-Path $runDir 'source-files.csv') -NoTypeInformation -Encoding UTF8
-    @([pscustomobject]@{run_id=$runId;coins_list_records=$coins.Count;kraken_ticker_records=$allTickers.Count;ticker_pages=$pageFiles.Count;approved_current_kraken_pair_bridge=$approve;unverified_multiple_bridges=$multi;unverified_no_bridge=$noBridge;candidate_assets=$candidates.Count;retrieved_at_utc=[datetimeoffset]::UtcNow.ToString('o')}) | Export-Csv -LiteralPath (Join-Path $runDir 'run-summary.csv') -NoTypeInformation -Encoding UTF8
+    @([pscustomobject]@{run_id=$runId;api_tier='public_demo';authentication='x-cg-demo-api-key_header';coins_list_records=$coins.Count;kraken_ticker_records=$allTickers.Count;ticker_pages=$pageFiles.Count;approved_current_kraken_pair_bridge=$approve;unverified_multiple_bridges=$multi;unverified_no_bridge=$noBridge;candidate_assets=$candidates.Count;retrieved_at_utc=[datetimeoffset]::UtcNow.ToString('o')}) | Export-Csv -LiteralPath (Join-Path $runDir 'run-summary.csv') -NoTypeInformation -Encoding UTF8
     Write-Host "Evidence directory: $runDir"
     Write-Host "Candidate assets: $($candidates.Count)"
     Write-Host "Kraken ticker records: $($allTickers.Count)"
@@ -189,4 +206,8 @@ try {
     Write-Host 'CFA COINGECKO IDENTITY EVIDENCE ACQUISITION: PASS'
 }
 catch{Write-Host 'CFA COINGECKO IDENTITY EVIDENCE ACQUISITION: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}
-finally{if($null -ne $client){$client.Dispose()}}
+finally{
+    $demoKey=$null
+    if($keyBstr -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyBstr)}
+    if($null -ne $client){$client.Dispose()}
+}
