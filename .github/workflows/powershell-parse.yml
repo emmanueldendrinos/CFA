@@ -30,22 +30,14 @@ jobs:
           Get-ChildItem -Path scripts -Recurse -Filter *.ps1 | ForEach-Object {
             $tokens = $null
             $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile(
-              $_.FullName,
-              [ref]$tokens,
-              [ref]$errors
-            ) | Out-Null
-
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
               $failed = $true
               Write-Host "Parse errors in $($_.FullName):"
               $errors | ForEach-Object { Write-Host $_.Message }
             }
           }
-
-          if ($failed) {
-            throw 'One or more PowerShell files failed to parse under PowerShell 7.'
-          }
+          if ($failed) { throw 'One or more PowerShell files failed to parse under PowerShell 7.' }
 
       - name: Parse scripts with Windows PowerShell 5.1
         shell: powershell
@@ -54,22 +46,14 @@ jobs:
           Get-ChildItem -Path scripts -Recurse -Filter *.ps1 | ForEach-Object {
             $tokens = $null
             $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile(
-              $_.FullName,
-              [ref]$tokens,
-              [ref]$errors
-            ) | Out-Null
-
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
               $failed = $true
               Write-Host "Parse errors in $($_.FullName):"
               $errors | ForEach-Object { Write-Host $_.Message }
             }
           }
-
-          if ($failed) {
-            throw 'One or more PowerShell files failed to parse under Windows PowerShell 5.1.'
-          }
+          if ($failed) { throw 'One or more PowerShell files failed to parse under Windows PowerShell 5.1.' }
 
       - name: Runtime self-test Kraken reconciliation under Windows PowerShell 5.1
         shell: powershell
@@ -98,6 +82,10 @@ jobs:
       - name: Runtime self-test news acquisition diagnosis under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaNewsAcquisition.ps1 -SelfTest
+
+      - name: Runtime self-test Stage 1 runner under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage1.ps1 -SelfTest
 
       - name: Export current CFA SoT authority snapshot
         shell: powershell
@@ -129,9 +117,7 @@ jobs:
           $staged = @(git diff --cached --name-only)
           if ($staged.Count -gt 0) {
             foreach ($path in $staged) {
-              if ($allowed -notcontains $path) {
-                throw "Unexpected staged path: $path"
-              }
+              if ($allowed -notcontains $path) { throw "Unexpected staged path: $path" }
             }
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
