@@ -14,21 +14,29 @@ $ErrorActionPreference = 'Stop'
 function Find-Psql {
     $cmd = Get-Command 'psql.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $cmd) { return $cmd.Source }
+
     $found = @(Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' -File -ErrorAction SilentlyContinue | Sort-Object FullName -Descending)
     if ($found.Count -eq 0) { throw 'psql.exe could not be found.' }
     return $found[0].FullName
 }
 
 function Invoke-PsqlText {
-    param([string]$PsqlExe,[string]$Database,[string]$Sql)
+    param(
+        [Parameter(Mandatory)][string]$PsqlExe,
+        [Parameter(Mandatory)][string]$Database,
+        [Parameter(Mandatory)][string]$Sql
+    )
+
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
         $stdout = @(& $PsqlExe -X -h $PgHost -p $PgPort -U $PgUser -d $Database -A -t -q -v ON_ERROR_STOP=1 -c $Sql 2> $errFile)
         $exitCode = $LASTEXITCODE
         $stderr = ''
+
         if (Test-Path -LiteralPath $errFile) {
             $stderr = ((Get-Content -LiteralPath $errFile -ErrorAction SilentlyContinue) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
         }
+
         $text = ($stdout | ForEach-Object { if ($null -ne $_) { [string]$_ } }) -join [Environment]::NewLine
         if ($exitCode -ne 0) {
             $message = if ([string]::IsNullOrWhiteSpace($stderr)) { $text } else { $stderr }
@@ -36,11 +44,18 @@ function Invoke-PsqlText {
         }
         return $text
     }
-    finally { Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue }
+    finally {
+        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-PsqlCsv {
-    param([string]$PsqlExe,[string]$Database,[string]$Query)
+    param(
+        [Parameter(Mandatory)][string]$PsqlExe,
+        [Parameter(Mandatory)][string]$Database,
+        [Parameter(Mandatory)][string]$Query
+    )
+
     return Invoke-PsqlText -PsqlExe $PsqlExe -Database $Database -Sql "COPY (`n$Query`n) TO STDOUT WITH (FORMAT CSV, HEADER TRUE);"
 }
 
@@ -52,12 +67,15 @@ function Normalize-MemberPath {
 
 function Get-StreamSha256 {
     param([Parameter(Mandatory)][System.IO.Stream]$Stream)
+
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
         $hash = $sha.ComputeHash($Stream)
         return ([System.BitConverter]::ToString($hash)).Replace('-','').ToLowerInvariant()
     }
-    finally { $sha.Dispose() }
+    finally {
+        $sha.Dispose()
+    }
 }
 
 function Get-FileSha256 {
@@ -66,13 +84,29 @@ function Get-FileSha256 {
 }
 
 $oldPassword = $env:PGPASSWORD
+$oldPgOptions = $env:PGOPTIONS
 $bstr = [IntPtr]::Zero
 
 try {
     $documents = [Environment]::GetFolderPath('MyDocuments')
-    if ([string]::IsNullOrWhiteSpace($SourceRoot)) { $SourceRoot = Join-Path $documents 'Projects\Kraken' }
-    if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $documents 'CFA-local\kraken-reconciliation' }
-    if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) { throw "Kraken source root does not exist: $SourceRoot" }
+    if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
+        $SourceRoot = Join-Path $documents 'Projects\Kraken'
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+        $OutputRoot = Join-Path $documents 'CFA-local\kraken-reconciliation'
+    }
+    if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) {
+        throw "Kraken source root does not exist: $SourceRoot"
+    }
+
+    # Windows PowerShell 5.1 does not reliably preload these assemblies.
+    # Load both explicitly before any ZIP types are referenced at runtime.
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+
+    if ($null -eq ('System.IO.Compression.ZipFile' -as [type])) {
+        throw 'System.IO.Compression.ZipFile is unavailable after loading compression assemblies.'
+    }
 
     $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).ProviderPath
     $runDir = Join-Path $OutputRoot ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
@@ -104,6 +138,7 @@ SELECT
 FROM asrp.q2_import_runs
 ORDER BY import_run_id
 '@
+
     $membersCsv = Invoke-PsqlCsv -PsqlExe $psql -Database 'asrp' -Query @'
 SELECT
     import_run_id,
@@ -122,6 +157,7 @@ ORDER BY import_run_id, source_member_ordinal
 
     $runs = @($runsCsv | ConvertFrom-Csv)
     $members = @($membersCsv | ConvertFrom-Csv)
+
     if ($runs.Count -eq 0) { throw 'No rows found in asrp.q2_import_runs.' }
     if ($members.Count -eq 0) { throw 'No rows found in asrp.q2_import_members.' }
 
@@ -131,56 +167,111 @@ ORDER BY import_run_id, source_member_ordinal
 
     foreach ($m in $members) {
         $ordinal = [string]$m.source_member_ordinal
-        $normalized = Normalize-MemberPath ([string]$m.member_path_raw)
-        $baseName = [System.IO.Path]::GetFileName(([string]$m.member_path_raw)).ToLowerInvariant()
+        $rawPath = [string]$m.member_path_raw
+        $normalized = Normalize-MemberPath $rawPath
+        $baseName = [System.IO.Path]::GetFileName($rawPath).ToLowerInvariant()
+
         $expectedHash = [string]$m.expected_content_sha256
-        if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') { $expectedHash = [string]$m.observed_content_sha256 }
+        if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') {
+            $expectedHash = [string]$m.observed_content_sha256
+        }
+        if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "No valid expected/observed SHA-256 for source member ordinal $ordinal."
+        }
         $expectedHash = $expectedHash.ToLowerInvariant()
 
         $record = [pscustomobject]@{
             ordinal = $ordinal
-            member_path_raw = [string]$m.member_path_raw
+            member_path_raw = $rawPath
             normalized_path = $normalized
             base_name = $baseName
             expected_sha256 = $expectedHash
         }
+
         $expectedByNormalizedPath[$normalized] = $record
-        if (-not $expectedByBaseName.ContainsKey($baseName)) { $expectedByBaseName[$baseName] = New-Object System.Collections.Generic.List[object] }
+        if (-not $expectedByBaseName.ContainsKey($baseName)) {
+            $expectedByBaseName[$baseName] = New-Object System.Collections.Generic.List[object]
+        }
         $expectedByBaseName[$baseName].Add($record)
         $memberResults[$ordinal] = New-Object System.Collections.Generic.List[object]
     }
 
-    $localFiles = @(Get-ChildItem -LiteralPath $SourceRoot -File -Recurse -Force | Sort-Object FullName)
+    $allLocalFiles = @(Get-ChildItem -LiteralPath $SourceRoot -File -Recurse -Force | Sort-Object FullName)
+    if ($allLocalFiles.Count -eq 0) {
+        throw "No source files found under $SourceRoot"
+    }
+
+    # Prefer the exact archive filename recorded by PostgreSQL. This avoids
+    # hashing/opening unrelated Kraken quarters. If it is absent, fall back to
+    # ZIP files so renamed copies can still be investigated.
+    $expectedArchiveNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($run in $runs) {
+        $archivePath = [string]$run.source_archive_relative_path
+        if (-not [string]::IsNullOrWhiteSpace($archivePath)) {
+            $archiveName = [System.IO.Path]::GetFileName($archivePath)
+            if (-not [string]::IsNullOrWhiteSpace($archiveName)) {
+                [void]$expectedArchiveNames.Add($archiveName)
+            }
+        }
+    }
+
+    $exactArchiveCandidates = @(
+        $allLocalFiles | Where-Object { $expectedArchiveNames.Contains($_.Name) }
+    )
+
+    if ($exactArchiveCandidates.Count -gt 0) {
+        $filesToInspect = $exactArchiveCandidates
+        Write-Host "Recorded archive filename found locally; inspecting only $($filesToInspect.Count) exact candidate(s)."
+    }
+    else {
+        $filesToInspect = @($allLocalFiles | Where-Object { $_.Extension -ieq '.zip' })
+        Write-Host 'Recorded archive filename not found locally; falling back to all ZIP files.'
+    }
+
+    if ($filesToInspect.Count -eq 0) {
+        throw 'No candidate source archive files were found.'
+    }
+
     $localInventory = New-Object System.Collections.Generic.List[object]
     $candidateCount = 0
 
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-
-    foreach ($file in $localFiles) {
+    foreach ($file in $filesToInspect) {
         $relative = $file.FullName.Substring($SourceRoot.TrimEnd('\','/').Length).TrimStart('\','/').Replace('\','/')
         $extension = $file.Extension.ToLowerInvariant()
-        Write-Host "Inspecting source file: $relative"
 
+        Write-Host "Inspecting source file: $relative"
         $fileHash = Get-FileSha256 -Path $file.FullName
-        $localInventory.Add([pscustomobject]@{ relative_path=$relative; size_bytes=$file.Length; sha256=$fileHash; kind=if($extension -eq '.zip'){'ZIP'}else{'FILE'} })
+
+        $localInventory.Add([pscustomobject]@{
+            relative_path = $relative
+            size_bytes = $file.Length
+            sha256 = $fileHash
+            kind = if ($extension -eq '.zip') { 'ZIP' } else { 'FILE' }
+        })
 
         if ($extension -eq '.zip') {
-            $stream = $null
             $archive = $null
             try {
-                $stream = [System.IO.File]::Open($file.FullName,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::Read)
-                $archive = New-Object System.IO.Compression.ZipArchive($stream,[System.IO.Compression.ZipArchiveMode]::Read,$false)
+                # ZipFile.OpenRead is supported by Windows PowerShell 5.1 once
+                # System.IO.Compression and FileSystem are explicitly loaded.
+                $archive = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
+
                 foreach ($entry in $archive.Entries) {
                     if ([string]::IsNullOrEmpty($entry.Name)) { continue }
+
                     $entryNorm = Normalize-MemberPath $entry.FullName
                     $entryBase = $entry.Name.ToLowerInvariant()
                     $targets = New-Object System.Collections.Generic.List[object]
+
                     if ($expectedByNormalizedPath.ContainsKey($entryNorm)) {
                         $targets.Add($expectedByNormalizedPath[$entryNorm])
                     }
                     elseif ($expectedByBaseName.ContainsKey($entryBase)) {
-                        foreach ($t in $expectedByBaseName[$entryBase]) { $targets.Add($t) }
+                        foreach ($target in $expectedByBaseName[$entryBase]) {
+                            $targets.Add($target)
+                        }
                     }
+
                     if ($targets.Count -eq 0) { continue }
 
                     $candidateCount++
@@ -189,28 +280,36 @@ ORDER BY import_run_id, source_member_ordinal
                         $entryStream = $entry.Open()
                         $entryHash = Get-StreamSha256 -Stream $entryStream
                     }
-                    finally { if ($null -ne $entryStream) { $entryStream.Dispose() } }
+                    finally {
+                        if ($null -ne $entryStream) { $entryStream.Dispose() }
+                    }
 
-                    foreach ($t in $targets) {
-                        $match = ($entryHash -eq $t.expected_sha256)
-                        $memberResults[$t.ordinal].Add([pscustomobject]@{
-                            source_container=$relative; local_member_path=$entry.FullName; local_sha256=$entryHash; expected_sha256=$t.expected_sha256; hash_match=$match
+                    foreach ($target in $targets) {
+                        $memberResults[$target.ordinal].Add([pscustomobject]@{
+                            source_container = $relative
+                            local_member_path = $entry.FullName
+                            local_sha256 = $entryHash
+                            expected_sha256 = $target.expected_sha256
+                            hash_match = ($entryHash -eq $target.expected_sha256)
                         })
                     }
                 }
             }
             finally {
                 if ($null -ne $archive) { $archive.Dispose() }
-                if ($null -ne $stream) { $stream.Dispose() }
             }
         }
         else {
             $base = $file.Name.ToLowerInvariant()
             if ($expectedByBaseName.ContainsKey($base)) {
                 $candidateCount++
-                foreach ($t in $expectedByBaseName[$base]) {
-                    $memberResults[$t.ordinal].Add([pscustomobject]@{
-                        source_container=$relative; local_member_path=$relative; local_sha256=$fileHash; expected_sha256=$t.expected_sha256; hash_match=($fileHash -eq $t.expected_sha256)
+                foreach ($target in $expectedByBaseName[$base]) {
+                    $memberResults[$target.ordinal].Add([pscustomobject]@{
+                        source_container = $relative
+                        local_member_path = $relative
+                        local_sha256 = $fileHash
+                        expected_sha256 = $target.expected_sha256
+                        hash_match = ($fileHash -eq $target.expected_sha256)
                     })
                 }
             }
@@ -218,23 +317,46 @@ ORDER BY import_run_id, source_member_ordinal
     }
 
     $resultRows = New-Object System.Collections.Generic.List[object]
-    $matched = 0; $missing = 0; $mismatched = 0; $ambiguous = 0
+    $matched = 0
+    $missing = 0
+    $mismatched = 0
+    $ambiguous = 0
+
     foreach ($m in $members) {
         $ordinal = [string]$m.source_member_ordinal
         $candidates = $memberResults[$ordinal]
         $matches = @($candidates | Where-Object { $_.hash_match -eq $true })
-        if ($matches.Count -eq 1) { $status='PASS'; $matched++ }
-        elseif ($matches.Count -gt 1) { $status='AMBIGUOUS'; $ambiguous++ }
-        elseif ($candidates.Count -eq 0) { $status='MISSING'; $missing++ }
-        else { $status='HASH_MISMATCH'; $mismatched++ }
+
+        if ($matches.Count -eq 1) {
+            $status = 'PASS'
+            $matched++
+        }
+        elseif ($matches.Count -gt 1) {
+            $status = 'AMBIGUOUS'
+            $ambiguous++
+        }
+        elseif ($candidates.Count -eq 0) {
+            $status = 'MISSING'
+            $missing++
+        }
+        else {
+            $status = 'HASH_MISMATCH'
+            $mismatched++
+        }
+
+        $expectedHash = [string]$m.expected_content_sha256
+        if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') {
+            $expectedHash = [string]$m.observed_content_sha256
+        }
+
         $resultRows.Add([pscustomobject]@{
-            source_member_ordinal=$ordinal
-            member_path_raw=[string]$m.member_path_raw
-            expected_sha256=if(([string]$m.expected_content_sha256) -match '^[0-9a-fA-F]{64}$'){([string]$m.expected_content_sha256).ToLowerInvariant()}else{([string]$m.observed_content_sha256).ToLowerInvariant()}
-            candidate_count=$candidates.Count
-            matching_candidate_count=$matches.Count
-            status=$status
-            matching_locations=($matches | ForEach-Object { "$($_.source_container)::$($_.local_member_path)" }) -join ';'
+            source_member_ordinal = $ordinal
+            member_path_raw = [string]$m.member_path_raw
+            expected_sha256 = $expectedHash.ToLowerInvariant()
+            candidate_count = $candidates.Count
+            matching_candidate_count = $matches.Count
+            status = $status
+            matching_locations = ($matches | ForEach-Object { "$($_.source_container)::$($_.local_member_path)" }) -join ';'
         })
     }
 
@@ -242,13 +364,14 @@ ORDER BY import_run_id, source_member_ordinal
     foreach ($run in $runs) {
         $expectedArchiveHash = ([string]$run.source_archive_sha256).ToLowerInvariant()
         $matchingLocal = @($localInventory | Where-Object { $_.sha256 -eq $expectedArchiveHash })
+
         $archiveRows.Add([pscustomobject]@{
-            import_run_id=$run.import_run_id
-            source_archive_relative_path=$run.source_archive_relative_path
-            expected_source_archive_sha256=$expectedArchiveHash
-            matching_local_file_count=$matchingLocal.Count
-            matching_local_files=($matchingLocal | ForEach-Object { $_.relative_path }) -join ';'
-            status=if($matchingLocal.Count -eq 1){'PASS'}elseif($matchingLocal.Count -gt 1){'AMBIGUOUS'}else{'UNVERIFIED'}
+            import_run_id = $run.import_run_id
+            source_archive_relative_path = $run.source_archive_relative_path
+            expected_source_archive_sha256 = $expectedArchiveHash
+            matching_local_file_count = $matchingLocal.Count
+            matching_local_files = ($matchingLocal | ForEach-Object { $_.relative_path }) -join ';'
+            status = if ($matchingLocal.Count -eq 1) { 'PASS' } elseif ($matchingLocal.Count -gt 1) { 'AMBIGUOUS' } else { 'UNVERIFIED' }
         })
     }
 
@@ -259,7 +382,8 @@ ORDER BY import_run_id, source_member_ordinal
     Write-Host ''
     Write-Host '=== KRAKEN MEMBER RECONCILIATION ==='
     Write-Host "Database manifest members : $($members.Count)"
-    Write-Host "Local source files        : $($localFiles.Count)"
+    Write-Host "Local files discovered    : $($allLocalFiles.Count)"
+    Write-Host "Archive files inspected   : $($filesToInspect.Count)"
     Write-Host "Candidate member objects  : $candidateCount"
     Write-Host "PASS                      : $matched"
     Write-Host "MISSING                   : $missing"
@@ -279,7 +403,21 @@ catch {
     Write-Host $_.Exception.Message
 }
 finally {
-    Remove-Item Env:PGOPTIONS -ErrorAction SilentlyContinue
-    if ($bstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-    if ($null -eq $oldPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $oldPassword }
+    if ($null -eq $oldPgOptions) {
+        Remove-Item Env:PGOPTIONS -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:PGOPTIONS = $oldPgOptions
+    }
+
+    if ($bstr -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+
+    if ($null -eq $oldPassword) {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:PGPASSWORD = $oldPassword
+    }
 }
