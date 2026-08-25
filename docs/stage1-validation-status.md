@@ -117,7 +117,38 @@ All five checks returned PASS:
 - ASRP raw rows without typed match.
 - ASRP typed rows without raw match.
 
-This establishes direct Q2 market coverage and raw-to-typed internal reconciliation for the inspected PostgreSQL stores. It does not by itself prove that the local `Documents\Kraken` files are byte-identical to the imported source archive/members.
+This establishes direct Q2 market coverage and raw-to-typed internal reconciliation for the inspected PostgreSQL stores.
+
+### Direct Kraken source reconciliation
+
+Script: `scripts/windows/Reconcile-CfaKrakenSources.ps1`
+
+Execution controls: Windows PowerShell 5.1; PostgreSQL `default_transaction_read_only=on`; no archive extraction; no Kraken file modification; no PostgreSQL object or row modification.
+
+Validated local run: `20260825-140324-a472cacf60444c0b88e398367b5fef0b`.
+
+The script inspected the exact locally present archive named by PostgreSQL lineage, `Kraken_OHLCVT_Q2_2025.zip`.
+
+#### Member reconciliation
+
+- Database manifest members: 1,059.
+- Candidate member objects: 1,059.
+- PASS: 1,059.
+- MISSING: 0.
+- HASH_MISMATCH: 0.
+- AMBIGUOUS: 0.
+- UNVERIFIED_CANDIDATE_SHAPE: 0.
+
+#### Archive reconciliation
+
+- Import run: `f86f3463-d76e-6c50-8457-74e015d2d316`.
+- PostgreSQL-recorded source path: `source\development\research_2025q2\Kraken_OHLCVT_Q2_2025.zip`.
+- Expected SHA-256: `36a1aa3a04f4ac3d700e13788372fcc1dfb7c506a2e47b0b05e8250ccd1a8e3c`.
+- Matching local files: 1.
+- Matching local file: `Kraken_OHLCVT_Q2_2025.zip`.
+- Archive status: PASS.
+
+This directly reconciles the locally present Q2 Kraken archive and all 1,059 PostgreSQL manifest members to recorded import lineage. CFA-S1-006 is therefore PASS. This does not alter the separate observation that the typed/raw market relations contain 1,058 distinct data-bearing source member ordinals/pair tokens.
 
 ### News/hype acquisition state discovered during coverage verification
 
@@ -151,19 +182,21 @@ Therefore the currently present hype acquisition cannot be treated as complete: 
 | CFA-S1-003 Reference row-count revalidation | UNVERIFIED | DATA-003 directly revalidated; DATA-001/DATA-002 exact byte-local revalidation remains outstanding. |
 | CFA-S1-004 Reference byte-size reconciliation | FAIL | DATA-001/DATA-002 repository sizes differ from SoT-recorded sizes; cause remains unverified. |
 | CFA-S1-005 Reference SHA-256 reconciliation | UNVERIFIED | DATA-003 SHA-256 revalidated; DATA-001/DATA-002 byte-preserved hashes remain outstanding. |
-| CFA-S1-006 Original Kraken quarters | UNVERIFIED | Local availability reported at `Documents\Kraken`; source archive/member hashes have not yet been directly reconciled to PostgreSQL import lineage. |
+| CFA-S1-006 Original Kraken quarters | PASS | Exact local Q2 archive SHA-256 matches PostgreSQL import lineage; all 1,059 manifest members reconcile PASS with zero missing, mismatched, ambiguous, or unverified-shape members. |
 | CFA-S1-007 PostgreSQL market/news availability | PASS | PostgreSQL 18.4 read-only discovery and direct table inspection succeeded. Availability does not imply source completeness. |
 | CFA-S1-008 Direct market coverage | PASS | 14,055,089 exact Q2 rows; 1,058 member paths/pair tokens; exact Q2 UTC boundaries; zero window/alignment/quality/duplicate failures; raw↔typed bounded reconciliation PASS; SRP exact row/time/pair coverage reconciles. |
-| CFA-S1-009 Advance to identity approval | BLOCKED | CFA-S1-003/004/005/006 and CFA-S1-010 remain unresolved. |
+| CFA-S1-009 Advance to identity approval | BLOCKED | CFA-S1-003/004/005 and CFA-S1-010 remain unresolved. |
 | CFA-S1-010 News source acquisition completeness | FAIL | Hype run remains `running`, completion timestamp is null, exact acquisition-object rows are 368 versus 7,283 selected/expected objects. |
 
 ## Current decision
 
-A full Kraken reload is **not authorized or required at this point**. The existing PostgreSQL Q2 market stores have passed direct market coverage and internal raw-to-typed integrity checks. Reuse of those stores still requires byte/source reconciliation against `Documents\Kraken` under CFA-S1-006.
+A full Kraken reload is **not authorized or required**. The existing PostgreSQL Q2 market stores have passed direct market coverage, internal raw-to-typed integrity checks, and direct byte/source reconciliation against the locally present Q2 Kraken archive and all PostgreSQL manifest members.
+
+The project must still **not** advance to identity approval. DATA-001/DATA-002 reference reconciliation remains unresolved under CFA-S1-003/004/005, and the existing hype/news acquisition remains incomplete under CFA-S1-010.
 
 The existing hype/news stage must **not** be treated as complete or model-ready. Its acquisition completeness gate is FAIL and downstream news matching/factor work remains blocked.
 
 ## Next reproducible calculations
 
-1. Run `scripts/windows/Reconcile-CfaKrakenSources.ps1` read-only to compare local Kraken files/archive members against `asrp.q2_import_runs` and `asrp.q2_import_members` hashes without extraction or reload.
-2. Run `scripts/windows/Verify-CfaNewsSourceCoverage.ps1` read-only to produce explicit news acquisition completeness checks and timestamp coverage evidence.
+1. Run `scripts/windows/Verify-CfaNewsSourceCoverage.ps1` read-only to produce explicit news acquisition completeness checks and timestamp coverage evidence.
+2. Resolve DATA-001/DATA-002 exact row-count, byte-size, and SHA-256 reconciliation against the CFA SoT before identity approval.
