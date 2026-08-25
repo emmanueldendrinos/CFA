@@ -84,6 +84,18 @@ function Get-FileSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-CandidatePropertyNames {
+    param([AllowNull()][object]$Candidate)
+
+    if ($null -eq $Candidate) { return @() }
+
+    if ($Candidate -is [System.Collections.IDictionary]) {
+        return @($Candidate.Keys | ForEach-Object { [string]$_ })
+    }
+
+    return @($Candidate.PSObject.Properties | ForEach-Object { [string]$_.Name })
+}
+
 function Get-CandidateValue {
     param(
         [AllowNull()][object]$Candidate,
@@ -97,9 +109,10 @@ function Get-CandidateValue {
         return $null
     }
 
-    $property = $Candidate.PSObject.Properties[$Name]
-    if ($null -eq $property) { return $null }
-    return $property.Value
+    foreach ($property in $Candidate.PSObject.Properties) {
+        if ([string]$property.Name -eq $Name) { return $property.Value }
+    }
+    return $null
 }
 
 function Test-CandidateRecord {
@@ -107,15 +120,27 @@ function Test-CandidateRecord {
 
     if ($null -eq $Candidate) { return $false }
 
+    $propertyNames = @(Get-CandidatePropertyNames -Candidate $Candidate)
     foreach ($key in @('source_container','local_member_path','local_sha256','expected_sha256','hash_match')) {
-        if ($Candidate -is [System.Collections.IDictionary]) {
-            if (-not $Candidate.Contains($key)) { return $false }
-        }
-        elseif ($null -eq $Candidate.PSObject.Properties[$key]) {
-            return $false
-        }
+        if (-not ($propertyNames -contains $key)) { return $false }
     }
     return $true
+}
+
+function Get-CandidateShapeDescription {
+    param([AllowNull()][object]$Candidate)
+
+    if ($null -eq $Candidate) {
+        return [pscustomobject]@{
+            runtime_type = '<null>'
+            property_names = ''
+        }
+    }
+
+    return [pscustomobject]@{
+        runtime_type = $Candidate.GetType().FullName
+        property_names = ((Get-CandidatePropertyNames -Candidate $Candidate) -join ';')
+    }
 }
 
 function Get-MatchingLocationSummary {
@@ -184,19 +209,24 @@ function Invoke-SelfTest {
         throw 'Self-test failed: malformed candidate was accepted.'
     }
 
-    $candidateList = New-Object System.Collections.Generic.List[object]
-    $candidateList.Add($candidateHashtable)
-    $candidateList.Add($candidateObject)
-    $candidateList.Add($candidateMalformed)
+    # Mirror the real reconciliation storage path exactly: a hashtable of arrays.
+    # Avoid Generic.List[object] here because Windows PowerShell collection adaptation
+    # can vary by runtime and is not required for this bounded workload.
+    $candidateStore = @{}
+    $candidateStore['1'] = @()
+    $candidateStore['1'] = @($candidateStore['1']) + ,$candidateHashtable
+    $candidateStore['1'] = @($candidateStore['1']) + ,$candidateObject
+    $candidateStore['1'] = @($candidateStore['1']) + ,$candidateMalformed
 
+    $candidateList = @($candidateStore['1'])
     $validCandidates = @($candidateList | Where-Object { Test-CandidateRecord -Candidate $_ })
     if ($validCandidates.Count -ne 2) {
-        throw "Self-test failed: expected two valid candidates after Generic.List pipeline round-trip, found $($validCandidates.Count)."
+        throw "Self-test failed: expected two valid candidates after hashtable/array storage round-trip, found $($validCandidates.Count)."
     }
 
     $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
     if ($matches.Count -ne 2) {
-        throw "Self-test failed: expected two hash matches after Generic.List pipeline round-trip, found $($matches.Count)."
+        throw "Self-test failed: expected two hash matches after hashtable/array storage round-trip, found $($matches.Count)."
     }
 
     $locationSummary = Get-MatchingLocationSummary -Matches @($candidateHashtable,$candidateObject,$candidateMalformed)
@@ -361,7 +391,7 @@ ORDER BY import_run_id, source_member_ordinal
             $expectedByBaseName[$baseName] = New-Object System.Collections.Generic.List[object]
         }
         $expectedByBaseName[$baseName].Add($record)
-        $memberResults[$ordinal] = New-Object System.Collections.Generic.List[object]
+        $memberResults[$ordinal] = @()
     }
 
     $allLocalFiles = @(Get-ChildItem -LiteralPath $SourceRoot -File -Recurse -Force | Sort-Object FullName)
@@ -451,13 +481,14 @@ ORDER BY import_run_id, source_member_ordinal
                     foreach ($target in $targets) {
                         $targetOrdinal = [string]$target['ordinal']
                         $targetExpectedHash = [string]$target['expected_sha256']
-                        $memberResults[$targetOrdinal].Add([pscustomobject]@{
+                        $candidate = [pscustomobject]@{
                             source_container = $relative
                             local_member_path = $entry.FullName
                             local_sha256 = $entryHash
                             expected_sha256 = $targetExpectedHash
                             hash_match = ($entryHash -eq $targetExpectedHash)
-                        })
+                        }
+                        $memberResults[$targetOrdinal] = @($memberResults[$targetOrdinal]) + ,$candidate
                     }
                 }
             }
@@ -472,19 +503,21 @@ ORDER BY import_run_id, source_member_ordinal
                 foreach ($target in $expectedByBaseName[$base]) {
                     $targetOrdinal = [string]$target['ordinal']
                     $targetExpectedHash = [string]$target['expected_sha256']
-                    $memberResults[$targetOrdinal].Add([pscustomobject]@{
+                    $candidate = [pscustomobject]@{
                         source_container = $relative
                         local_member_path = $relative
                         local_sha256 = $fileHash
                         expected_sha256 = $targetExpectedHash
                         hash_match = ($fileHash -eq $targetExpectedHash)
-                    })
+                    }
+                    $memberResults[$targetOrdinal] = @($memberResults[$targetOrdinal]) + ,$candidate
                 }
             }
         }
     }
 
     $resultRows = New-Object System.Collections.Generic.List[object]
+    $shapeDiagnostics = New-Object System.Collections.Generic.List[object]
     $matched = 0
     $missing = 0
     $mismatched = 0
@@ -493,10 +526,21 @@ ORDER BY import_run_id, source_member_ordinal
 
     foreach ($m in $members) {
         $ordinal = [string]$m.source_member_ordinal
-        $candidates = $memberResults[$ordinal]
+        $candidates = @($memberResults[$ordinal])
         $validCandidates = @($candidates | Where-Object { Test-CandidateRecord -Candidate $_ })
-        $invalidCandidateCount = $candidates.Count - $validCandidates.Count
+        $invalidCandidates = @($candidates | Where-Object { -not (Test-CandidateRecord -Candidate $_) })
+        $invalidCandidateCount = $invalidCandidates.Count
         $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
+
+        foreach ($invalidCandidate in $invalidCandidates) {
+            $shape = Get-CandidateShapeDescription -Candidate $invalidCandidate
+            $shapeDiagnostics.Add([pscustomobject]@{
+                source_member_ordinal = $ordinal
+                member_path_raw = [string]$m.member_path_raw
+                runtime_type = [string]$shape.runtime_type
+                property_names = [string]$shape.property_names
+            })
+        }
 
         if ($invalidCandidateCount -gt 0) {
             $status = 'UNVERIFIED_CANDIDATE_SHAPE'
@@ -562,6 +606,7 @@ ORDER BY import_run_id, source_member_ordinal
     $localInventory | Export-Csv -LiteralPath (Join-Path $runDir 'local-file-inventory.csv') -NoTypeInformation -Encoding UTF8
     $resultRows | Export-Csv -LiteralPath (Join-Path $runDir 'member-reconciliation.csv') -NoTypeInformation -Encoding UTF8
     $archiveRows | Export-Csv -LiteralPath (Join-Path $runDir 'archive-reconciliation.csv') -NoTypeInformation -Encoding UTF8
+    $shapeDiagnostics | Export-Csv -LiteralPath (Join-Path $runDir 'candidate-shape-diagnostics.csv') -NoTypeInformation -Encoding UTF8
 
     Write-Host ''
     Write-Host '=== KRAKEN MEMBER RECONCILIATION ==='
@@ -574,6 +619,13 @@ ORDER BY import_run_id, source_member_ordinal
     Write-Host "HASH_MISMATCH                   : $mismatched"
     Write-Host "AMBIGUOUS                       : $ambiguous"
     Write-Host "UNVERIFIED_CANDIDATE_SHAPE      : $shapeUnverified"
+
+    if ($shapeDiagnostics.Count -gt 0) {
+        Write-Host ''
+        Write-Host 'First invalid candidate shape:'
+        $shapeDiagnostics | Select-Object -First 1 | Format-List source_member_ordinal,member_path_raw,runtime_type,property_names
+    }
+
     Write-Host ''
     Write-Host '=== ARCHIVE RECONCILIATION ==='
     $archiveRows | Format-List import_run_id,source_archive_relative_path,expected_source_archive_sha256,matching_local_file_count,matching_local_files,status
