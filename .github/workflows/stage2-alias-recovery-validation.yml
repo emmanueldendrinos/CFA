@@ -1,0 +1,58 @@
+name: Stage 2 Alias Recovery Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Recover-CfaStage2AliasObservations.ps1'
+      - 'scripts/windows/Publish-CfaStage2AliasRecovery.ps1'
+      - 'scripts/windows/Sync-CfaStage2AliasRecovery.ps1'
+      - 'scripts/windows/Run-CfaStage2AliasRecovery.ps1'
+      - '.github/workflows/stage2-alias-recovery-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Recover-CfaStage2AliasObservations.ps1'
+      - 'scripts/windows/Publish-CfaStage2AliasRecovery.ps1'
+      - 'scripts/windows/Sync-CfaStage2AliasRecovery.ps1'
+      - 'scripts/windows/Run-CfaStage2AliasRecovery.ps1'
+      - '.github/workflows/stage2-alias-recovery-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse recovery scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          $failed=$false
+          Get-ChildItem scripts/windows -Filter '*CfaStage2AliasRecovery*.ps1' | ForEach-Object {
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$failed=$true;Write-Host "Parse errors in $($_.Name)";$errors|ForEach-Object{Write-Host $_.Message}}
+          }
+          if($failed){throw 'Recovery scripts failed PowerShell 7 parse.'}
+      - name: Parse recovery scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed=$false
+          Get-ChildItem scripts/windows -Filter '*CfaStage2AliasRecovery*.ps1' | ForEach-Object {
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$failed=$true;Write-Host "Parse errors in $($_.Name)";$errors|ForEach-Object{Write-Host $_.Message}}
+          }
+          if($failed){throw 'Recovery scripts failed Windows PowerShell 5.1 parse.'}
+      - name: Self-test recovery observer
+        shell: powershell
+        run: .\scripts\windows\Recover-CfaStage2AliasObservations.ps1 -SelfTest
+      - name: Self-test recovery publisher
+        shell: powershell
+        run: .\scripts\windows\Publish-CfaStage2AliasRecovery.ps1 -SelfTest
+      - name: Self-test recovery sync
+        shell: powershell
+        run: .\scripts\windows\Sync-CfaStage2AliasRecovery.ps1 -SelfTest
+      - name: Self-test recovery runner
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage2AliasRecovery.ps1 -SelfTest
