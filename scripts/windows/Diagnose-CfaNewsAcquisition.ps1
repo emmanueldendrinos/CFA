@@ -40,9 +40,28 @@ function Invoke-PsqlText {
     finally { Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue }
 }
 
+function Normalize-SqlSubquery {
+    param([AllowEmptyString()][string]$Query)
+
+    if ([string]::IsNullOrWhiteSpace($Query)) {
+        throw 'SQL subquery is empty.'
+    }
+
+    $normalized = $Query.Trim()
+    while ($normalized.EndsWith(';')) {
+        $normalized = $normalized.Substring(0, $normalized.Length - 1).TrimEnd()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        throw 'SQL subquery contains no statement after trimming terminators.'
+    }
+    return $normalized
+}
+
 function Invoke-PsqlCsv {
     param([string]$PsqlExe,[string]$Database,[string]$Query)
-    return Invoke-PsqlText -PsqlExe $PsqlExe -Database $Database -Sql "COPY (`n$Query`n) TO STDOUT WITH (FORMAT CSV, HEADER TRUE);"
+    $subquery = Normalize-SqlSubquery -Query $Query
+    return Invoke-PsqlText -PsqlExe $PsqlExe -Database $Database -Sql "COPY (`n$subquery`n) TO STDOUT WITH (FORMAT CSV, HEADER TRUE);"
 }
 
 function Get-StopClassification {
@@ -72,6 +91,22 @@ function Invoke-SelfTest {
     if ((Get-DuplicateHashStatus -DuplicateHashGroupCount 1) -ne 'FAIL') {
         throw 'Self-test failed: duplicate-hash FAIL classification was incorrect.'
     }
+
+    if ((Normalize-SqlSubquery -Query "SELECT 1;`r`n") -ne 'SELECT 1') {
+        throw 'Self-test failed: trailing SQL terminator was not stripped.'
+    }
+    if ((Normalize-SqlSubquery -Query "SELECT ';' AS literal_value;") -ne "SELECT ';' AS literal_value") {
+        throw 'Self-test failed: embedded SQL semicolon was changed.'
+    }
+    if ((Normalize-SqlSubquery -Query 'SELECT 1') -ne 'SELECT 1') {
+        throw 'Self-test failed: unterminated SQL was changed.'
+    }
+    $emptyBlocked = $false
+    try { [void](Normalize-SqlSubquery -Query ' ; ') } catch { $emptyBlocked = $true }
+    if (-not $emptyBlocked) {
+        throw 'Self-test failed: terminator-only SQL was not blocked.'
+    }
+
     Write-Host 'SELF-TEST: PASS'
 }
 
