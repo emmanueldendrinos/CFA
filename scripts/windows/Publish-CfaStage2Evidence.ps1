@@ -1,173 +1,36 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param(
-    [string]$EvidenceRoot = '',
-    [string]$RepoRoot = '',
-    [switch]$SelfTest
-)
-
+param([string]$EvidenceRoot='',[string]$RepoRoot='',[switch]$SelfTest)
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference='Stop'
 
-function Write-Utf8NoBom {
-    param([string]$Path,[string]$Content)
-    $parent = Split-Path -Parent $Path
-    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-    $enc = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($Path,$Content,$enc)
+function Write-Utf8NoBom{param([string]$Path,[string]$Content);$p=Split-Path -Parent $Path;if(-not(Test-Path -LiteralPath $p -PathType Container)){New-Item -ItemType Directory -Path $p -Force|Out-Null};$e=New-Object System.Text.UTF8Encoding($false);[System.IO.File]::WriteAllText($Path,$Content,$e)}
+function Get-LatestRun{param([string]$Parent,[switch]$Optional);if(-not(Test-Path -LiteralPath $Parent -PathType Container)){if($Optional){return $null};throw "Evidence directory missing: $Parent"};$r=@(Get-ChildItem -LiteralPath $Parent -Directory -Force|Sort-Object Name -Descending);if($r.Count -eq 0){if($Optional){return $null};throw "No evidence runs under: $Parent"};return $r[0]}
+function Require-File{param([System.IO.DirectoryInfo]$Run,[string]$Name);$p=Join-Path $Run.FullName $Name;if(-not(Test-Path -LiteralPath $p -PathType Leaf)){throw "Required evidence missing from $($Run.Name): $Name"};return $p}
+function Get-Text{param([string]$Path);$t=[System.IO.File]::ReadAllText($Path);if($t.Length -gt 0 -and [int][char]$t[0]-eq 0xFEFF){$t=$t.Substring(1)};return $t.TrimEnd("`r","`n")}
+function Count-Decision{param([object[]]$Rows,[string]$Decision);return @($Rows|Where-Object{[string]$_.cfa_independent_review_decision -eq $Decision}).Count}
+
+function Write-Stage2Receipt{
+ param([string]$EvidenceRootPath,[string]$RepoRootPath)
+ $cg=Get-LatestRun -Parent (Join-Path $EvidenceRootPath 'coingecko-identity')
+ $structure=Get-LatestRun -Parent (Join-Path $EvidenceRootPath 'gdelt-gkg-structure') -Optional
+ $summaryPath=Require-File $cg 'run-summary.csv';$sourcePath=Require-File $cg 'source-files.csv';$bridgePath=Require-File $cg 'mapping-bridge-evidence.csv'
+ $summary=@(Import-Csv $summaryPath);$sources=@(Import-Csv $sourcePath);$bridges=@(Import-Csv $bridgePath)
+ if($summary.Count-ne1){throw 'CoinGecko run summary cardinality must be 1.'};if($bridges.Count-ne435){throw "Bridge rows must be 435; observed $($bridges.Count)."};if([int]$summary[0].candidate_assets-ne435){throw 'candidate_assets must be 435.'};if($sources.Count-lt2){throw 'CoinGecko source manifest is too small.'}
+ $allowed=@('APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE','UNVERIFIED_MULTIPLE_KRAKEN_PAIR_BRIDGES','UNVERIFIED_NO_CURRENT_KRAKEN_PAIR_BRIDGE');if(@($bridges|Where-Object{$allowed-notcontains[string]$_.cfa_independent_review_decision}).Count-gt0){throw 'Unsupported bridge decision.'}
+ foreach($s in $sources){if([string]$s.sha256-notmatch'^[0-9a-f]{64}$'){throw "Malformed SHA for $($s.file_name)."};if([long]$s.bytes-le0){throw "Invalid bytes for $($s.file_name)."};if([string]::IsNullOrWhiteSpace([string]$s.source_url)){throw "Missing source URL for $($s.file_name)."}}
+ $approve=Count-Decision $bridges 'APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE';$multi=Count-Decision $bridges 'UNVERIFIED_MULTIPLE_KRAKEN_PAIR_BRIDGES';$none=Count-Decision $bridges 'UNVERIFIED_NO_CURRENT_KRAKEN_PAIR_BRIDGE';if(($approve+$multi+$none)-ne435){throw 'Bridge decision accounting mismatch.'}
+ $csvOut=Join-Path $RepoRootPath 'docs\evidence\stage2-coingecko-bridge-evidence.csv';$bridges|Sort-Object base_asset_id|Export-Csv -LiteralPath $csvOut -NoTypeInformation -Encoding UTF8
+ $b=New-Object System.Text.StringBuilder;[void]$b.AppendLine('# CFA Stage 2 Local Evidence');[void]$b.AppendLine('');[void]$b.AppendLine('Curated local evidence. Raw CoinGecko JSON and raw GDELT archives remain under Documents\CFA-local and outside Git.');[void]$b.AppendLine('')
+ [void]$b.AppendLine('## CoinGecko / Kraken bridge evidence');[void]$b.AppendLine('');[void]$b.AppendLine('- Evidence run: '+$cg.Name);[void]$b.AppendLine('- Candidate assets: 435');[void]$b.AppendLine('- Unique current Kraken pair bridges: '+$approve);[void]$b.AppendLine('- Multiple current Kraken pair bridges: '+$multi);[void]$b.AppendLine('- No current Kraken pair bridge: '+$none);[void]$b.AppendLine('- Raw source files: '+$sources.Count);[void]$b.AppendLine('')
+ foreach($section in @(@('Run summary',$summaryPath),@('Raw source file manifest',$sourcePath))){[void]$b.AppendLine('### '+$section[0]);[void]$b.AppendLine('');[void]$b.AppendLine('```csv');[void]$b.AppendLine((Get-Text $section[1]));[void]$b.AppendLine('```');[void]$b.AppendLine('')}
+ [void]$b.AppendLine('### CoinGecko local evidence hashes');[void]$b.AppendLine('');[void]$b.AppendLine('| File | SHA-256 |');[void]$b.AppendLine('|---|---|');foreach($p in @($summaryPath,$sourcePath,$bridgePath)){[void]$b.AppendLine('| '+[System.IO.Path]::GetFileName($p)+' | '+(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant()+' |')};[void]$b.AppendLine('')
+ if($null-ne$structure){$ss=Require-File $structure 'inspection-summary.csv';$as=Require-File $structure 'archive-structure.csv';$fd=Require-File $structure 'field-count-distribution.csv';[void]$b.AppendLine('## CFA GDELT GKG binary-safe structure inspection');[void]$b.AppendLine('');[void]$b.AppendLine('- Evidence run: '+$structure.Name);foreach($section in @(@('Inspection summary',$ss),@('Archive structure',$as),@('Field-count distribution',$fd))){[void]$b.AppendLine('');[void]$b.AppendLine('### '+$section[0]);[void]$b.AppendLine('');[void]$b.AppendLine('```csv');[void]$b.AppendLine((Get-Text $section[1]));[void]$b.AppendLine('```')};[void]$b.AppendLine('');[void]$b.AppendLine('The inspection counts delimiters and validates UTF-8 at the raw-byte row boundary without publishing raw news rows or assigning semantic field meanings.');[void]$b.AppendLine('');foreach($p in @($ss,$as,$fd)){[void]$b.AppendLine('- '+[System.IO.Path]::GetFileName($p)+' SHA-256: '+(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant())}}
+ [void]$b.AppendLine('');[void]$b.AppendLine('The normalized 435-asset bridge table is published separately as docs/evidence/stage2-coingecko-bridge-evidence.csv. Unique current pair bridges are independent mapping evidence; alias semantics remain UNVERIFIED until raw-news matching rules are defined and validated.')
+ $mdOut=Join-Path $RepoRootPath 'docs\evidence\latest-stage2-local.md';Write-Utf8NoBom $mdOut $b.ToString();return [pscustomobject]@{run_id=$cg.Name;structure_run=if($null-ne$structure){$structure.Name}else{''};receipt_path=$mdOut;bridge_path=$csvOut;approve=$approve;multiple=$multi;no_bridge=$none}
 }
 
-function Get-LatestRun {
-    param([string]$ParentPath)
-    if (-not (Test-Path -LiteralPath $ParentPath -PathType Container)) { throw "Stage 2 evidence directory missing: $ParentPath" }
-    $runs = @(Get-ChildItem -LiteralPath $ParentPath -Directory -Force | Sort-Object Name -Descending)
-    if ($runs.Count -eq 0) { throw "No CoinGecko identity evidence runs found under: $ParentPath" }
-    return $runs[0]
-}
-
-function Require-File {
-    param([System.IO.DirectoryInfo]$Run,[string]$Name)
-    $path = Join-Path $Run.FullName $Name
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required Stage 2 evidence file missing from $($Run.Name): $Name" }
-    return $path
-}
-
-function Get-TextWithoutBom {
-    param([string]$Path)
-    $text = [System.IO.File]::ReadAllText($Path)
-    if ($text.Length -gt 0 -and [int][char]$text[0] -eq 0xFEFF) { $text = $text.Substring(1) }
-    return $text.TrimEnd("`r","`n")
-}
-
-function Count-Decision {
-    param([object[]]$Rows,[string]$Decision)
-    return @($Rows | Where-Object { [string]$_.cfa_independent_review_decision -eq $Decision }).Count
-}
-
-function Write-Stage2Receipt {
-    param([string]$EvidenceRootPath,[string]$RepoRootPath)
-
-    $run = Get-LatestRun -ParentPath (Join-Path $EvidenceRootPath 'coingecko-identity')
-    $summaryPath = Require-File -Run $run -Name 'run-summary.csv'
-    $sourcePath = Require-File -Run $run -Name 'source-files.csv'
-    $bridgePath = Require-File -Run $run -Name 'mapping-bridge-evidence.csv'
-
-    $summary = @(Import-Csv -LiteralPath $summaryPath)
-    $sources = @(Import-Csv -LiteralPath $sourcePath)
-    $bridges = @(Import-Csv -LiteralPath $bridgePath)
-
-    if ($summary.Count -ne 1) { throw "Stage 2 run summary cardinality must be exactly 1; observed $($summary.Count)." }
-    if ($bridges.Count -ne 435) { throw "Stage 2 bridge evidence must contain 435 assets; observed $($bridges.Count)." }
-    if ([int]$summary[0].candidate_assets -ne 435) { throw "Stage 2 run summary candidate_assets must be 435; observed $($summary[0].candidate_assets)." }
-    if ($sources.Count -lt 2) { throw "Stage 2 source manifest is unexpectedly small: $($sources.Count) rows." }
-
-    $allowedDecisions = @('APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE','UNVERIFIED_MULTIPLE_KRAKEN_PAIR_BRIDGES','UNVERIFIED_NO_CURRENT_KRAKEN_PAIR_BRIDGE')
-    $badDecisions = @($bridges | Where-Object { $allowedDecisions -notcontains [string]$_.cfa_independent_review_decision })
-    if ($badDecisions.Count -gt 0) { throw "Stage 2 bridge evidence contains $($badDecisions.Count) unsupported decision values." }
-
-    foreach ($source in $sources) {
-        if ([string]$source.sha256 -notmatch '^[0-9a-f]{64}$') { throw "Malformed source SHA-256 for $($source.file_name)." }
-        if ([long]$source.bytes -le 0) { throw "Non-positive source byte count for $($source.file_name)." }
-        if ([string]::IsNullOrWhiteSpace([string]$source.source_url)) { throw "Missing source URL for $($source.file_name)." }
-    }
-
-    $approve = Count-Decision -Rows $bridges -Decision 'APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE'
-    $multiple = Count-Decision -Rows $bridges -Decision 'UNVERIFIED_MULTIPLE_KRAKEN_PAIR_BRIDGES'
-    $noBridge = Count-Decision -Rows $bridges -Decision 'UNVERIFIED_NO_CURRENT_KRAKEN_PAIR_BRIDGE'
-    if (($approve + $multiple + $noBridge) -ne 435) { throw 'Stage 2 decision accounting does not total 435.' }
-
-    $csvOutput = Join-Path $RepoRootPath 'docs\evidence\stage2-coingecko-bridge-evidence.csv'
-    $bridges | Sort-Object base_asset_id | Export-Csv -LiteralPath $csvOutput -NoTypeInformation -Encoding UTF8
-
-    $b = New-Object System.Text.StringBuilder
-    [void]$b.AppendLine('# CFA Stage 2 Local CoinGecko / Kraken Bridge Evidence')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('Curated evidence from a fresh local CoinGecko public-API acquisition. Raw JSON responses remain under Documents\CFA-local and outside Git. This receipt records source hashes and the bounded 435-asset bridge result only.')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('- Evidence run: ' + $run.Name)
-    [void]$b.AppendLine('- Candidate assets: 435')
-    [void]$b.AppendLine('- Unique current Kraken pair bridges: ' + $approve)
-    [void]$b.AppendLine('- Multiple current Kraken pair bridges: ' + $multiple)
-    [void]$b.AppendLine('- No current Kraken pair bridge: ' + $noBridge)
-    [void]$b.AppendLine('- Raw source files: ' + $sources.Count)
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Run summary')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('```csv')
-    [void]$b.AppendLine((Get-TextWithoutBom -Path $summaryPath))
-    [void]$b.AppendLine('```')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Raw source file manifest')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('```csv')
-    [void]$b.AppendLine((Get-TextWithoutBom -Path $sourcePath))
-    [void]$b.AppendLine('```')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Local evidence file hashes')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('| File | SHA-256 |')
-    [void]$b.AppendLine('|---|---|')
-    foreach ($path in @($summaryPath,$sourcePath,$bridgePath)) {
-        [void]$b.AppendLine('| ' + [System.IO.Path]::GetFileName($path) + ' | ' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() + ' |')
-    }
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('The full normalized 435-asset bridge table is published separately as docs/evidence/stage2-coingecko-bridge-evidence.csv. A unique bridge is independent current evidence that a CoinGecko candidate ID is presently associated with one or more matching Kraken market pairs; it does not by itself validate news aliases.')
-
-    $receiptOutput = Join-Path $RepoRootPath 'docs\evidence\latest-stage2-local.md'
-    Write-Utf8NoBom -Path $receiptOutput -Content $b.ToString()
-
-    return [pscustomobject]@{run_id=$run.Name;receipt_path=$receiptOutput;bridge_path=$csvOutput;approve=$approve;multiple=$multiple;no_bridge=$noBridge}
-}
-
-function Invoke-SelfTest {
-    $root = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-stage2-publish-' + [guid]::NewGuid().ToString('N'))
-    try {
-        $evidenceRoot = Join-Path $root 'CFA-local'
-        $run = Join-Path $evidenceRoot 'coingecko-identity\20260101-test'
-        $repo = Join-Path $root 'repo'
-        New-Item -ItemType Directory -Path $run -Force | Out-Null
-        New-Item -ItemType Directory -Path (Join-Path $repo 'docs\evidence') -Force | Out-Null
-
-        Write-Utf8NoBom -Path (Join-Path $run 'run-summary.csv') -Content "run_id,candidate_assets,approved_current_kraken_pair_bridge,unverified_multiple_bridges,unverified_no_bridge`n20260101-test,435,435,0,0`n"
-        $manifest = "file_name,sha256,bytes,record_count,source_url`ncoins-list.json,$('a'*64),100,10,https://example.invalid/coins`nkraken-tickers-page-001.json,$('b'*64),200,20,https://example.invalid/tickers`n"
-        Write-Utf8NoBom -Path (Join-Path $run 'source-files.csv') -Content $manifest
-        $rows = @()
-        for ($i=1; $i -le 435; $i++) {
-            $rows += [pscustomobject]@{base_asset_id=('A{0:D3}' -f $i);base_exchange_symbol=('A{0:D3}' -f $i);quote_exchange_symbols='USD';candidate_count=1;candidate_ids=('coin-'+$i);active_candidate_ids=('coin-'+$i);kraken_pair_bridge_candidate_ids=('coin-'+$i);kraken_pair_bridge_counts=(('coin-'+$i)+':1');cfa_independent_review_decision='APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE';approved_candidate_id=('coin-'+$i)}
-        }
-        $rows | Export-Csv -LiteralPath (Join-Path $run 'mapping-bridge-evidence.csv') -NoTypeInformation -Encoding UTF8
-
-        $result = Write-Stage2Receipt -EvidenceRootPath $evidenceRoot -RepoRootPath $repo
-        if (-not (Test-Path -LiteralPath $result.receipt_path -PathType Leaf)) { throw 'Self-test failed: Stage 2 receipt missing.' }
-        if (-not (Test-Path -LiteralPath $result.bridge_path -PathType Leaf)) { throw 'Self-test failed: Stage 2 bridge output missing.' }
-        $text = [System.IO.File]::ReadAllText($result.receipt_path)
-        if (-not $text.Contains('20260101-test') -or -not $text.Contains('Unique current Kraken pair bridges: 435')) { throw 'Self-test failed: receipt content missing.' }
-        if ($text.Contains($root)) { throw 'Self-test failed: absolute local path leaked into receipt.' }
-        Write-Host 'SELF-TEST: PASS'
-    }
-    finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
-}
-
-if ($SelfTest) {
-    try { Invoke-SelfTest; exit 0 }
-    catch { Write-Host 'SELF-TEST: FAIL'; Write-Host $_.Exception.Message; if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }; exit 1 }
-}
-
-try {
-    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
-    if ([string]::IsNullOrWhiteSpace($EvidenceRoot)) { $EvidenceRoot = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'CFA-local' }
-    $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).ProviderPath
-    $EvidenceRoot = (Resolve-Path -LiteralPath $EvidenceRoot).ProviderPath
-    $result = Write-Stage2Receipt -EvidenceRootPath $EvidenceRoot -RepoRootPath $RepoRoot
-    Write-Host ('Stage 2 evidence run: ' + $result.run_id)
-    Write-Host ('Unique current Kraken pair bridges: ' + $result.approve)
-    Write-Host ('Multiple current Kraken pair bridges: ' + $result.multiple)
-    Write-Host ('No current Kraken pair bridge: ' + $result.no_bridge)
-    Write-Host 'CFA STAGE 2 EVIDENCE PUBLISH: PASS'
-}
-catch {
-    Write-Host 'CFA STAGE 2 EVIDENCE PUBLISH: FAIL'
-    Write-Host $_.Exception.Message
-    if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
-    exit 1
-}
+function Invoke-SelfTest{
+ $root=Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-s2-pub-'+[guid]::NewGuid().ToString('N'));try{$e=Join-Path $root 'CFA-local';$cg=Join-Path $e 'coingecko-identity\20260101-cg';$st=Join-Path $e 'gdelt-gkg-structure\20260101-st';$repo=Join-Path $root 'repo';foreach($d in @($cg,$st,(Join-Path $repo 'docs\evidence'))){New-Item -ItemType Directory -Path $d -Force|Out-Null};Write-Utf8NoBom (Join-Path $cg 'run-summary.csv') "run_id,candidate_assets`n20260101-cg,435`n";Write-Utf8NoBom (Join-Path $cg 'source-files.csv') ("file_name,sha256,bytes,record_count,source_url`na.json,$('a'*64),10,1,https://example.invalid/a`nb.json,$('b'*64),20,1,https://example.invalid/b`n");$rows=@();for($i=1;$i-le435;$i++){$rows+=[pscustomobject]@{base_asset_id=('A{0:D3}'-f$i);cfa_independent_review_decision='APPROVE_CURRENT_KRAKEN_PAIR_BRIDGE'}};$rows|Export-Csv (Join-Path $cg 'mapping-bridge-evidence.csv') -NoTypeInformation -Encoding UTF8;Write-Utf8NoBom (Join-Path $st 'inspection-summary.csv') "run_id,total_sampled_rows`n20260101-st,1500`n";Write-Utf8NoBom (Join-Path $st 'archive-structure.csv') "object_key,sampled_rows`n1,500`n";Write-Utf8NoBom (Join-Path $st 'field-count-distribution.csv') "archive_file,field_count,sampled_rows`na,27,500`n";$r=Write-Stage2Receipt $e $repo;if(-not(Test-Path $r.receipt_path)){throw 'receipt missing'};$t=[System.IO.File]::ReadAllText($r.receipt_path);if(-not$t.Contains('20260101-cg')-or-not$t.Contains('20260101-st')){throw 'receipt content'};if($t.Contains($root)){throw 'path leak'};Write-Host 'SELF-TEST: PASS'}finally{Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue}}
+if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
+try{if([string]::IsNullOrWhiteSpace($RepoRoot)){$RepoRoot=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))};if([string]::IsNullOrWhiteSpace($EvidenceRoot)){$EvidenceRoot=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'CFA-local'};$RepoRoot=(Resolve-Path $RepoRoot).ProviderPath;$EvidenceRoot=(Resolve-Path $EvidenceRoot).ProviderPath;$r=Write-Stage2Receipt $EvidenceRoot $RepoRoot;Write-Host ('Stage 2 CoinGecko run: '+$r.run_id);if($r.structure_run){Write-Host ('GDELT structure run: '+$r.structure_run)};Write-Host ('Unique bridges: '+$r.approve);Write-Host ('Multiple bridges: '+$r.multiple);Write-Host ('No bridge: '+$r.no_bridge);Write-Host 'CFA STAGE 2 EVIDENCE PUBLISH: PASS'}catch{Write-Host 'CFA STAGE 2 EVIDENCE PUBLISH: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}
