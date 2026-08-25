@@ -5,11 +5,13 @@ on:
     paths:
       - 'scripts/**/*.ps1'
       - 'CFA-SoT.xlsx'
+      - 'candidate-analysis/*.csv'
       - '.github/workflows/powershell-parse.yml'
   pull_request:
     paths:
       - 'scripts/**/*.ps1'
       - 'CFA-SoT.xlsx'
+      - 'candidate-analysis/*.csv'
       - '.github/workflows/powershell-parse.yml'
 
 permissions:
@@ -71,53 +73,76 @@ jobs:
 
       - name: Runtime self-test Kraken reconciliation under Windows PowerShell 5.1
         shell: powershell
-        run: |
-          .\scripts\windows\Reconcile-CfaKrakenSources.ps1 -SelfTest
+        run: .\scripts\windows\Reconcile-CfaKrakenSources.ps1 -SelfTest
 
       - name: Runtime self-test evidence publisher under Windows PowerShell 5.1
         shell: powershell
-        run: |
-          .\scripts\windows\Publish-CfaLocalEvidence.ps1 -SelfTest
+        run: .\scripts\windows\Publish-CfaLocalEvidence.ps1 -SelfTest
 
       - name: Runtime self-test evidence sync wrapper under Windows PowerShell 5.1
         shell: powershell
-        run: |
-          .\scripts\windows\Sync-CfaEvidence.ps1 -SelfTest
+        run: .\scripts\windows\Sync-CfaEvidence.ps1 -SelfTest
 
       - name: Runtime self-test SoT authority exporter under Windows PowerShell 5.1
         shell: powershell
-        run: |
-          .\scripts\windows\Export-CfaSoTAuthority.ps1 -SelfTest
+        run: .\scripts\windows\Export-CfaSoTAuthority.ps1 -SelfTest
+
+      - name: Runtime self-test reference source reconciler under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Reconcile-CfaReferenceSources.ps1 -SelfTest
+
+      - name: Runtime self-test news source coverage under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaNewsSourceCoverage.ps1 -SelfTest
 
       - name: Runtime self-test news acquisition diagnosis under Windows PowerShell 5.1
         shell: powershell
-        run: |
-          .\scripts\windows\Diagnose-CfaNewsAcquisition.ps1 -SelfTest
+        run: .\scripts\windows\Diagnose-CfaNewsAcquisition.ps1 -SelfTest
 
       - name: Export current CFA SoT authority snapshot
         shell: powershell
-        run: |
-          .\scripts\windows\Export-CfaSoTAuthority.ps1
+        run: .\scripts\windows\Export-CfaSoTAuthority.ps1
 
-      - name: Commit current CFA SoT authority snapshot
+      - name: Reconcile and guarded-repair exact reference source bytes
+        shell: powershell
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Reconcile-CfaReferenceSources.ps1' -RepairExactEncodingVariant
+          $code = $LASTEXITCODE
+          "REFERENCE_GATE_EXIT=$code" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Reference reconciliation gate exit: $code"
+          exit 0
+
+      - name: Commit generated authority/reconciliation evidence and exact repaired sources
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
         run: |
-          $paths = @(
+          $allowed = @(
             'docs/evidence/sot-authority-snapshot.md',
-            'docs/evidence/sot-authority-snapshot.json'
+            'docs/evidence/sot-authority-snapshot.json',
+            'docs/evidence/reference-source-reconciliation.md',
+            'docs/evidence/reference-source-reconciliation.json',
+            'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv',
+            'candidate-analysis/ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv',
+            'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
           )
-          git add -- $paths
+          git -c core.autocrlf=false add -- $allowed
           $staged = @(git diff --cached --name-only)
           if ($staged.Count -gt 0) {
             foreach ($path in $staged) {
-              if ($paths -notcontains $path) {
+              if ($allowed -notcontains $path) {
                 throw "Unexpected staged path: $path"
               }
             }
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Update CFA SoT authority snapshot'
+            git commit -m 'Reconcile CFA SoT reference source bytes'
             git pull --rebase origin main
             git push origin HEAD:main
+          }
+
+      - name: Enforce reference source hard gate
+        shell: powershell
+        run: |
+          if ($env:REFERENCE_GATE_EXIT -ne '0') {
+            throw "CFA reference source reconciliation remains unresolved (exit $env:REFERENCE_GATE_EXIT). See docs/evidence/reference-source-reconciliation.md."
           }
