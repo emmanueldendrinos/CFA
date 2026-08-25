@@ -83,4 +83,24 @@ The inspection counts delimiters and validates UTF-8 at the raw-byte row boundar
 - archive-structure.csv SHA-256: 34235b755e187acc4128071b7cd9f420795ced5236c3fcccea551d4d9a43b39d
 - field-count-distribution.csv SHA-256: f2edf29e1a3bb9e6d3c09048f4ee0c9d8d40c3a769268c82ff474ccad4b4f4ba
 
-The normalized 435-asset bridge table is published separately as docs/evidence/stage2-coingecko-bridge-evidence.csv. Unique current pair bridges are independent mapping evidence; alias semantics remain UNVERIFIED until raw-news matching rules are defined and validated.
+## CFA GDELT alias observation audit
+
+- Evidence run: 20260826-021434-c46d54ae63424236b67c5a76f1d9fe60
+- Alias rows: 45
+- Bounded sample rows: 96
+
+### Alias validation summary
+
+```csv
+"run_id","archive_files","rows_scanned","malformed_field_count_rows","malformed_allnames_blocks","utf8_failure_archives","entry_count_failures","alias_rows","observed_aliases","not_observed_aliases","context_required_aliases","allnames_field_position_1_based","expected_record_field_count"
+"20260826-021434-c46d54ae63424236b67c5a76f1d9fe60","7163","9091236","5","0","135","0","45","8","37","14","24","27"
+```
+
+The 45-row alias audit is published as docs/evidence/stage2-alias-validation.csv and bounded document samples as docs/evidence/stage2-alias-samples.csv. The full per-archive scan remains local; its hash is recorded below.
+
+- validation-summary.csv SHA-256: 46851a911a8a28f45daf0d9960deb14a13e02e286920f7490e9fe0d1896c40d1
+- alias-validation.csv SHA-256: b5ee9620660797fcfa773232ad13d501123a28418e1bf99dde4e0ccc1e4f7b72
+- alias-samples.csv SHA-256: 630cce113e8feb074eff0003373d6fbca0b8f4de4eb0df86e186cfc7b592df75
+- archive-scan.csv SHA-256: 1760a371e6ff43e5a1c3da0d2d72df99e8ca02efe1830e1dd2d5404e04e2d5ba
+
+The normalized 435-asset bridge table is published separately as docs/evidence/stage2-coingecko-bridge-evidence.csv. Unique current pair bridges are independent mapping evidence. Alias observation evidence does not by itself approve ambiguous/common-word aliases or define the final news matching rule.
