@@ -28,6 +28,12 @@ function Invoke-Git {
     finally { $ErrorActionPreference = $oldPreference; Pop-Location }
 }
 
+function Split-GitLines {
+    param([AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    return @($Text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
 function Remove-KnownCommandDebris {
     param([string]$RepoRootPath)
     $path = Join-Path $RepoRootPath '-File'
@@ -39,13 +45,21 @@ function Remove-KnownCommandDebris {
 
 function Assert-OnlyAllowedChanges {
     param([AllowEmptyString()][string]$StatusText)
-    $lines = @($StatusText -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $lines = @(Split-GitLines -Text $StatusText)
     foreach ($line in $lines) {
         $matched = $false
         foreach ($path in $AllowedPaths) {
             if ($line.EndsWith($path) -or $line.EndsWith($path.Replace('/','\'))) { $matched = $true; break }
         }
         if (-not $matched) { throw "Unexpected working-tree change during Stage 2 sync: $line" }
+    }
+}
+
+function Assert-OnlyAllowedPaths {
+    param([string[]]$Paths)
+    foreach ($path in @($Paths)) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        if ($AllowedPaths -notcontains $path) { throw "Unexpected staged path: $path" }
     }
 }
 
@@ -63,7 +77,11 @@ function Invoke-SelfTest {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-stage2-sync-' + [guid]::NewGuid().ToString('N'))
     try {
         New-Item -ItemType Directory -Path $root -Force | Out-Null
-        Assert-OnlyAllowedChanges -StatusText "?? docs/evidence/latest-stage2-local.md`n?? docs/evidence/stage2-coingecko-bridge-evidence.csv"
+        $twoChanges = "?? docs/evidence/latest-stage2-local.md`n?? docs/evidence/stage2-coingecko-bridge-evidence.csv"
+        Assert-OnlyAllowedChanges -StatusText $twoChanges
+        $split = @(Split-GitLines -Text "docs/evidence/latest-stage2-local.md`ndocs/evidence/stage2-coingecko-bridge-evidence.csv")
+        if ($split.Count -ne 2) { throw "Self-test failed: multiline Git output did not split into two paths; observed $($split.Count)." }
+        Assert-OnlyAllowedPaths -Paths $split
         $blocked = $false
         try { Assert-OnlyAllowedChanges -StatusText "?? docs/evidence/latest-stage2-local.md`n M README.md" } catch { $blocked = $true }
         if (-not $blocked) { throw 'Self-test failed: unrelated change not blocked.' }
@@ -87,8 +105,12 @@ try {
     if ([string]::IsNullOrWhiteSpace($branch)) { throw 'Current Git branch is unresolved.' }
 
     Remove-KnownCommandDebris -RepoRootPath $RepoRoot
-    $status = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
-    if (-not [string]::IsNullOrWhiteSpace($status)) { throw "Repository has uncommitted changes before Stage 2 publication.`n$status" }
+
+    # A prior failed Stage 2 sync may have already generated/staged exactly the two
+    # authorized evidence files. Preserve and recover that state; block everything else.
+    $preStatus = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
+    Assert-OnlyAllowedChanges -StatusText $preStatus
+
     [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('pull','--ff-only','origin',$branch))
 
     $publisher = Join-Path $RepoRoot 'scripts\windows\Publish-CfaStage2Evidence.ps1'
@@ -99,13 +121,16 @@ try {
 
     $after = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
     Assert-OnlyAllowedChanges -StatusText $after
-    $changed = @($after -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $changed = @(Split-GitLines -Text $after)
     if ($changed.Count -gt 0) {
         [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments (@('add','--') + $AllowedPaths))
-        $staged = @(Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('diff','--cached','--name-only') -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        foreach ($path in $staged) { if ($AllowedPaths -notcontains $path) { throw "Unexpected staged path: $path" } }
-        [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('commit','-m','Update CFA Stage 2 local evidence'))
-        [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('push','origin',$branch))
+        $stagedText = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('diff','--cached','--name-only')
+        $staged = @(Split-GitLines -Text $stagedText)
+        Assert-OnlyAllowedPaths -Paths $staged
+        if ($staged.Count -gt 0) {
+            [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('commit','-m','Update CFA Stage 2 local evidence'))
+            [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('push','origin',$branch))
+        }
     }
 
     [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('fetch','origin',$branch))
@@ -115,7 +140,7 @@ try {
     $remotePaths = @()
     foreach ($path in $AllowedPaths) {
         $found = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('ls-tree','-r','--name-only',"origin/$branch",'--',$path)
-        if (-not [string]::IsNullOrWhiteSpace($found)) { $remotePaths += $found }
+        if (-not [string]::IsNullOrWhiteSpace($found)) { $remotePaths += @(Split-GitLines -Text $found) }
     }
     Assert-PublishedState -LocalHead $local -RemoteHead $remote -Status $finalStatus -RemotePaths $remotePaths
     Write-Host "Published Stage 2 evidence commit: $local"
