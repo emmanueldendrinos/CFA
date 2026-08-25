@@ -54,6 +54,31 @@ function Invoke-Git {
     }
 }
 
+function Assert-PublishedEvidenceState {
+    param(
+        [Parameter(Mandatory)][string]$LocalHead,
+        [Parameter(Mandatory)][string]$RemoteHead,
+        [AllowEmptyString()][string]$WorkingTreeStatus,
+        [AllowEmptyString()][string]$RemoteReceiptPaths
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LocalHead) -or [string]::IsNullOrWhiteSpace($RemoteHead)) {
+        throw 'Local or remote HEAD could not be resolved after evidence publication.'
+    }
+    if ($LocalHead -ne $RemoteHead) {
+        throw "Evidence publication did not converge local and remote HEAD. Local=$LocalHead Remote=$RemoteHead"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkingTreeStatus)) {
+        throw "Repository is not clean after evidence publication.`n$WorkingTreeStatus"
+    }
+
+    $receiptPath = 'docs/evidence/latest-local-validation.md'
+    $remotePaths = @($RemoteReceiptPaths -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($remotePaths.Count -ne 1 -or $remotePaths[0] -ne $receiptPath) {
+        throw "Published evidence receipt is not present exactly once on the remote branch. Observed: $RemoteReceiptPaths"
+    }
+}
+
 function Invoke-SelfTest {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-evidence-sync-' + [guid]::NewGuid().ToString('N'))
     try {
@@ -88,6 +113,42 @@ function Invoke-SelfTest {
         }
         if ([System.IO.File]::ReadAllText($nonEmptyDebris) -ne 'preserve-me') {
             throw 'Self-test failed: non-empty -File artifact was modified.'
+        }
+
+        Assert-PublishedEvidenceState `
+            -LocalHead ('a' * 40) `
+            -RemoteHead ('a' * 40) `
+            -WorkingTreeStatus '' `
+            -RemoteReceiptPaths 'docs/evidence/latest-local-validation.md'
+
+        $stateBlocked = $false
+        try {
+            Assert-PublishedEvidenceState `
+                -LocalHead ('a' * 40) `
+                -RemoteHead ('b' * 40) `
+                -WorkingTreeStatus '' `
+                -RemoteReceiptPaths 'docs/evidence/latest-local-validation.md'
+        }
+        catch {
+            $stateBlocked = $true
+        }
+        if (-not $stateBlocked) {
+            throw 'Self-test failed: local/remote HEAD mismatch was not blocked.'
+        }
+
+        $receiptBlocked = $false
+        try {
+            Assert-PublishedEvidenceState `
+                -LocalHead ('a' * 40) `
+                -RemoteHead ('a' * 40) `
+                -WorkingTreeStatus '' `
+                -RemoteReceiptPaths ''
+        }
+        catch {
+            $receiptBlocked = $true
+        }
+        if (-not $receiptBlocked) {
+            throw 'Self-test failed: missing remote receipt was not blocked.'
         }
 
         Write-Host 'SELF-TEST: PASS'
@@ -148,6 +209,20 @@ try {
         throw "Evidence publication failed with exit code $LASTEXITCODE."
     }
 
+    [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('fetch','origin',$branch))
+    $localHead = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('rev-parse','HEAD')
+    $remoteHead = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('rev-parse',"origin/$branch")
+    $finalStatus = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
+    $remoteReceiptPaths = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('ls-tree','-r','--name-only',"origin/$branch",'--','docs/evidence/latest-local-validation.md')
+
+    Assert-PublishedEvidenceState `
+        -LocalHead $localHead `
+        -RemoteHead $remoteHead `
+        -WorkingTreeStatus $finalStatus `
+        -RemoteReceiptPaths $remoteReceiptPaths
+
+    Write-Host "Published evidence commit: $localHead"
+    Write-Host 'Remote receipt: docs/evidence/latest-local-validation.md'
     Write-Host 'CFA EVIDENCE SYNC: PASS'
 }
 catch {
