@@ -40,7 +40,13 @@ function Invoke-Git {
     )
 
     Push-Location $WorkingDirectory
+    $oldErrorActionPreference = $ErrorActionPreference
     try {
+        # Windows PowerShell 5.1 can surface successful native-command stderr as
+        # NativeCommandError when ErrorActionPreference=Stop. Git legitimately
+        # writes informational/progress text to stderr on successful pull/fetch/push.
+        # Capture both streams under Continue and decide success only from exit code.
+        $ErrorActionPreference = 'Continue'
         $output = @(& git @Arguments 2>&1)
         $exitCode = $LASTEXITCODE
         $text = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
@@ -50,6 +56,7 @@ function Invoke-Git {
         return $text.Trim()
     }
     finally {
+        $ErrorActionPreference = $oldErrorActionPreference
         Pop-Location
     }
 }
@@ -76,6 +83,20 @@ function Assert-PublishedEvidenceState {
     $remotePaths = @($RemoteReceiptPaths -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($remotePaths.Count -ne 1 -or $remotePaths[0] -ne $receiptPath) {
         throw "Published evidence receipt is not present exactly once on the remote branch. Observed: $RemoteReceiptPaths"
+    }
+}
+
+function Assert-OnlyReceiptChanged {
+    param(
+        [AllowEmptyString()][string]$StatusText,
+        [Parameter(Mandatory)][string]$RelativeReceipt
+    )
+
+    $statusLines = @($StatusText -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    foreach ($line in $statusLines) {
+        if (-not $line.EndsWith($RelativeReceipt.Replace('/','\')) -and -not $line.EndsWith($RelativeReceipt)) {
+            throw "Unexpected working-tree change detected during evidence sync: $line"
+        }
     }
 }
 
@@ -114,6 +135,7 @@ function Invoke-SelfTest {
         if ([System.IO.File]::ReadAllText($nonEmptyDebris) -ne 'preserve-me') {
             throw 'Self-test failed: non-empty -File artifact was modified.'
         }
+        Remove-Item -LiteralPath $nonEmptyDebris -Force
 
         Assert-PublishedEvidenceState `
             -LocalHead ('a' * 40) `
@@ -149,6 +171,37 @@ function Invoke-SelfTest {
         }
         if (-not $receiptBlocked) {
             throw 'Self-test failed: missing remote receipt was not blocked.'
+        }
+
+        Assert-OnlyReceiptChanged -StatusText '?? docs/evidence/latest-local-validation.md' -RelativeReceipt 'docs/evidence/latest-local-validation.md'
+        $changeBlocked = $false
+        try {
+            Assert-OnlyReceiptChanged -StatusText "?? docs/evidence/latest-local-validation.md`n M README.md" -RelativeReceipt 'docs/evidence/latest-local-validation.md'
+        }
+        catch {
+            $changeBlocked = $true
+        }
+        if (-not $changeBlocked) {
+            throw 'Self-test failed: unrelated working-tree change was not blocked.'
+        }
+
+        # Regression test for the Windows PowerShell 5.1 failure seen locally:
+        # successful git push emits informational text to stderr. Invoke-Git must
+        # not treat that as failure when the native exit code is zero.
+        $remoteRepo = Join-Path $tempRoot 'remote.git'
+        $localRepo = Join-Path $tempRoot 'local'
+        New-Item -ItemType Directory -Path $localRepo -Force | Out-Null
+        [void](Invoke-Git -WorkingDirectory $tempRoot -Arguments @('init','--bare',$remoteRepo))
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('init'))
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('config','user.name','CFA Self Test'))
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('config','user.email','cfa-self-test@example.invalid'))
+        [System.IO.File]::WriteAllText((Join-Path $localRepo 'sample.txt'), 'sample')
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('add','sample.txt'))
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('commit','-m','self-test'))
+        [void](Invoke-Git -WorkingDirectory $localRepo -Arguments @('remote','add','origin',$remoteRepo))
+        $pushText = Invoke-Git -WorkingDirectory $localRepo -Arguments @('push','-u','origin','HEAD:main')
+        if ([string]::IsNullOrWhiteSpace($pushText)) {
+            throw 'Self-test failed: successful git push produced no captured output; stderr regression path was not exercised.'
         }
 
         Write-Host 'SELF-TEST: PASS'
@@ -204,16 +257,40 @@ try {
         throw "Evidence publisher self-test failed with exit code $LASTEXITCODE."
     }
 
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $publisher -CommitAndPush
+    # The publisher generates the bounded receipt only. This wrapper owns all Git
+    # mutation so pull/add/commit/push share one tested native-command boundary.
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $publisher
     if ($LASTEXITCODE -ne 0) {
-        throw "Evidence publication failed with exit code $LASTEXITCODE."
+        throw "Evidence receipt generation failed with exit code $LASTEXITCODE."
+    }
+
+    $relativeReceipt = 'docs/evidence/latest-local-validation.md'
+    $receiptPath = Join-Path $RepoRoot ($relativeReceipt.Replace('/','\'))
+    if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+        throw "Evidence publisher did not create the expected receipt: $receiptPath"
+    }
+
+    $afterGenerationStatus = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
+    Assert-OnlyReceiptChanged -StatusText $afterGenerationStatus -RelativeReceipt $relativeReceipt
+
+    $receiptStatus = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all','--',$relativeReceipt)
+    if (-not [string]::IsNullOrWhiteSpace($receiptStatus)) {
+        [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('add','--',$relativeReceipt))
+        $staged = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('diff','--cached','--name-only')
+        $stagedLines = @($staged -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($stagedLines.Count -ne 1 -or $stagedLines[0] -ne $relativeReceipt) {
+            throw "Unexpected staged paths. Expected only '$relativeReceipt'; observed: $staged"
+        }
+
+        [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('commit','-m','Update CFA local evidence snapshot'))
+        [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('push','origin',$branch))
     }
 
     [void](Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('fetch','origin',$branch))
     $localHead = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('rev-parse','HEAD')
     $remoteHead = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('rev-parse',"origin/$branch")
     $finalStatus = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('status','--porcelain','--untracked-files=all')
-    $remoteReceiptPaths = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('ls-tree','-r','--name-only',"origin/$branch",'--','docs/evidence/latest-local-validation.md')
+    $remoteReceiptPaths = Invoke-Git -WorkingDirectory $RepoRoot -Arguments @('ls-tree','-r','--name-only',"origin/$branch",'--',$relativeReceipt)
 
     Assert-PublishedEvidenceState `
         -LocalHead $localHead `
@@ -222,7 +299,7 @@ try {
         -RemoteReceiptPaths $remoteReceiptPaths
 
     Write-Host "Published evidence commit: $localHead"
-    Write-Host 'Remote receipt: docs/evidence/latest-local-validation.md'
+    Write-Host "Remote receipt: $relativeReceipt"
     Write-Host 'CFA EVIDENCE SYNC: PASS'
 }
 catch {
