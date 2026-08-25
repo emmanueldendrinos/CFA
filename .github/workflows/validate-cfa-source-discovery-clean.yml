@@ -1,0 +1,133 @@
+name: Validate CFA source discovery candidate
+
+on:
+  pull_request:
+    paths:
+      - validation/CFA-Source-Discovery-v1.0.0.ps1.gz.b64
+      - .github/workflows/validate-cfa-source-discovery-clean.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfa-source-discovery-clean-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-windows-powershell-51:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
+      CANDIDATE_PATH: ${{ runner.temp }}\CFA-Source-Discovery-v1.0.0.ps1
+      EXPECTED_SHA256: fcfff6edfc671ff85a35abbb8e1531e96ffff1072da637db2885dfb0faca0a9a
+      EXPECTED_BYTES: '45934'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert native Windows PowerShell 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+              [int]$PSVersionTable.PSVersion.Major -ne 5 -or
+              [int]$PSVersionTable.PSVersion.Minor -ne 1) {
+              throw "Required Windows PowerShell Desktop 5.1; found $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)."
+          }
+          New-Item -ItemType Directory -Path $env:EVIDENCE_DIR -Force | Out-Null
+          $PSVersionTable | Out-String | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'powershell-version.txt') -Encoding UTF8
+
+      - name: Decode and verify exact candidate
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          Add-Type -AssemblyName System.IO.Compression
+          $encodedPath = Join-Path $env:GITHUB_WORKSPACE 'validation\CFA-Source-Discovery-v1.0.0.ps1.gz.b64'
+          $encoded = (Get-Content -LiteralPath $encodedPath -Raw -ErrorAction Stop) -replace '\s', ''
+          $compressed = [Convert]::FromBase64String($encoded)
+          $inputStream = New-Object System.IO.MemoryStream
+          $inputStream.Write($compressed, 0, $compressed.Length)
+          $inputStream.Position = 0
+          $gzipStream = New-Object System.IO.Compression.GZipStream -ArgumentList @($inputStream, [IO.Compression.CompressionMode]::Decompress)
+          $outputStream = [IO.File]::Create($env:CANDIDATE_PATH)
+          try {
+              $gzipStream.CopyTo($outputStream)
+          }
+          finally {
+              $outputStream.Dispose()
+              $gzipStream.Dispose()
+              $inputStream.Dispose()
+          }
+          $item = Get-Item -LiteralPath $env:CANDIDATE_PATH -ErrorAction Stop
+          $actualHash = (Get-FileHash -LiteralPath $env:CANDIDATE_PATH -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([long]$item.Length -ne [long]$env:EXPECTED_BYTES -or $actualHash -cne $env:EXPECTED_SHA256) {
+              throw "Decoded candidate identity differs: bytes=$($item.Length); sha256=$actualHash"
+          }
+          $actualHash | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'candidate-sha256.txt') -Encoding ASCII
+          [string]$item.Length | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'candidate-bytes.txt') -Encoding ASCII
+
+      - name: Parse exact candidate and audit static safety
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($env:CANDIDATE_PATH, [ref]$tokens, [ref]$parseErrors)
+          @($parseErrors) | ForEach-Object { $_.ToString() } | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-errors.txt') -Encoding UTF8
+          if (@($parseErrors).Count -ne 0) {
+              throw "Candidate has $(@($parseErrors).Count) Windows PowerShell parser error(s)."
+          }
+
+          $text = Get-Content -LiteralPath $env:CANDIDATE_PATH -Raw -ErrorAction Stop
+          foreach ($forbidden in @('Invoke-Expression', 'Start-Process', 'git commit', 'git push', '[string]$PgPassword', '[securestring]$PgPassword')) {
+              if ($text.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                  throw "Forbidden source surface found: $forbidden"
+              }
+          }
+          foreach ($required in @('--no-password', 'default_transaction_read_only=on', 'transaction_read_only', 'raw_kraken_data_copied = $false', 'postgres_table_rows_exported = $false', 'cfa_repository_modified = $false')) {
+              if ($text.IndexOf($required, [StringComparison]::Ordinal) -lt 0) {
+                  throw "Required source invariant is missing: $required"
+              }
+          }
+
+          $parameterNames = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath.ToLowerInvariant() })
+          foreach ($forbiddenName in @('password', 'pgpassword')) {
+              if ($parameterNames -ccontains $forbiddenName) {
+                  throw "Forbidden credential parameter exists: $forbiddenName"
+              }
+          }
+
+          [pscustomobject][ordered]@{
+              token_count = @($tokens).Count
+              parse_error_count = @($parseErrors).Count
+              parameter_count = $parameterNames.Count
+              forbidden_credential_parameters = 0
+              required_read_only_controls = 'PASS'
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-and-safety.json') -Encoding UTF8
+
+      - name: Execute exact candidate self-test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = @(& "$PSHOME\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $env:CANDIDATE_PATH -SelfTest 2>&1)
+          $exitCode = $LASTEXITCODE
+          $output | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'self-test.log') -Encoding UTF8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) {
+              throw "Candidate self-test failed with exit code $exitCode."
+          }
+          if (($output -join "`n") -notmatch 'PASS: CFA source discovery script passed native Windows PowerShell 5.1 self-test') {
+              throw 'Expected self-test PASS marker is missing.'
+          }
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfa-source-discovery-native-ps51-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
