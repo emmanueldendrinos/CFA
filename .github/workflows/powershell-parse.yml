@@ -83,6 +83,14 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaNewsAcquisition.ps1 -SelfTest
 
+      - name: Runtime self-test CFA GDELT Q2 acquisition under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Acquire-CfaGdeltQ2Source.ps1 -SelfTest
+
+      - name: Runtime self-test CFA GDELT Q2 verification under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaGdeltQ2Source.ps1 -SelfTest
+
       - name: Runtime self-test Stage 1 runner under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Run-CfaStage1.ps1 -SelfTest
