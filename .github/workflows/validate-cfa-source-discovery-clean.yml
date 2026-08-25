@@ -1,6 +1,9 @@
 name: Validate CFA source discovery candidate
 
 on:
+  push:
+    branches:
+      - validation/cfa-source-discovery-v100-clean
   pull_request:
     paths:
       - validation/CFA-Source-Discovery-v1.0.0.ps1.gz.b64
