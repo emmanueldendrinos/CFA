@@ -150,17 +150,31 @@ The script inspected the exact locally present archive named by PostgreSQL linea
 
 This directly reconciles the locally present Q2 Kraken archive and all 1,059 PostgreSQL manifest members to recorded import lineage. CFA-S1-006 is therefore PASS. This does not alter the separate observation that the typed/raw market relations contain 1,058 distinct data-bearing source member ordinals/pair tokens.
 
-### News/hype acquisition state discovered during coverage verification
+### Direct news source coverage verification
 
-The directly inspected `asrp_hype.acquisition_runs` row reports:
+Script: `scripts/windows/Verify-CfaNewsSourceCoverage.ps1`
 
-- `status = running`.
-- `expected_object_count = 7,283`.
-- `calibration_status = passed`.
-- `completed_at_utc = NULL`.
-- `last_object_key = 20250403111500`.
+Execution controls: Windows PowerShell 5.1; PostgreSQL `default_transaction_read_only=on`; statement timeout 60 seconds; no PostgreSQL object or row modification.
 
-The directly inspected `asrp_hype.protocol_contracts` row reports:
+Validated local run: `20260825-152746-3093dc71d1e84d2a8affe4b1d57b440b`.
+
+#### Acquisition run and protocol
+
+The directly inspected acquisition run reports:
+
+- protocol ID: `5ba49c0d-b7c8-4d66-ad10-8579a5d34458`.
+- run ID: `ec052d2a-1156-4562-8ae2-c0208051ae39`.
+- package version: `1.0.9`.
+- status: `running`.
+- expected object count: 7,283.
+- expected compressed bytes: 38,419,076,974.
+- calibration status: `passed` across 12 calibration objects.
+- started at: 2026-08-19 18:22:19.662738+00.
+- last updated at: 2026-08-20 10:53:07.111393+00.
+- completed timestamp: NULL.
+- last object key: `20250403111500`.
+
+The directly inspected protocol contract reports:
 
 - source product: `GDELT 2.0 native/base GKG fifteen-minute update archives`.
 - protocol interval start: 2025-03-30 18:00:00+00.
@@ -168,10 +182,32 @@ The directly inspected `asrp_hype.protocol_contracts` row reports:
 - expected slots: 7,296.
 - known missing slots: 13.
 - selected objects: 7,283.
+- selected compressed bytes: 38,419,076,974.
 
-The exact-count verification found only 368 rows in `asrp_hype.acquisition_objects`.
+#### Acquisition object coverage
 
-Therefore the currently present hype acquisition cannot be treated as complete: its own run metadata is not complete and its acquired-object row count does not reconcile to the selected/expected object count. This is a blocking source-verification failure until independently resolved or a different verified news source is provided.
+- Exact acquisition-object rows: 368.
+- Distinct payload SHA-256 values: 366.
+- Rows with NULL payload SHA-256: 2.
+- Minimum archive timestamp: 2025-03-30 18:00:00+00.
+- Maximum archive timestamp: 2025-06-12 13:15:00+00.
+- Required final selected slot timestamp for interval-end coverage: at least 2025-06-14 17:45:00+00.
+
+#### Explicit coverage checks
+
+- `ACQUISITION_RUN_CARDINALITY`: PASS, observed 1 / expected 1.
+- `PROTOCOL_CONTRACT_CARDINALITY`: PASS, observed 1 / expected 1.
+- `RUN_STATUS_COMPLETE`: FAIL, observed `running` / expected `completed`.
+- `RUN_COMPLETED_TIMESTAMP`: FAIL, observed NULL / expected non-null.
+- `SELECTED_VS_EXPECTED_OBJECTS`: PASS, observed 7,283 / expected 7,283.
+- `ACQUIRED_VS_SELECTED_OBJECTS`: FAIL, observed 368 / expected 7,283.
+- `PAYLOAD_HASH_NULLS`: FAIL, observed 2 / expected 0.
+- `PAYLOAD_HASH_UNIQUENESS`: FAIL, observed 366 / expected 368.
+- `ARCHIVE_TIMESTAMP_REACHES_INTERVAL_END`: FAIL, observed 2025-06-12 13:15:00+00 / expected at least 2025-06-14 17:45:00+00.
+
+Total coverage-check failures: 6. Total UNVERIFIED checks: 0.
+
+The existing hype/news acquisition is therefore directly demonstrated to be incomplete and internally unreconciled. CFA-S1-010 remains FAIL. The existing factor tables derived from this acquisition must not be treated as complete source evidence or model-ready inputs.
 
 ## Stage 1 hard-gate status
 
@@ -186,17 +222,17 @@ Therefore the currently present hype acquisition cannot be treated as complete: 
 | CFA-S1-007 PostgreSQL market/news availability | PASS | PostgreSQL 18.4 read-only discovery and direct table inspection succeeded. Availability does not imply source completeness. |
 | CFA-S1-008 Direct market coverage | PASS | 14,055,089 exact Q2 rows; 1,058 member paths/pair tokens; exact Q2 UTC boundaries; zero window/alignment/quality/duplicate failures; raw↔typed bounded reconciliation PASS; SRP exact row/time/pair coverage reconciles. |
 | CFA-S1-009 Advance to identity approval | BLOCKED | CFA-S1-003/004/005 and CFA-S1-010 remain unresolved. |
-| CFA-S1-010 News source acquisition completeness | FAIL | Hype run remains `running`, completion timestamp is null, exact acquisition-object rows are 368 versus 7,283 selected/expected objects. |
+| CFA-S1-010 News source acquisition completeness | FAIL | Direct coverage verification produced 6 FAIL and 0 UNVERIFIED checks: run incomplete, completion timestamp null, 368/7,283 acquired objects, 2 null payload hashes, only 366 distinct payload hashes across 368 rows, and timestamp coverage stops before the protocol interval end. |
 
 ## Current decision
 
 A full Kraken reload is **not authorized or required**. The existing PostgreSQL Q2 market stores have passed direct market coverage, internal raw-to-typed integrity checks, and direct byte/source reconciliation against the locally present Q2 Kraken archive and all PostgreSQL manifest members.
 
-The project must still **not** advance to identity approval. DATA-001/DATA-002 reference reconciliation remains unresolved under CFA-S1-003/004/005, and the existing hype/news acquisition remains incomplete under CFA-S1-010.
+The project must still **not** advance to identity approval. DATA-001/DATA-002 reference reconciliation remains unresolved under CFA-S1-003/004/005, and the existing hype/news acquisition fails source-completeness validation under CFA-S1-010.
 
-The existing hype/news stage must **not** be treated as complete or model-ready. Its acquisition completeness gate is FAIL and downstream news matching/factor work remains blocked.
+The existing hype/news factor tables must **not** be treated as complete or model-ready. Downstream news matching, candidate-factor definition, leakage testing, model-ready dataset freezing, and PLS remain blocked by the upstream source gate.
 
 ## Next reproducible calculations
 
-1. Run `scripts/windows/Verify-CfaNewsSourceCoverage.ps1` read-only to produce explicit news acquisition completeness checks and timestamp coverage evidence.
+1. Inspect the recorded news run events and acquisition-object failure evidence to determine why acquisition stopped and whether a CFA-authorized, reproducible completion or replacement path exists. Do not resume or reuse a legacy acquisition implementation merely because it exists.
 2. Resolve DATA-001/DATA-002 exact row-count, byte-size, and SHA-256 reconciliation against the CFA SoT before identity approval.
