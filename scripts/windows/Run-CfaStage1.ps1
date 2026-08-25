@@ -45,7 +45,7 @@ function Invoke-Child {
     if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) { throw "Required child script missing: $ScriptPath" }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments
     $code = $LASTEXITCODE
-    if ($code -ne 0) { throw "Child script failed with exit code $code: $ScriptPath" }
+    if ($code -ne 0) { throw ('Child script failed with exit code ' + $code + ': ' + $ScriptPath) }
 }
 
 function Get-ReferenceGate {
