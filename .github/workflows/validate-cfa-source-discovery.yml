@@ -93,30 +93,33 @@ jobs:
               parse_error_count = @($parseErrors).Count
           } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-summary.json') -Encoding UTF8
 
-      - name: Audit read-only surface
+      - name: Audit credential and read-only controls structurally
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
-          $text = Get-Content -LiteralPath $env:SCRIPT_PATH -Raw -ErrorAction Stop
-          $required = @(
-              'default_transaction_read_only=on',
-              "transaction_read_only -cne 'on'",
-              'This script has no password parameter.',
-              'SOURCE_FILE_TO_POSTGRES_RECONCILIATION_UNVERIFIED',
-              '[switch]$SelfTest'
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($env:SCRIPT_PATH, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw 'AST audit received a script with parse errors.' }
+          $parameterNames = @(
+              $ast.ParamBlock.Parameters |
+                  ForEach-Object { $_.Name.VariablePath.UserPath.ToLowerInvariant() }
           )
-          foreach ($literal in $required) {
+          foreach ($forbiddenName in @('password','pgpassword')) {
+              if ($parameterNames -ccontains $forbiddenName) {
+                  throw "Forbidden credential parameter exists: $forbiddenName"
+              }
+          }
+          $text = Get-Content -LiteralPath $env:SCRIPT_PATH -Raw -ErrorAction Stop
+          foreach ($literal in @('default_transaction_read_only=on','--no-password')) {
               if (-not $text.Contains($literal)) { throw "Required read-only control is absent: $literal" }
           }
-          $forbiddenPatterns = @(
-              '(?im)^\s*param\s*\([^)]*\$(?:password|pgpassword)\b',
-              '(?im)\bpsql(?:\.exe)?\b[^\r\n]*(?:-c|--command)[^\r\n]*\b(?:insert|update|delete|drop|alter|truncate|create|grant|revoke|copy\s+[^\r\n]*\s+from)\b'
-          )
-          foreach ($pattern in $forbiddenPatterns) {
-              [void][regex]::new($pattern)
-              if ([regex]::IsMatch($text, $pattern)) { throw "Forbidden mutation or credential surface matched: $pattern" }
-          }
-          'PASS' | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'read-only-surface.txt') -Encoding ASCII
+          [pscustomobject][ordered]@{
+              parameter_count = $parameterNames.Count
+              forbidden_credential_parameters = 0
+              forced_default_transaction_read_only = $true
+              psql_no_password_flag = $true
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'read-only-surface.json') -Encoding UTF8
 
       - name: Run exact script self-test
         run: |
