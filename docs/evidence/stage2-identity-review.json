@@ -1,0 +1,57 @@
+{
+    "source_hashes":  {
+                          "AF_001":  "569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f",
+                          "AF_002":  "ff7e1283b0f543213d9946bbb0828f2b20283e232db00bc379dad4fe9bc2f2c7",
+                          "AF_003":  "8c75e334be54e888b17a70d7945dc43ff2f2d789126eefaee11b4a6d078f7fc4"
+                      },
+    "counts":  {
+                   "eligible_pair_rows":  1058,
+                   "eligible_base_assets":  435,
+                   "candidate_rows":  435,
+                   "candidate_records":  1005,
+                   "single":  233,
+                   "ambiguous":  182,
+                   "none":  20,
+                   "source_approved":  0,
+                   "alias_rows":  45,
+                   "alias_assets":  43
+               },
+    "gates":  [
+                  {
+                      "gate_id":  "CFA-S2-001",
+                      "status":  "PASS",
+                      "name":  "Eligible Kraken base-asset universe reconciliation",
+                      "observed":  "eligible_pairs=1058; market_assets=435; candidate_assets=435"
+                  },
+                  {
+                      "gate_id":  "CFA-S2-002",
+                      "status":  "PASS",
+                      "name":  "CoinGecko candidate-file structural integrity",
+                      "observed":  "rows=435; candidates=1005; parse_fail=0; shape_fail=0; hash_fail=0; count_fail=0; id_fail=0; pair_fail=0; obs_fail=0; symbol_fail=0"
+                  },
+                  {
+                      "gate_id":  "CFA-S2-003",
+                      "status":  "UNVERIFIED",
+                      "name":  "CoinGecko mapping decisions",
+                      "observed":  "source_approved=0; single=233; ambiguous=182; none=20"
+                  },
+                  {
+                      "gate_id":  "CFA-S2-004",
+                      "status":  "PASS",
+                      "name":  "Alias seed structural linkage",
+                      "observed":  "rows=45; assets=43; missing=0; duplicates=0; bad_context=0"
+                  },
+                  {
+                      "gate_id":  "CFA-S2-005",
+                      "status":  "UNVERIFIED",
+                      "name":  "Alias semantic validation",
+                      "observed":  "manual seed references only"
+                  },
+                  {
+                      "gate_id":  "CFA-S2-006",
+                      "status":  "BLOCKED",
+                      "name":  "Advance to news matching definition",
+                      "observed":  "CFA-S2-003 and CFA-S2-005 unresolved"
+                  }
+              ]
+}
