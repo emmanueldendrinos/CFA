@@ -38,7 +38,9 @@ function Assert-FrozenKrakenPass {
     $run = Get-LatestRun -ParentPath (Join-Path $EvidenceRoot 'kraken-reconciliation')
     $membersPath = Join-Path $run.FullName 'member-reconciliation.csv'
     $archivePath = Join-Path $run.FullName 'archive-reconciliation.csv'
-    if (-not (Test-Path -LiteralPath $membersPath -PathType Leaf) -or -not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw 'Frozen Kraken evidence files are missing.' }
+    if (-not (Test-Path -LiteralPath $membersPath -PathType Leaf) -or -not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+        throw 'Frozen Kraken evidence files are missing.'
+    }
     $members = @(Import-Csv -LiteralPath $membersPath)
     $archives = @(Import-Csv -LiteralPath $archivePath)
     if ($members.Count -ne 1059) { throw "Frozen Kraken member evidence has unexpected cardinality: $($members.Count)." }
@@ -55,14 +57,34 @@ function Invoke-Child {
     if ($code -ne 0) { throw ('Child script failed with exit code ' + $code + ': ' + $ScriptPath) }
 }
 
+function Get-GateStatusFromExitCode {
+    param([int]$ExitCode)
+    if ($ExitCode -eq 0) { return 'PASS' }
+    if ($ExitCode -eq 2) { return 'FAIL' }
+    throw ('Unexpected gate exit code: ' + $ExitCode)
+}
+
 function Invoke-GateChild {
     param([string]$ScriptPath,[string[]]$Arguments)
     if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) { throw "Required gate script missing: $ScriptPath" }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments
-    $code = $LASTEXITCODE
-    if ($code -eq 0) { return 'PASS' }
-    if ($code -eq 2) { return 'FAIL' }
-    throw ('Gate script execution failed with exit code ' + $code + ': ' + $ScriptPath)
+
+    $oldPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments 2>&1)
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+
+    foreach ($line in $output) { Write-Host ([string]$line) }
+    try {
+        return Get-GateStatusFromExitCode -ExitCode $code
+    }
+    catch {
+        throw ('Gate script execution failed with exit code ' + $code + ': ' + $ScriptPath)
+    }
 }
 
 function Get-ReferenceGate {
@@ -83,6 +105,15 @@ function Get-CfaSourceGateFromEvidence {
     return Get-StatusGate -Rows @(Import-Csv -LiteralPath $path)
 }
 
+function Get-LegacyNewsGateFromEvidence {
+    param([string]$EvidenceRoot)
+    $run = Get-LatestRun -ParentPath (Join-Path $EvidenceRoot 'news-source-coverage') -Optional
+    if ($null -eq $run) { return 'UNVERIFIED' }
+    $path = Join-Path $run.FullName 'coverage-checks.csv'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'UNVERIFIED' }
+    return Get-StatusGate -Rows @(Import-Csv -LiteralPath $path)
+}
+
 function Resolve-NewsGate {
     param([string]$LegacyGate,[string]$CfaSourceGate)
     if ($CfaSourceGate -eq 'PASS') { return 'PASS' }
@@ -99,13 +130,20 @@ function Invoke-SelfTest {
     if ((Get-StatusGate -Rows $rowsUnverified) -ne 'UNVERIFIED') { throw 'Self-test failed: UNVERIFIED gate.' }
     if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'PASS') -ne 'PASS') { throw 'Self-test failed: CFA source PASS must supersede rejected legacy source.' }
     if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'FAIL') -ne 'FAIL') { throw 'Self-test failed: CFA source FAIL.' }
-    if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'UNVERIFIED') -ne 'FAIL') { throw 'Self-test failed: legacy gate fallback.' }
+    if ((Resolve-NewsGate -LegacyGate 'FAIL' -CfaSourceGate 'UNVERIFIED') -ne 'FAIL') { throw 'Self-test failed: legacy fallback.' }
+    if ((Get-GateStatusFromExitCode -ExitCode 0) -ne 'PASS') { throw 'Self-test failed: gate exit 0.' }
+    if ((Get-GateStatusFromExitCode -ExitCode 2) -ne 'FAIL') { throw 'Self-test failed: gate exit 2.' }
     Write-Host 'SELF-TEST: PASS'
 }
 
 if ($SelfTest) {
     try { Invoke-SelfTest; exit 0 }
-    catch { Write-Host 'SELF-TEST: FAIL'; Write-Host $_.Exception.Message; if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }; exit 1 }
+    catch {
+        Write-Host 'SELF-TEST: FAIL'
+        Write-Host $_.Exception.Message
+        if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
+        exit 1
+    }
 }
 
 $oldPassword = $env:PGPASSWORD
@@ -121,26 +159,31 @@ try {
     $krakenRun = Assert-FrozenKrakenPass -EvidenceRoot $evidenceRoot
     Write-Host "Frozen Kraken PASS evidence: $krakenRun"
 
-    if ([string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
+    $legacyGate = Get-LegacyNewsGateFromEvidence -EvidenceRoot $evidenceRoot
+    $cfaSourceGate = Get-CfaSourceGateFromEvidence -EvidenceRoot $evidenceRoot
+
+    $needsDatabaseWork = (-not ($RecoverNewsSource -and $cfaSourceGate -eq 'PASS')) -or (-not $RecoverNewsSource)
+    if ($needsDatabaseWork -and [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
         $securePassword = Read-Host "PostgreSQL password for '$PgUser'" -AsSecureString
         $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
         $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
         $ownsPassword = $true
     }
 
-    $legacyGate = 'UNVERIFIED'
-    $cfaSourceGate = Get-CfaSourceGateFromEvidence -EvidenceRoot $evidenceRoot
-
     if ($RecoverNewsSource) {
         Write-Host 'CFA news-source recovery mode: enabled'
-        Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Acquire-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
-        $cfaSourceGate = Invoke-GateChild -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
-    } else {
+        if ($cfaSourceGate -eq 'PASS') {
+            Write-Host 'Existing CFA GDELT Q2 source verification: PASS; acquisition and re-verification skipped.'
+        }
+        else {
+            Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Acquire-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
+            $cfaSourceGate = Invoke-GateChild -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaGdeltQ2Source.ps1') -Arguments @('-PgUser',$PgUser)
+        }
+    }
+    else {
         Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Verify-CfaNewsSourceCoverage.ps1') -Arguments @('-PgUser',$PgUser)
         Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Diagnose-CfaNewsAcquisition.ps1') -Arguments @('-PgUser',$PgUser)
-        $coverageRun = Get-LatestRun -ParentPath (Join-Path $evidenceRoot 'news-source-coverage')
-        $coverageRows = @(Import-Csv -LiteralPath (Join-Path $coverageRun.FullName 'coverage-checks.csv'))
-        $legacyGate = Get-StatusGate -Rows $coverageRows
+        $legacyGate = Get-LegacyNewsGateFromEvidence -EvidenceRoot $evidenceRoot
     }
 
     if ($ownsPassword) {
@@ -153,13 +196,6 @@ try {
     Invoke-Child -ScriptPath (Join-Path $RepoRoot 'scripts\windows\Sync-CfaEvidence.ps1') -Arguments @()
 
     $referenceGate = Get-ReferenceGate -RepoRootPath $RepoRoot
-    if ($legacyGate -eq 'UNVERIFIED') {
-        $legacyRun = Get-LatestRun -ParentPath (Join-Path $evidenceRoot 'news-source-coverage') -Optional
-        if ($null -ne $legacyRun) {
-            $legacyPath = Join-Path $legacyRun.FullName 'coverage-checks.csv'
-            if (Test-Path -LiteralPath $legacyPath -PathType Leaf) { $legacyGate = Get-StatusGate -Rows @(Import-Csv -LiteralPath $legacyPath) }
-        }
-    }
     $newsGate = Resolve-NewsGate -LegacyGate $legacyGate -CfaSourceGate $cfaSourceGate
     $advanceGate = if ($referenceGate -eq 'PASS' -and $newsGate -eq 'PASS') { 'PASS' } else { 'BLOCKED' }
 
@@ -175,9 +211,11 @@ try {
     Write-Host "CFA-S1-010 News source completeness          : $newsGate"
     Write-Host "CFA-S1-009 Advance to identity approval      : $advanceGate"
     Write-Host ''
+
     if ($advanceGate -eq 'PASS') {
         Write-Host 'CFA STAGE 1: PASS'
-    } else {
+    }
+    else {
         Write-Host 'CFA STAGE 1: BLOCKED'
         Write-Host 'The runner completed successfully and published evidence; downstream identity/factor work remains gated.'
     }
