@@ -2,237 +2,146 @@
 
 Date: 2026-08-25
 
-Authority: CFA Source of Truth. This receipt records only CFA-era observations produced by read-only PostgreSQL inspection scripts and console output directly supplied from the local execution environment. It does not import prior ASRP conclusions as authority.
+Authority: CFA Source of Truth. This receipt records CFA-era observations from the SoT, exact repository-source reconciliation, direct read-only PostgreSQL inspection, direct Kraken byte reconciliation, and bounded local evidence published through the CFA repository. Prior ASRP implementation or analytical conclusions are not imported as authority.
 
-## Reproducible evidence
+## Authority and registered reference sources
 
-### PostgreSQL discovery
+The current SoT text snapshot is generated reproducibly from `CFA-SoT.xlsx` and is a review surface only; the workbook remains authoritative.
 
-Script: `scripts/windows/Inspect-CfaExistingDatabases.ps1`
+The SoT registers three exact source CSVs:
 
-Observed PostgreSQL server: 18.4.
+- `ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv`
+- `ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv`
+- `ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv`
 
-Accessible non-template databases inspected successfully: `asrp`, `cri_trading_terminal`, `pls_trading`, `pls_trading_pre_v130`, `postgres`, `srp`.
+`docs/evidence/reference-source-reconciliation.md` directly reconciles all three current repository files against the SoT registry. For every file, parsed data rows, parsed columns, exact bytes, and SHA-256 are PASS. The current registered results are:
 
-Relevant discovered relations included `asrp.q2_market_1m_observations`, `asrp.q2_raw_records`, `asrp.q2_import_stage`, the `asrp_hype` schema, `srp.ohlcvt_1m_2025q2`, `srp.pair_identity_map`, `srp.q2_spike_hype_handoff`, and `srp.q2_spike_hype_samples`.
+| Source | Data rows | Columns | Bytes | SHA-256 | Overall |
+|---|---:|---:|---:|---|---|
+| AF-001 | 1,059 | 16 | 355,619 | `569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f` | PASS |
+| AF-002 | 435 | 11 | 308,626 | `ff7e1283b0f543213d9946bbb0828f2b20283e232db00bc379dad4fe9bc2f2c7` | PASS |
+| AF-003 | 45 | 6 | 4,621 | `8c75e334be54e888b17a70d7945dc43ff2f2d789126eefaee11b4a6d078f7fc4` | PASS |
 
-Discovery relation row values were PostgreSQL estimates only and were not treated as exact evidence.
+This supersedes the earlier CFA-S1-003/004/005 unresolved reference-byte state.
 
-### Controlled exact-count revalidation
+## PostgreSQL and market-source evidence
 
-Script: `scripts/windows/Inspect-CfaLegacyMarketHype.ps1`
+Direct PostgreSQL inspection established PostgreSQL 18.4 and the relevant `asrp`, `asrp_hype`, and `srp` relations.
 
-Execution controls: PostgreSQL `default_transaction_read_only=on`; statement timeout 90 seconds.
+Controlled exact-count revalidation established, among other relations:
 
-All 18 controlled exact-count queries returned PASS. Key exact counts:
+- `asrp.q2_market_1m_observations`: 14,055,089 rows.
+- `asrp.q2_raw_records`: 14,055,089 rows.
+- `srp.ohlcvt_1m_2025q2`: 14,055,089 rows.
 
-| Relation | Exact rows |
-|---|---:|
-| `asrp.q2_import_stage` | 470 |
-| `asrp.q2_market_1m_observations` | 14,055,089 |
-| `asrp.q2_raw_records` | 14,055,089 |
-| `asrp_hype.acquisition_objects` | 368 |
-| `asrp_hype.acquisition_runs` | 1 |
-| `asrp_hype.asset_slot_factors` | 12,254 |
-| `asrp_hype.asset_source_slot_factors` | 30,689 |
-| `asrp_hype.market_slot_factors` | 366 |
-| `asrp_hype.protocol_contracts` | 1 |
-| `asrp_hype.run_events` | 384 |
-| `asrp_hype.source_registry` | 4,869 |
-| `asrp_hype.subject_terms` | 708 |
-| `asrp_hype.subjects` | 435 |
-| `srp.ohlcvt_1m_2025q2` | 14,055,089 |
-| `srp.market_pairs` | 1,539 |
-| `srp.pair_identity_map` | 1,539 |
-| `srp.q2_spike_hype_handoff` | 9,048 |
-| `srp.q2_spike_hype_samples` | 1,037 |
+Direct market coverage verification established:
 
-The earlier PostgreSQL estimate of 14,055,090 for `srp.ohlcvt_1m_2025q2` is superseded for CFA purposes by the direct exact count of 14,055,089.
+- Q2 timestamp coverage from 2025-04-01 00:00:00+00 through 2025-06-30 23:59:00+00.
+- 1,058 distinct data-bearing member paths / opaque pair tokens.
+- zero rows outside the source window.
+- zero non-minute-aligned rows.
+- zero quality-flagged rows.
+- zero duplicate-classification rows.
+- raw↔typed bounded reconciliation PASS.
+- SRP exact row/time/pair coverage reconciles to the ASRP typed store.
 
-### Structural and lineage inspection
+Direct Kraken source reconciliation run `20260825-140324-a472cacf60444c0b88e398367b5fef0b` established:
 
-Script: `scripts/windows/Inspect-CfaLegacyLineage.ps1`
+- 1,059 / 1,059 manifest members PASS.
+- zero missing, hash-mismatched, ambiguous, or unverified-shape members.
+- local `Kraken_OHLCVT_Q2_2025.zip` exactly matches PostgreSQL-recorded SHA-256 `36a1aa3a04f4ac3d700e13788372fcc1dfb7c506a2e47b0b05e8250ccd1a8e3c`.
+- no archive extraction, Kraken modification, or PostgreSQL modification occurred during reconciliation.
 
-All requested small lineage/reference exports returned PASS.
+A Kraken reload is not required.
 
-Directly observed core market structures:
+## Legacy news acquisition: direct rejection evidence
 
-`asrp.q2_market_1m_observations` has 19 columns and preserves raw lineage fields including `import_run_id`, `source_member_ordinal`, `member_path_raw`, `pair_token_opaque`, `physical_record_number`, and `raw_record_sha256`, together with `source_epoch_seconds`, `candle_start_utc`, OHLC, base volume, trade count, source-window/minute-alignment/canonical-eligibility flags, quality flags, and duplicate classification.
+The latest corrected read-only coverage verification is published in `docs/evidence/latest-local-validation.md` from local run `20260825-162516-5cbb56c5d92e481b807116b6789652b0`.
 
-`asrp.q2_raw_records` has 18 columns and preserves raw record text, raw SHA-256, source tokens, observed field count, record class, quarantine reason, and import timestamp keyed by the same import/member/path/pair/physical-record lineage fields.
+The legacy `asrp_hype` acquisition reports:
 
-`srp.ohlcvt_1m_2025q2` has 11 columns: `pair_id`, `ts_utc`, OHLC, `vwap`, `volume`, `trade_count`, `source_archive_id`, and `processing_run_id`.
+- run status `running`, not `completed`.
+- NULL completion timestamp.
+- 7,283 selected objects under its own protocol.
+- only 368 acquisition-object rows.
+- 366 non-NULL payload hashes across 366 non-NULL rows: non-NULL payload uniqueness PASS.
+- 2 rows with NULL payload hashes: FAIL.
+- maximum acquired archive timestamp 2025-06-12 13:15:00+00.
+- legacy protocol interval end exclusive 2025-06-14 18:00:00+00.
 
-### Direct market coverage verification
+The corrected coverage gate therefore has 4 PASS, 5 FAIL, and 0 UNVERIFIED checks. The earlier statement that distinct-hash count 366/368 proved duplicate payloads is superseded: direct diagnosis found zero duplicate non-NULL payload-hash groups. The two missing hashes belong to unretrieved network-failed objects.
 
-Script: `scripts/windows/Verify-CfaStage1Coverage.ps1`
+The deeper read-only diagnosis run `20260825-162517-bc80b1b868854effacb38acbdc18f7dc` established:
 
-Execution controls: PostgreSQL `default_transaction_read_only=on`; statement timeout 120 seconds.
+- latest recorded event is `object_completed`.
+- 366 `object_completed` events with 366 distinct completed object keys.
+- 12 `network_failed` events.
+- one `network_circuit_breaker_pause` after ten consecutive bounded network failures.
+- one historical `failed_integrity_or_parser` event caused by an encoding translation failure.
+- a later recorded parser recovery from package version 1.0.6 to 1.0.9 retained 19 completed objects and identified a first incomplete object key.
+- two current `network_failed` acquisition-object rows at `20250331143000` and `20250331144500`, each with NULL payload SHA-256 and three exhausted download attempts.
+- zero duplicate non-NULL payload-hash groups.
+- the direct stop-cause classification remains UNVERIFIED because no terminal failure event explains why processing stopped after the final successful object.
 
-#### ASRP typed market
+The legacy acquisition is not an acceptable CFA Stage 1 source because it is incomplete, internally contains unresolved network-failed source slots, and its own protocol stops on 2025-06-14 while verified market coverage continues through 2025-06-30.
 
-- Exact rows: 14,055,089.
-- Import runs represented: 1.
-- Distinct source member ordinals: 1,058.
-- Distinct member paths: 1,058.
-- Distinct opaque pair tokens: 1,058.
-- Minimum timestamp: 2025-04-01 00:00:00+00.
-- Maximum timestamp: 2025-06-30 23:59:00+00.
-- Rows outside source window: 0.
-- Non-minute-aligned rows: 0.
-- Canonical eligible rows: 14,055,089.
-- Canonical ineligible rows: 0.
-- Rows with quality flags: 0.
-- Rows with duplicate classification: 0.
+## CFA-owned replacement news-source contract
 
-#### ASRP raw records
+The replacement path is derived afresh from current CFA evidence rather than from the legacy factor implementation.
 
-- Exact rows: 14,055,089.
-- Import runs represented: 1.
-- Distinct source member ordinals: 1,058.
-- Distinct member paths: 1,058.
-- Distinct opaque pair tokens: 1,058.
-- Observed field count minimum/maximum: 7/7.
-- Quarantined rows: 0.
-- Record class `accepted`: 14,055,089.
+Source product: `GDELT 2.0 native/base GKG fifteen-minute update archives`.
 
-#### SRP Q2 market
+Observed object URL pattern from directly inspected legacy source rows:
 
-- Exact rows: 14,055,089.
-- Distinct pair IDs: 1,058.
-- Distinct source archives: 1.
-- Minimum timestamp: 2025-04-01 00:00:00+00.
-- Maximum timestamp: 2025-06-30 23:59:00+00.
-- Null VWAP rows: 14,055,089.
-- Null trade-count rows: 0.
-- Null processing-run rows: 0.
+`https://storage.googleapis.com/data.gdeltproject.org/gdeltv2/{object_key}.gkg.csv.zip`
 
-#### Bounded integrity checks
+CFA Stage 1 Q2 source-verification interval:
 
-All five checks returned PASS:
+- start: 2025-04-01 00:00:00+00.
+- end exclusive: 2025-07-01 00:00:00+00.
+- grain: 15 minutes.
+- nominal slots: 8,736.
 
-- ASRP typed natural-key duplicates.
-- ASRP raw physical-key duplicates.
-- SRP Q2 natural-key duplicates.
-- ASRP raw rows without typed match.
-- ASRP typed rows without raw match.
+This interval deliberately matches the verified Q2 market interval. It does not assume a pre-Q2 factor lookback. If a later approved factor requires pre-Q2 information, the news-source interval must be extended and revalidated before that factor may PASS.
 
-This establishes direct Q2 market coverage and raw-to-typed internal reconciliation for the inspected PostgreSQL stores.
+Implementation boundary:
 
-### Direct Kraken source reconciliation
+- PostgreSQL database: `cfa`.
+- CFA-owned schema: `source_news`.
+- raw compressed archives remain under `Documents\CFA-local` and outside Git.
+- source contract, slot status, attempts, payload hashes, provider hash evidence when available, run IDs, and run events are stored in PostgreSQL.
+- acquisition is resumable and idempotent at the source-slot grain.
+- a provider 404 is recorded explicitly as provider-source missingness rather than silently imputed.
+- downloaded archives require nonzero payload, recorded SHA-256, structural ZIP validation, Content-Length agreement when provided, and provider MD5 agreement when the provider supplies MD5 metadata.
+- final source verification rechecks local existence, size, and SHA-256 for every downloaded archive.
 
-Script: `scripts/windows/Reconcile-CfaKrakenSources.ps1`
+Scripts:
 
-Execution controls: Windows PowerShell 5.1; PostgreSQL `default_transaction_read_only=on`; no archive extraction; no Kraken file modification; no PostgreSQL object or row modification.
+- `scripts/windows/Acquire-CfaGdeltQ2Source.ps1`
+- `scripts/windows/Verify-CfaGdeltQ2Source.ps1`
+- `scripts/windows/Run-CfaStage1.ps1 -RecoverNewsSource`
 
-Validated local run: `20260825-140324-a472cacf60444c0b88e398367b5fef0b`.
-
-The script inspected the exact locally present archive named by PostgreSQL lineage, `Kraken_OHLCVT_Q2_2025.zip`.
-
-#### Member reconciliation
-
-- Database manifest members: 1,059.
-- Candidate member objects: 1,059.
-- PASS: 1,059.
-- MISSING: 0.
-- HASH_MISMATCH: 0.
-- AMBIGUOUS: 0.
-- UNVERIFIED_CANDIDATE_SHAPE: 0.
-
-#### Archive reconciliation
-
-- Import run: `f86f3463-d76e-6c50-8457-74e015d2d316`.
-- PostgreSQL-recorded source path: `source\development\research_2025q2\Kraken_OHLCVT_Q2_2025.zip`.
-- Expected SHA-256: `36a1aa3a04f4ac3d700e13788372fcc1dfb7c506a2e47b0b05e8250ccd1a8e3c`.
-- Matching local files: 1.
-- Matching local file: `Kraken_OHLCVT_Q2_2025.zip`.
-- Archive status: PASS.
-
-This directly reconciles the locally present Q2 Kraken archive and all 1,059 PostgreSQL manifest members to recorded import lineage. CFA-S1-006 is therefore PASS. This does not alter the separate observation that the typed/raw market relations contain 1,058 distinct data-bearing source member ordinals/pair tokens.
-
-### Direct news source coverage verification
-
-Script: `scripts/windows/Verify-CfaNewsSourceCoverage.ps1`
-
-Execution controls: Windows PowerShell 5.1; PostgreSQL `default_transaction_read_only=on`; statement timeout 60 seconds; no PostgreSQL object or row modification.
-
-Validated local run: `20260825-152746-3093dc71d1e84d2a8affe4b1d57b440b`.
-
-#### Acquisition run and protocol
-
-The directly inspected acquisition run reports:
-
-- protocol ID: `5ba49c0d-b7c8-4d66-ad10-8579a5d34458`.
-- run ID: `ec052d2a-1156-4562-8ae2-c0208051ae39`.
-- package version: `1.0.9`.
-- status: `running`.
-- expected object count: 7,283.
-- expected compressed bytes: 38,419,076,974.
-- calibration status: `passed` across 12 calibration objects.
-- started at: 2026-08-19 18:22:19.662738+00.
-- last updated at: 2026-08-20 10:53:07.111393+00.
-- completed timestamp: NULL.
-- last object key: `20250403111500`.
-
-The directly inspected protocol contract reports:
-
-- source product: `GDELT 2.0 native/base GKG fifteen-minute update archives`.
-- protocol interval start: 2025-03-30 18:00:00+00.
-- protocol interval end exclusive: 2025-06-14 18:00:00+00.
-- expected slots: 7,296.
-- known missing slots: 13.
-- selected objects: 7,283.
-- selected compressed bytes: 38,419,076,974.
-
-#### Acquisition object coverage
-
-- Exact acquisition-object rows: 368.
-- Distinct payload SHA-256 values: 366.
-- Rows with NULL payload SHA-256: 2.
-- Minimum archive timestamp: 2025-03-30 18:00:00+00.
-- Maximum archive timestamp: 2025-06-12 13:15:00+00.
-- Required final selected slot timestamp for interval-end coverage: at least 2025-06-14 17:45:00+00.
-
-#### Explicit coverage checks
-
-- `ACQUISITION_RUN_CARDINALITY`: PASS, observed 1 / expected 1.
-- `PROTOCOL_CONTRACT_CARDINALITY`: PASS, observed 1 / expected 1.
-- `RUN_STATUS_COMPLETE`: FAIL, observed `running` / expected `completed`.
-- `RUN_COMPLETED_TIMESTAMP`: FAIL, observed NULL / expected non-null.
-- `SELECTED_VS_EXPECTED_OBJECTS`: PASS, observed 7,283 / expected 7,283.
-- `ACQUIRED_VS_SELECTED_OBJECTS`: FAIL, observed 368 / expected 7,283.
-- `PAYLOAD_HASH_NULLS`: FAIL, observed 2 / expected 0.
-- `PAYLOAD_HASH_UNIQUENESS`: FAIL, observed 366 / expected 368.
-- `ARCHIVE_TIMESTAMP_REACHES_INTERVAL_END`: FAIL, observed 2025-06-12 13:15:00+00 / expected at least 2025-06-14 17:45:00+00.
-
-Total coverage-check failures: 6. Total UNVERIFIED checks: 0.
-
-The existing hype/news acquisition is therefore directly demonstrated to be incomplete and internally unreconciled. CFA-S1-010 remains FAIL. The existing factor tables derived from this acquisition must not be treated as complete source evidence or model-ready inputs.
+The implementation and its self-tests are CI-validated, but the exact local full acquisition/verification is not yet complete. Therefore the replacement source remains a validation candidate and does not yet change CFA-S1-010.
 
 ## Stage 1 hard-gate status
 
 | Gate | Status | Evidence / blocker |
 |---|---|---|
-| CFA-S1-001 Authority/source boundary | PASS | CFA SoT remains authority. |
-| CFA-S1-002 Authorized repository reference files | PASS | Previously verified repository contents. |
-| CFA-S1-003 Reference row-count revalidation | UNVERIFIED | DATA-003 directly revalidated; DATA-001/DATA-002 exact byte-local revalidation remains outstanding. |
-| CFA-S1-004 Reference byte-size reconciliation | FAIL | DATA-001/DATA-002 repository sizes differ from SoT-recorded sizes; cause remains unverified. |
-| CFA-S1-005 Reference SHA-256 reconciliation | UNVERIFIED | DATA-003 SHA-256 revalidated; DATA-001/DATA-002 byte-preserved hashes remain outstanding. |
-| CFA-S1-006 Original Kraken quarters | PASS | Exact local Q2 archive SHA-256 matches PostgreSQL import lineage; all 1,059 manifest members reconcile PASS with zero missing, mismatched, ambiguous, or unverified-shape members. |
-| CFA-S1-007 PostgreSQL market/news availability | PASS | PostgreSQL 18.4 read-only discovery and direct table inspection succeeded. Availability does not imply source completeness. |
-| CFA-S1-008 Direct market coverage | PASS | 14,055,089 exact Q2 rows; 1,058 member paths/pair tokens; exact Q2 UTC boundaries; zero window/alignment/quality/duplicate failures; raw↔typed bounded reconciliation PASS; SRP exact row/time/pair coverage reconciles. |
-| CFA-S1-009 Advance to identity approval | BLOCKED | CFA-S1-003/004/005 and CFA-S1-010 remain unresolved. |
-| CFA-S1-010 News source acquisition completeness | FAIL | Direct coverage verification produced 6 FAIL and 0 UNVERIFIED checks: run incomplete, completion timestamp null, 368/7,283 acquired objects, 2 null payload hashes, only 366 distinct payload hashes across 368 rows, and timestamp coverage stops before the protocol interval end. |
+| CFA-S1-001 Authority/source boundary | PASS | CFA SoT remains authority; derived text snapshot is review-only. |
+| CFA-S1-002 Authorized repository reference files | PASS | The three SoT-registered source CSVs are present and exactly reconciled. |
+| CFA-S1-003 Reference row-count revalidation | PASS | AF-001 1,059; AF-002 435; AF-003 45, matching SoT. |
+| CFA-S1-004 Reference byte-size reconciliation | PASS | AF-001 355,619; AF-002 308,626; AF-003 4,621 bytes, matching SoT. |
+| CFA-S1-005 Reference SHA-256 reconciliation | PASS | All three exact current repository hashes match the SoT registry. |
+| CFA-S1-006 Original Kraken quarters | PASS | Exact archive hash and all 1,059 manifest members reconcile. |
+| CFA-S1-007 PostgreSQL market/news availability | PASS | Direct PostgreSQL discovery/inspection succeeded; availability is distinct from source completeness. |
+| CFA-S1-008 Direct market coverage | PASS | 14,055,089 exact Q2 rows with bounded integrity and raw↔typed reconciliation PASS. |
+| CFA-S1-009 Advance to identity approval | BLOCKED | CFA-S1-010 remains unresolved. |
+| CFA-S1-010 News source acquisition completeness | FAIL | Legacy source is rejected; CFA-owned 8,736-slot Q2 replacement has not yet passed exact local acquisition and file/hash verification. |
 
 ## Current decision
 
-A full Kraken reload is **not authorized or required**. The existing PostgreSQL Q2 market stores have passed direct market coverage, internal raw-to-typed integrity checks, and direct byte/source reconciliation against the locally present Q2 Kraken archive and all PostgreSQL manifest members.
+All Stage 1 blockers except news-source completeness are resolved.
 
-The project must still **not** advance to identity approval. DATA-001/DATA-002 reference reconciliation remains unresolved under CFA-S1-003/004/005, and the existing hype/news acquisition fails source-completeness validation under CFA-S1-010.
+Do not advance to asset identity approval, news matching, response definition, factor design, leakage testing, model-ready freezing, or PLS until CFA-S1-010 is PASS.
 
-The existing hype/news factor tables must **not** be treated as complete or model-ready. Downstream news matching, candidate-factor definition, leakage testing, model-ready dataset freezing, and PLS remain blocked by the upstream source gate.
-
-## Next reproducible calculations
-
-1. Inspect the recorded news run events and acquisition-object failure evidence to determine why acquisition stopped and whether a CFA-authorized, reproducible completion or replacement path exists. Do not resume or reuse a legacy acquisition implementation merely because it exists.
-2. Resolve DATA-001/DATA-002 exact row-count, byte-size, and SHA-256 reconciliation against the CFA SoT before identity approval.
+The next authorized execution is the CFA-owned resumable GDELT Q2 acquisition plus exact verification through `Run-CfaStage1.ps1 -RecoverNewsSource`. If that source verification is PASS, CFA-S1-010 and consequently CFA-S1-009 may advance to PASS; otherwise the runner must remain BLOCKED with explicit unresolved source slots or integrity failures.
