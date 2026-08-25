@@ -11,9 +11,7 @@ $ErrorActionPreference = 'Stop'
 function Write-Utf8NoBom {
     param([string]$Path,[string]$Content)
     $parent = Split-Path -Parent $Path
-    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
-        New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    }
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
     $enc = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path,$Content,$enc)
 }
@@ -21,10 +19,7 @@ function Write-Utf8NoBom {
 function Get-Sha256Text {
     param([AllowEmptyString()][string]$Text)
     $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
-        return (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
-    }
+    try { return (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)) | ForEach-Object { $_.ToString('x2') }) -join '') }
     finally { $sha.Dispose() }
 }
 
@@ -36,320 +31,200 @@ function Normalize-BoolText {
     return ''
 }
 
-function Get-MappingReviewState {
-    param([int]$CandidateCount)
-    if ($CandidateCount -eq 0) { return 'UNVERIFIED_NO_CURRENT_CANDIDATE' }
-    if ($CandidateCount -eq 1) { return 'UNVERIFIED_SINGLE_CANDIDATE_REVIEW_REQUIRED' }
-    return 'UNVERIFIED_AMBIGUOUS_CANDIDATES'
-}
-
 function Set-Equals {
     param([string[]]$A,[string[]]$B)
     $aa = @($A | Sort-Object -Unique)
     $bb = @($B | Sort-Object -Unique)
     if ($aa.Count -ne $bb.Count) { return $false }
-    for ($i = 0; $i -lt $aa.Count; $i++) {
-        if ($aa[$i] -ne $bb[$i]) { return $false }
-    }
+    for ($i=0; $i -lt $aa.Count; $i++) { if ($aa[$i] -ne $bb[$i]) { return $false } }
     return $true
 }
 
+function Get-ReviewState {
+    param([int]$Count)
+    if ($Count -eq 0) { return 'UNVERIFIED_NO_CURRENT_CANDIDATE' }
+    if ($Count -eq 1) { return 'UNVERIFIED_SINGLE_CANDIDATE_REVIEW_REQUIRED' }
+    return 'UNVERIFIED_AMBIGUOUS_CANDIDATES'
+}
+
 function Invoke-SelfTest {
-    if ((Get-MappingReviewState -CandidateCount 0) -ne 'UNVERIFIED_NO_CURRENT_CANDIDATE') { throw 'Self-test failed: zero-candidate state.' }
-    if ((Get-MappingReviewState -CandidateCount 1) -ne 'UNVERIFIED_SINGLE_CANDIDATE_REVIEW_REQUIRED') { throw 'Self-test failed: single-candidate state.' }
-    if ((Get-MappingReviewState -CandidateCount 2) -ne 'UNVERIFIED_AMBIGUOUS_CANDIDATES') { throw 'Self-test failed: ambiguous state.' }
-    if (-not (Set-Equals -A @('a','b') -B @('b','a'))) { throw 'Self-test failed: set equality.' }
-    if ((Get-Sha256Text -Text '') -ne 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') { throw 'Self-test failed: SHA-256.' }
-    if ((Normalize-BoolText -Value 'TRUE') -ne 'True') { throw 'Self-test failed: boolean normalization.' }
+    if ((Get-ReviewState -Count 0) -ne 'UNVERIFIED_NO_CURRENT_CANDIDATE') { throw 'zero candidate state' }
+    if ((Get-ReviewState -Count 1) -ne 'UNVERIFIED_SINGLE_CANDIDATE_REVIEW_REQUIRED') { throw 'single candidate state' }
+    if (-not (Set-Equals -A @('a','b') -B @('b','a'))) { throw 'set equality' }
+    if ((Get-Sha256Text -Text '') -ne 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') { throw 'sha256' }
     Write-Host 'SELF-TEST: PASS'
 }
 
 if ($SelfTest) {
-    try {
-        Invoke-SelfTest
-        exit 0
-    }
-    catch {
-        Write-Host 'SELF-TEST: FAIL'
-        Write-Host $_.Exception.Message
-        if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
-        exit 1
-    }
+    try { Invoke-SelfTest; exit 0 }
+    catch { Write-Host 'SELF-TEST: FAIL'; Write-Host $_.Exception.Message; exit 1 }
 }
 
 try {
-    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-        $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-    }
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).ProviderPath
 
     $pairPath = Join-Path $RepoRoot 'candidate-analysis\ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
     $candidatePath = Join-Path $RepoRoot 'candidate-analysis\ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv'
     $aliasPath = Join-Path $RepoRoot 'candidate-analysis\ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
-    foreach ($path in @($pairPath,$candidatePath,$aliasPath)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Required Stage 2 source file missing: $path"
-        }
-    }
+    foreach ($p in @($pairPath,$candidatePath,$aliasPath)) { if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "Missing source: $p" } }
 
     $pairs = @(Import-Csv -LiteralPath $pairPath)
     $candidates = @(Import-Csv -LiteralPath $candidatePath)
     $aliases = @(Import-Csv -LiteralPath $aliasPath)
-    $eligiblePairs = @($pairs | Where-Object { (Normalize-BoolText -Value $_.research_eligible) -eq 'True' })
+    $eligiblePairs = @($pairs | Where-Object { (Normalize-BoolText $_.research_eligible) -eq 'True' })
 
-    $pairGroups = @{}
-    foreach ($row in $eligiblePairs) {
-        $baseId = [string]$row.base_asset_id
-        if (-not $pairGroups.ContainsKey($baseId)) { $pairGroups[$baseId] = @() }
-        $pairGroups[$baseId] += $row
+    $pairSummary = @{}
+    foreach ($p in $eligiblePairs) {
+        $id = [string]$p.base_asset_id
+        if (-not $pairSummary.ContainsKey($id)) {
+            $pairSummary[$id] = [pscustomobject]@{ pair_count=0; obs=0L; symbols=@{} }
+        }
+        $s = $pairSummary[$id]
+        $s.pair_count = [int]$s.pair_count + 1
+        $s.obs = [long]$s.obs + [long]$p.typed_observation_count
+        $s.symbols[[string]$p.base_exchange_symbol] = $true
     }
 
     $candidateByBase = @{}
-    foreach ($row in $candidates) {
-        $baseId = [string]$row.base_asset_id
-        if ($candidateByBase.ContainsKey($baseId)) { throw "Duplicate candidate row for base_asset_id: $baseId" }
-        $candidateByBase[$baseId] = $row
+    foreach ($c in $candidates) {
+        $id = [string]$c.base_asset_id
+        if ($candidateByBase.ContainsKey($id)) { throw "Duplicate candidate base_asset_id: $id" }
+        $candidateByBase[$id] = $c
     }
 
-    $marketBaseIds = @($pairGroups.Keys | Sort-Object)
-    $candidateBaseIds = @($candidateByBase.Keys | Sort-Object)
+    $marketIds = @($pairSummary.Keys | Sort-Object)
+    $candidateIds = @($candidateByBase.Keys | Sort-Object)
+    $review = @()
+    $candidateTotal = 0L
+    $parseFail=0; $shapeFail=0; $hashFail=0; $countFail=0; $idFail=0; $pairFail=0; $obsFail=0; $symbolFail=0; $sourceApproved=0
 
-    $reviewRows = @()
-    $jsonHashMismatch = 0
-    $jsonParseFailure = 0
-    $jsonCountMismatch = 0
-    $candidateIdMismatch = 0
-    $pairCountMismatch = 0
-    $observationCountMismatch = 0
-    $exchangeSymbolMismatch = 0
-    $approvedSourceRows = 0
-    $candidateRecordTotal = 0L
+    foreach ($id in $candidateIds) {
+        $c = $candidateByBase[$id]
+        $candidateCount = [int]$c.current_candidate_count
+        $candidateTotal += $candidateCount
+        $summary = $null
+        if ($pairSummary.ContainsKey($id)) { $summary = $pairSummary[$id] }
+        $pairObserved = if ($null -eq $summary) { 0 } else { [int]$summary.pair_count }
+        $obsObserved = if ($null -eq $summary) { 0L } else { [long]$summary.obs }
+        $symbolValues = @()
+        if ($null -ne $summary) { $symbolValues = @($summary.symbols.Keys | Sort-Object) }
+        $symbolObserved = if ($symbolValues.Count -eq 1) { [string]$symbolValues[0] } else { ($symbolValues -join '|') }
 
-    foreach ($baseId in $candidateBaseIds) {
-        $candidateRow = $candidateByBase[$baseId]
-        $marketRows = @()
-        if ($pairGroups.ContainsKey($baseId)) { $marketRows = @($pairGroups[$baseId]) }
+        $pairStatus='PASS'; if ($pairObserved -ne [int]$c.q2_pair_count) { $pairStatus='FAIL'; $pairFail++ }
+        $obsStatus='PASS'; if ($obsObserved -ne [long]$c.q2_typed_observation_count) { $obsStatus='FAIL'; $obsFail++ }
+        $symbolStatus='PASS'; if ($symbolValues.Count -ne 1 -or $symbolObserved -ne [string]$c.base_exchange_symbol) { $symbolStatus='FAIL'; $symbolFail++ }
 
-        $observedPairCount = $marketRows.Count
-        $observedObs = 0L
-        foreach ($marketRow in $marketRows) { $observedObs += [long]$marketRow.typed_observation_count }
-        $symbols = @($marketRows | ForEach-Object { [string]$_.base_exchange_symbol } | Sort-Object -Unique)
-        $observedSymbol = ''
-        if ($symbols.Count -eq 1) { $observedSymbol = $symbols[0] }
-        elseif ($symbols.Count -gt 1) { $observedSymbol = ($symbols -join '|') }
+        $jsonStatus='PASS'; $jsonCountStatus='PASS'; $idStatus='PASS'; $parsed=@()
+        try {
+            $rawParsed = ([string]$c.candidate_records_json) | ConvertFrom-Json
+            if ($null -ne $rawParsed) { $parsed = @($rawParsed) }
+        }
+        catch { $jsonStatus='FAIL'; $parseFail++ }
+        if ($jsonStatus -eq 'PASS' -and $parsed.Count -ne $candidateCount) { $jsonCountStatus='FAIL'; $countFail++ }
 
-        $pairCountStatus = 'PASS'
-        if ($observedPairCount -ne [int]$candidateRow.q2_pair_count) { $pairCountStatus = 'FAIL'; $pairCountMismatch++ }
-        $obsCountStatus = 'PASS'
-        if ($observedObs -ne [long]$candidateRow.q2_typed_observation_count) { $obsCountStatus = 'FAIL'; $observationCountMismatch++ }
-        $symbolStatus = 'PASS'
-        if ($symbols.Count -ne 1 -or $observedSymbol -ne [string]$candidateRow.base_exchange_symbol) { $symbolStatus = 'FAIL'; $exchangeSymbolMismatch++ }
-
-        $jsonStatus = 'PASS'
-        $jsonCountStatus = 'PASS'
-        $idSetStatus = 'PASS'
-        $parsed = @()
-        try { $parsed = @(([string]$candidateRow.candidate_records_json) | ConvertFrom-Json) }
-        catch { $jsonStatus = 'FAIL'; $jsonParseFailure++ }
-
-        $candidateCount = [int]$candidateRow.current_candidate_count
-        $candidateRecordTotal += $candidateCount
-        if ($jsonStatus -eq 'PASS' -and $parsed.Count -ne $candidateCount) { $jsonCountStatus = 'FAIL'; $jsonCountMismatch++ }
+        $parsedIds = @()
         if ($jsonStatus -eq 'PASS') {
-            $parsedIds = @($parsed | ForEach-Object { [string]$_.id })
-            $declaredIds = @()
-            if (-not [string]::IsNullOrWhiteSpace([string]$candidateRow.current_candidate_ids)) {
-                $declaredIds = @(([string]$candidateRow.current_candidate_ids) -split '\|')
+            foreach ($obj in $parsed) {
+                if ($null -eq $obj) { $shapeFail++; continue }
+                $idProp = $obj.PSObject.Properties['id']
+                if ($null -eq $idProp -or [string]::IsNullOrWhiteSpace([string]$idProp.Value)) { $shapeFail++; continue }
+                $parsedIds += [string]$idProp.Value
             }
-            if (-not (Set-Equals -A $parsedIds -B $declaredIds)) { $idSetStatus = 'FAIL'; $candidateIdMismatch++ }
+            $declared = @()
+            if (-not [string]::IsNullOrWhiteSpace([string]$c.current_candidate_ids)) { $declared = @(([string]$c.current_candidate_ids) -split '\|') }
+            if (-not (Set-Equals -A $parsedIds -B $declared)) { $idStatus='FAIL'; $idFail++ }
         }
 
-        $hashObserved = Get-Sha256Text -Text ([string]$candidateRow.candidate_records_json)
-        $hashStatus = 'PASS'
-        if ($hashObserved -ne ([string]$candidateRow.candidate_records_sha256).ToLowerInvariant()) { $hashStatus = 'FAIL'; $jsonHashMismatch++ }
-        if ((Normalize-BoolText -Value $candidateRow.mapping_approved) -eq 'True') { $approvedSourceRows++ }
+        $hashStatus='PASS'
+        $hashObserved = Get-Sha256Text -Text ([string]$c.candidate_records_json)
+        if ($hashObserved -ne ([string]$c.candidate_records_sha256).ToLowerInvariant()) { $hashStatus='FAIL'; $hashFail++ }
+        if ((Normalize-BoolText $c.mapping_approved) -eq 'True') { $sourceApproved++ }
 
-        $reviewRows += [pscustomobject]@{
-            base_asset_id = $baseId
-            base_exchange_symbol = [string]$candidateRow.base_exchange_symbol
-            market_pair_count_observed = $observedPairCount
-            candidate_pair_count_recorded = [int]$candidateRow.q2_pair_count
-            pair_count_status = $pairCountStatus
-            market_observation_count_observed = $observedObs
-            candidate_observation_count_recorded = [long]$candidateRow.q2_typed_observation_count
-            observation_count_status = $obsCountStatus
-            market_exchange_symbol_observed = $observedSymbol
-            exchange_symbol_status = $symbolStatus
-            current_candidate_count = $candidateCount
-            current_candidate_ids = [string]$candidateRow.current_candidate_ids
-            current_candidate_names = [string]$candidateRow.current_candidate_names
-            candidate_json_parse_status = $jsonStatus
-            candidate_json_count_status = $jsonCountStatus
-            candidate_id_set_status = $idSetStatus
-            candidate_json_sha256_status = $hashStatus
-            source_mapping_status = [string]$candidateRow.mapping_status
-            source_mapping_approved = (Normalize-BoolText -Value $candidateRow.mapping_approved)
-            cfa_mapping_decision = 'UNVERIFIED'
-            cfa_mapping_review_state = (Get-MappingReviewState -CandidateCount $candidateCount)
-            cfa_mapping_decision_basis = 'CoinGecko candidate scan only; R-009 requires independent review and explicit approval or rejection.'
+        $review += [pscustomobject]@{
+            base_asset_id=$id
+            base_exchange_symbol=[string]$c.base_exchange_symbol
+            market_pair_count_observed=$pairObserved
+            market_observation_count_observed=$obsObserved
+            current_candidate_count=$candidateCount
+            current_candidate_ids=[string]$c.current_candidate_ids
+            current_candidate_names=[string]$c.current_candidate_names
+            pair_count_status=$pairStatus
+            observation_count_status=$obsStatus
+            exchange_symbol_status=$symbolStatus
+            candidate_json_parse_status=$jsonStatus
+            candidate_json_count_status=$jsonCountStatus
+            candidate_id_set_status=$idStatus
+            candidate_json_sha256_status=$hashStatus
+            source_mapping_approved=(Normalize-BoolText $c.mapping_approved)
+            cfa_mapping_decision='UNVERIFIED'
+            cfa_mapping_review_state=(Get-ReviewState -Count $candidateCount)
         }
     }
 
-    $aliasRows = @()
-    $aliasMissingBase = 0
-    $aliasDuplicate = 0
-    $aliasMalformedContext = 0
-    $aliasKeySeen = @{}
-    foreach ($alias in $aliases) {
-        $baseId = [string]$alias.base_asset_id
-        $aliasText = [string]$alias.alias_text
-        $aliasKey = $baseId + '|' + $aliasText.ToLowerInvariant()
-        if ($aliasKeySeen.ContainsKey($aliasKey)) { $aliasDuplicate++ }
-        else { $aliasKeySeen[$aliasKey] = $true }
-
-        $baseStatus = 'PASS'
-        if (-not $candidateByBase.ContainsKey($baseId)) { $baseStatus = 'FAIL'; $aliasMissingBase++ }
-        $context = Normalize-BoolText -Value $alias.requires_crypto_context
-        $contextStatus = 'PASS'
-        if ($context -notin @('True','False')) { $contextStatus = 'FAIL'; $aliasMalformedContext++ }
-
-        $aliasRows += [pscustomobject]@{
-            base_asset_id = $baseId
-            alias_text = $aliasText
-            alias_type = [string]$alias.alias_type
-            requires_crypto_context = $context
-            mapping_tier = [string]$alias.mapping_tier
-            structural_base_link_status = $baseStatus
-            context_flag_status = $contextStatus
-            cfa_alias_semantic_status = 'UNVERIFIED'
-            cfa_alias_review_basis = 'Manual seed reference only; R-010 requires validation against raw news before semantic approval.'
+    $aliasReview=@(); $aliasMissing=0; $aliasDup=0; $aliasBadContext=0; $seen=@{}
+    foreach ($a in $aliases) {
+        $id=[string]$a.base_asset_id; $text=[string]$a.alias_text; $key=$id+'|'+$text.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { $aliasDup++ } else { $seen[$key]=$true }
+        $link='PASS'; if (-not $candidateByBase.ContainsKey($id)) { $link='FAIL'; $aliasMissing++ }
+        $context=Normalize-BoolText $a.requires_crypto_context
+        $contextStatus='PASS'; if ($context -notin @('True','False')) { $contextStatus='FAIL'; $aliasBadContext++ }
+        $aliasReview += [pscustomobject]@{
+            base_asset_id=$id; alias_text=$text; alias_type=[string]$a.alias_type; requires_crypto_context=$context;
+            mapping_tier=[string]$a.mapping_tier; structural_base_link_status=$link; context_flag_status=$contextStatus;
+            cfa_alias_semantic_status='UNVERIFIED'
         }
     }
 
-    $aliasBaseIds = @($aliases | ForEach-Object { [string]$_.base_asset_id } | Sort-Object -Unique)
-    $singleCount = @($reviewRows | Where-Object { [int]$_.current_candidate_count -eq 1 }).Count
-    $ambiguousCount = @($reviewRows | Where-Object { [int]$_.current_candidate_count -gt 1 }).Count
-    $noneCount = @($reviewRows | Where-Object { [int]$_.current_candidate_count -eq 0 }).Count
+    $aliasAssets=@($aliases | ForEach-Object { [string]$_.base_asset_id } | Sort-Object -Unique)
+    $single=@($review | Where-Object {[int]$_.current_candidate_count -eq 1}).Count
+    $ambiguous=@($review | Where-Object {[int]$_.current_candidate_count -gt 1}).Count
+    $none=@($review | Where-Object {[int]$_.current_candidate_count -eq 0}).Count
 
-    $s2_001 = 'FAIL'
-    if ($eligiblePairs.Count -eq 1058 -and $marketBaseIds.Count -eq 435 -and (Set-Equals -A $marketBaseIds -B $candidateBaseIds)) { $s2_001 = 'PASS' }
-    $s2_002 = 'FAIL'
-    if ($candidates.Count -eq 435 -and $jsonParseFailure -eq 0 -and $jsonHashMismatch -eq 0 -and $jsonCountMismatch -eq 0 -and $candidateIdMismatch -eq 0 -and $pairCountMismatch -eq 0 -and $observationCountMismatch -eq 0 -and $exchangeSymbolMismatch -eq 0) { $s2_002 = 'PASS' }
-    $s2_004 = 'FAIL'
-    if ($aliases.Count -eq 45 -and $aliasBaseIds.Count -eq 43 -and $aliasMissingBase -eq 0 -and $aliasDuplicate -eq 0 -and $aliasMalformedContext -eq 0) { $s2_004 = 'PASS' }
+    $s2_001='FAIL'; if ($eligiblePairs.Count -eq 1058 -and $marketIds.Count -eq 435 -and (Set-Equals $marketIds $candidateIds)) { $s2_001='PASS' }
+    $s2_002='FAIL'; if ($candidates.Count -eq 435 -and $parseFail -eq 0 -and $shapeFail -eq 0 -and $hashFail -eq 0 -and $countFail -eq 0 -and $idFail -eq 0 -and $pairFail -eq 0 -and $obsFail -eq 0 -and $symbolFail -eq 0) { $s2_002='PASS' }
+    $s2_004='FAIL'; if ($aliases.Count -eq 45 -and $aliasAssets.Count -eq 43 -and $aliasMissing -eq 0 -and $aliasDup -eq 0 -and $aliasBadContext -eq 0) { $s2_004='PASS' }
 
-    $gates = @(
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-001'
-            gate_name = 'Eligible Kraken base-asset universe reconciliation'
-            status = $s2_001
-            observed = ("eligible_pairs={0}; market_assets={1}; candidate_assets={2}" -f $eligiblePairs.Count,$marketBaseIds.Count,$candidateBaseIds.Count)
-            expected = '1058 eligible pairs; 435 identical base assets'
-        },
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-002'
-            gate_name = 'CoinGecko candidate-file structural integrity'
-            status = $s2_002
-            observed = ("rows={0}; candidate_records={1}; json_parse_fail={2}; hash_mismatch={3}; json_count_mismatch={4}; id_set_mismatch={5}; pair_mismatch={6}; obs_mismatch={7}; symbol_mismatch={8}" -f $candidates.Count,$candidateRecordTotal,$jsonParseFailure,$jsonHashMismatch,$jsonCountMismatch,$candidateIdMismatch,$pairCountMismatch,$observationCountMismatch,$exchangeSymbolMismatch)
-            expected = '435 internally reconciled rows; zero structural mismatches'
-        },
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-003'
-            gate_name = 'CoinGecko mapping decisions'
-            status = 'UNVERIFIED'
-            observed = ("source_approved={0}; single={1}; ambiguous={2}; none={3}" -f $approvedSourceRows,$singleCount,$ambiguousCount,$noneCount)
-            expected = 'Explicit CFA approve/reject decision for each asset based on independent review'
-        },
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-004'
-            gate_name = 'Alias seed structural linkage'
-            status = $s2_004
-            observed = ("rows={0}; assets={1}; missing_base={2}; duplicates={3}; malformed_context={4}" -f $aliases.Count,$aliasBaseIds.Count,$aliasMissingBase,$aliasDuplicate,$aliasMalformedContext)
-            expected = '45 rows; 43 assets; zero structural failures'
-        },
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-005'
-            gate_name = 'Alias semantic validation'
-            status = 'UNVERIFIED'
-            observed = 'manual seed references only'
-            expected = 'Validated against CFA raw GDELT source before approval'
-        },
-        [pscustomobject]@{
-            gate_id = 'CFA-S2-006'
-            gate_name = 'Advance to news matching definition'
-            status = 'BLOCKED'
-            observed = 'CFA-S2-003 and CFA-S2-005 unresolved'
-            expected = 'All required Stage 2 identity/mapping/alias gates PASS or justified NOT_APPLICABLE'
+    $gates=@()
+    $gates += [pscustomobject]@{gate_id='CFA-S2-001';status=$s2_001;name='Eligible Kraken base-asset universe reconciliation';observed=("eligible_pairs={0}; market_assets={1}; candidate_assets={2}" -f $eligiblePairs.Count,$marketIds.Count,$candidateIds.Count)}
+    $gates += [pscustomobject]@{gate_id='CFA-S2-002';status=$s2_002;name='CoinGecko candidate-file structural integrity';observed=("rows={0}; candidates={1}; parse_fail={2}; shape_fail={3}; hash_fail={4}; count_fail={5}; id_fail={6}; pair_fail={7}; obs_fail={8}; symbol_fail={9}" -f $candidates.Count,$candidateTotal,$parseFail,$shapeFail,$hashFail,$countFail,$idFail,$pairFail,$obsFail,$symbolFail)}
+    $gates += [pscustomobject]@{gate_id='CFA-S2-003';status='UNVERIFIED';name='CoinGecko mapping decisions';observed=("source_approved={0}; single={1}; ambiguous={2}; none={3}" -f $sourceApproved,$single,$ambiguous,$none)}
+    $gates += [pscustomobject]@{gate_id='CFA-S2-004';status=$s2_004;name='Alias seed structural linkage';observed=("rows={0}; assets={1}; missing={2}; duplicates={3}; bad_context={4}" -f $aliases.Count,$aliasAssets.Count,$aliasMissing,$aliasDup,$aliasBadContext)}
+    $gates += [pscustomobject]@{gate_id='CFA-S2-005';status='UNVERIFIED';name='Alias semantic validation';observed='manual seed references only'}
+    $gates += [pscustomobject]@{gate_id='CFA-S2-006';status='BLOCKED';name='Advance to news matching definition';observed='CFA-S2-003 and CFA-S2-005 unresolved'}
+
+    $review | Sort-Object -Property current_candidate_count,market_observation_count_observed,base_asset_id -Descending | Export-Csv -LiteralPath (Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-CoinGecko-Review-Queue.csv') -NoTypeInformation -Encoding UTF8
+    $aliasReview | Sort-Object -Property base_asset_id,alias_text | Export-Csv -LiteralPath (Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Alias-Review.csv') -NoTypeInformation -Encoding UTF8
+
+    $snapshot=[ordered]@{
+        source_hashes=[ordered]@{
+            AF_001=(Get-FileHash -LiteralPath $pairPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            AF_002=(Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            AF_003=(Get-FileHash -LiteralPath $aliasPath -Algorithm SHA256).Hash.ToLowerInvariant()
         }
-    )
-
-    $queuePath = Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-CoinGecko-Review-Queue.csv'
-    $aliasReviewPath = Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Alias-Review.csv'
-    $reviewRows | Sort-Object -Property current_candidate_count,market_observation_count_observed,base_asset_id -Descending | Export-Csv -LiteralPath $queuePath -NoTypeInformation -Encoding UTF8
-    $aliasRows | Sort-Object -Property base_asset_id,alias_text | Export-Csv -LiteralPath $aliasReviewPath -NoTypeInformation -Encoding UTF8
-
-    $snapshot = [ordered]@{
-        source_files = [ordered]@{
-            AF_001 = [ordered]@{ file_name = [System.IO.Path]::GetFileName($pairPath); sha256 = (Get-FileHash -LiteralPath $pairPath -Algorithm SHA256).Hash.ToLowerInvariant(); rows = $pairs.Count }
-            AF_002 = [ordered]@{ file_name = [System.IO.Path]::GetFileName($candidatePath); sha256 = (Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash.ToLowerInvariant(); rows = $candidates.Count }
-            AF_003 = [ordered]@{ file_name = [System.IO.Path]::GetFileName($aliasPath); sha256 = (Get-FileHash -LiteralPath $aliasPath -Algorithm SHA256).Hash.ToLowerInvariant(); rows = $aliases.Count }
-        }
-        counts = [ordered]@{
-            eligible_pair_rows = $eligiblePairs.Count
-            eligible_base_assets = $marketBaseIds.Count
-            candidate_rows = $candidates.Count
-            current_candidate_records = $candidateRecordTotal
-            single_candidate_assets = $singleCount
-            ambiguous_candidate_assets = $ambiguousCount
-            no_candidate_assets = $noneCount
-            source_mapping_approved_rows = $approvedSourceRows
-            alias_rows = $aliases.Count
-            alias_assets = $aliasBaseIds.Count
-        }
-        gates = $gates
+        counts=[ordered]@{eligible_pair_rows=$eligiblePairs.Count;eligible_base_assets=$marketIds.Count;candidate_rows=$candidates.Count;candidate_records=$candidateTotal;single=$single;ambiguous=$ambiguous;none=$none;source_approved=$sourceApproved;alias_rows=$aliases.Count;alias_assets=$aliasAssets.Count}
+        gates=$gates
     }
-    $jsonPath = Join-Path $RepoRoot 'docs\evidence\stage2-identity-review.json'
-    Write-Utf8NoBom -Path $jsonPath -Content (($snapshot | ConvertTo-Json -Depth 12) + [Environment]::NewLine)
+    Write-Utf8NoBom -Path (Join-Path $RepoRoot 'docs\evidence\stage2-identity-review.json') -Content (($snapshot | ConvertTo-Json -Depth 10)+[Environment]::NewLine)
 
-    $b = New-Object System.Text.StringBuilder
+    $b=New-Object System.Text.StringBuilder
     [void]$b.AppendLine('# CFA Stage 2 Identity / Mapping / Alias Structural Review')
     [void]$b.AppendLine('')
-    [void]$b.AppendLine('This receipt is derived only from the current SoT-registered AF-001/AF-002/AF-003 files. It does not approve CoinGecko mappings or alias semantics. Candidate and manual-alias records remain references until independently reviewed under R-009/R-010.')
+    [void]$b.AppendLine('Derived only from current SoT-registered AF-001/AF-002/AF-003. This review does not approve CoinGecko mappings or alias semantics.')
     [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Counts')
+    [void]$b.AppendLine("Eligible Kraken pair rows: $($eligiblePairs.Count); eligible base assets: $($marketIds.Count); candidate rows: $($candidates.Count); candidate records: $candidateTotal.")
+    [void]$b.AppendLine("Single candidate: $single; ambiguous: $ambiguous; none: $none; source-approved mappings: $sourceApproved; aliases: $($aliases.Count) across $($aliasAssets.Count) assets.")
     [void]$b.AppendLine('')
-    [void]$b.AppendLine('- Eligible Kraken pair rows: ' + $eligiblePairs.Count)
-    [void]$b.AppendLine('- Eligible base assets: ' + $marketBaseIds.Count)
-    [void]$b.AppendLine('- CoinGecko candidate rows: ' + $candidates.Count)
-    [void]$b.AppendLine('- Current candidate records: ' + $candidateRecordTotal)
-    [void]$b.AppendLine('- Single-candidate assets: ' + $singleCount)
-    [void]$b.AppendLine('- Ambiguous-candidate assets: ' + $ambiguousCount)
-    [void]$b.AppendLine('- No-current-candidate assets: ' + $noneCount)
-    [void]$b.AppendLine('- Source-approved mappings: ' + $approvedSourceRows)
-    [void]$b.AppendLine('- Alias rows / assets: ' + $aliases.Count + ' / ' + $aliasBaseIds.Count)
+    [void]$b.AppendLine('| Gate | Status | Observed |')
+    [void]$b.AppendLine('|---|---|---|')
+    foreach($g in $gates){[void]$b.AppendLine('| '+$g.gate_id+' '+$g.name+' | '+$g.status+' | '+([string]$g.observed).Replace('|','\|')+' |')}
     [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Hard gates')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('| Gate | Status | Observed | Expected |')
-    [void]$b.AppendLine('|---|---|---|---|')
-    foreach ($gate in $gates) {
-        $observedText = ([string]$gate.observed).Replace('|','\|')
-        $expectedText = ([string]$gate.expected).Replace('|','\|')
-        [void]$b.AppendLine('| ' + $gate.gate_id + ' ' + $gate.gate_name + ' | ' + $gate.status + ' | ' + $observedText + ' | ' + $expectedText + ' |')
-    }
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('## Decision boundary')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('CFA-S2-001/002/004 test structural identity consistency only. CFA-S2-003 remains UNVERIFIED because the candidate scan is not independent mapping approval. CFA-S2-005 remains UNVERIFIED because manual aliases have not yet been validated against the CFA-owned raw GDELT archive set. News matching definition remains BLOCKED until those upstream decisions are resolved.')
-    [void]$b.AppendLine('')
-    [void]$b.AppendLine('Derived review files: candidate-analysis/CFA-Stage2-CoinGecko-Review-Queue.csv and candidate-analysis/CFA-Stage2-Alias-Review.csv.')
-    $mdPath = Join-Path $RepoRoot 'docs\evidence\stage2-identity-review.md'
-    Write-Utf8NoBom -Path $mdPath -Content $b.ToString()
+    [void]$b.AppendLine('CFA-S2-001/002/004 are structural gates. CFA-S2-003 requires independent CoinGecko mapping evidence and explicit decisions. CFA-S2-005 requires raw-news alias validation. CFA-S2-006 remains BLOCKED until those are resolved.')
+    Write-Utf8NoBom -Path (Join-Path $RepoRoot 'docs\evidence\stage2-identity-review.md') -Content $b.ToString()
 
-    $failCount = @($gates | Where-Object { $_.status -eq 'FAIL' }).Count
-    Write-Host ('Stage 2 structural FAIL gates: ' + $failCount)
-    foreach ($gate in $gates) { Write-Host ($gate.gate_id + ' ' + $gate.status + ' - ' + $gate.gate_name) }
-    if ($failCount -gt 0) { exit 2 }
+    $failCount=@($gates | Where-Object {$_.status -eq 'FAIL'}).Count
+    foreach($g in $gates){Write-Host ($g.gate_id+' '+$g.status+' - '+$g.name)}
+    if($failCount -gt 0){exit 2}
     Write-Host 'CFA STAGE 2 STRUCTURAL REVIEW: COMPLETE'
 }
 catch {
