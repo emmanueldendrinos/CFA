@@ -68,3 +68,8 @@ jobs:
         shell: powershell
         run: |
           .\scripts\windows\Reconcile-CfaKrakenSources.ps1 -SelfTest
+
+      - name: Runtime self-test evidence publisher under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\scripts\windows\Publish-CfaLocalEvidence.ps1 -SelfTest
