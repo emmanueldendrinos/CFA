@@ -1,4 +1,4 @@
-name: PowerShell Parse Check
+name: PowerShell Validation
 
 on:
   push:
@@ -11,11 +11,12 @@ on:
       - '.github/workflows/powershell-parse.yml'
 
 jobs:
-  parse:
+  validate:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parse PowerShell scripts
+
+      - name: Parse scripts with PowerShell 7
         shell: pwsh
         run: |
           $failed = $false
@@ -36,5 +37,34 @@ jobs:
           }
 
           if ($failed) {
-            throw 'One or more PowerShell files failed to parse.'
+            throw 'One or more PowerShell files failed to parse under PowerShell 7.'
           }
+
+      - name: Parse scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed = $false
+          Get-ChildItem -Path scripts -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "Parse errors in $($_.FullName):"
+              $errors | ForEach-Object { Write-Host $_.Message }
+            }
+          }
+
+          if ($failed) {
+            throw 'One or more PowerShell files failed to parse under Windows PowerShell 5.1.'
+          }
+
+      - name: Runtime self-test Kraken reconciliation under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\scripts\windows\Reconcile-CfaKrakenSources.ps1 -SelfTest
