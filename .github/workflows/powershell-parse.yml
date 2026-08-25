@@ -95,6 +95,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Run-CfaStage1.ps1 -SelfTest
 
+      - name: Runtime self-test Stage 2 identity reviewer under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
+
       - name: Export current CFA SoT authority snapshot
         shell: powershell
         run: .\scripts\windows\Export-CfaSoTAuthority.ps1
@@ -108,7 +112,13 @@ jobs:
           Write-Host "Reference reconciliation gate exit: $code"
           exit 0
 
-      - name: Commit generated authority/reconciliation evidence and exact repaired sources
+      - name: Run Stage 2 structural identity review
+        shell: powershell
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Review-CfaStage2Identity.ps1'
+          if ($LASTEXITCODE -ne 0) { throw "Stage 2 structural reviewer failed with exit $LASTEXITCODE." }
+
+      - name: Commit generated authority/reconciliation/Stage 2 evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
         run: |
@@ -117,9 +127,13 @@ jobs:
             'docs/evidence/sot-authority-snapshot.json',
             'docs/evidence/reference-source-reconciliation.md',
             'docs/evidence/reference-source-reconciliation.json',
+            'docs/evidence/stage2-identity-review.md',
+            'docs/evidence/stage2-identity-review.json',
             'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv',
             'candidate-analysis/ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv',
-            'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
+            'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv',
+            'candidate-analysis/CFA-Stage2-CoinGecko-Review-Queue.csv',
+            'candidate-analysis/CFA-Stage2-Alias-Review.csv'
           )
           git -c core.autocrlf=false add -- $allowed
           $staged = @(git diff --cached --name-only)
@@ -129,7 +143,7 @@ jobs:
             }
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Reconcile CFA SoT reference source bytes'
+            git commit -m 'Update CFA source and Stage 2 structural evidence'
             git pull --rebase origin main
             git push origin HEAD:main
           }
