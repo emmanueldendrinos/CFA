@@ -144,19 +144,19 @@ function Get-CandidateShapeDescription {
 }
 
 function Get-MatchingLocationSummary {
-    param([Parameter(Mandatory)][object[]]$Matches)
+    param([Parameter(Mandatory)][object[]]$MatchingCandidates)
 
     $locations = New-Object System.Collections.Generic.List[string]
     [int]$invalid = 0
 
-    foreach ($match in $Matches) {
-        if (-not (Test-CandidateRecord -Candidate $match)) {
+    foreach ($matchCandidate in $MatchingCandidates) {
+        if (-not (Test-CandidateRecord -Candidate $matchCandidate)) {
             $invalid++
             continue
         }
 
-        $container = [string](Get-CandidateValue -Candidate $match -Name 'source_container')
-        $memberPath = [string](Get-CandidateValue -Candidate $match -Name 'local_member_path')
+        $container = [string](Get-CandidateValue -Candidate $matchCandidate -Name 'source_container')
+        $memberPath = [string](Get-CandidateValue -Candidate $matchCandidate -Name 'local_member_path')
         if ([string]::IsNullOrWhiteSpace($container) -or [string]::IsNullOrWhiteSpace($memberPath)) {
             $invalid++
             continue
@@ -224,17 +224,29 @@ function Invoke-SelfTest {
         throw "Self-test failed: expected two valid candidates after hashtable/array storage round-trip, found $($validCandidates.Count)."
     }
 
-    $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
-    if ($matches.Count -ne 2) {
-        throw "Self-test failed: expected two hash matches after hashtable/array storage round-trip, found $($matches.Count)."
+    $hashMatches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
+    if ($hashMatches.Count -ne 2) {
+        throw "Self-test failed: expected two hash matches after hashtable/array storage round-trip, found $($hashMatches.Count)."
     }
 
-    $locationSummary = Get-MatchingLocationSummary -Matches @($candidateHashtable,$candidateObject,$candidateMalformed)
-    if ($locationSummary.text -ne 'sample.zip::sample.csv;sample-2.zip::sample-2.csv') {
-        throw "Self-test failed: unexpected location summary '$($locationSummary.text)'."
+    # Regression test: -match/-notmatch mutate PowerShell's automatic $Matches
+    # variable. The reconciliation must not store candidate state in that name.
+    $regexProbe = ('c' * 64) -match '^[0-9a-f]{64}$'
+    if (-not $regexProbe) {
+        throw 'Self-test failed: regex probe did not match as expected.'
     }
-    if ([int]$locationSummary.invalid_count -ne 1) {
-        throw "Self-test failed: expected one invalid candidate, found $($locationSummary.invalid_count)."
+
+    $locationSummary = Get-MatchingLocationSummary -MatchingCandidates $hashMatches
+    if ($locationSummary.text -ne 'sample.zip::sample.csv;sample-2.zip::sample-2.csv') {
+        throw "Self-test failed: hash-match locations were corrupted after regex evaluation: '$($locationSummary.text)'."
+    }
+    if ([int]$locationSummary.invalid_count -ne 0) {
+        throw "Self-test failed: expected zero invalid hash-match locations, found $($locationSummary.invalid_count)."
+    }
+
+    $malformedSummary = Get-MatchingLocationSummary -MatchingCandidates @($candidateMalformed)
+    if ([int]$malformedSummary.invalid_count -ne 1) {
+        throw "Self-test failed: expected one invalid malformed candidate, found $($malformedSummary.invalid_count)."
     }
 
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-zip-selftest-' + [guid]::NewGuid().ToString('N'))
@@ -530,7 +542,7 @@ ORDER BY import_run_id, source_member_ordinal
         $validCandidates = @($candidates | Where-Object { Test-CandidateRecord -Candidate $_ })
         $invalidCandidates = @($candidates | Where-Object { -not (Test-CandidateRecord -Candidate $_) })
         $invalidCandidateCount = $invalidCandidates.Count
-        $matches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
+        $hashMatches = @($validCandidates | Where-Object { (Get-CandidateValue -Candidate $_ -Name 'hash_match') -eq $true })
 
         foreach ($invalidCandidate in $invalidCandidates) {
             $shape = Get-CandidateShapeDescription -Candidate $invalidCandidate
@@ -546,11 +558,11 @@ ORDER BY import_run_id, source_member_ordinal
             $status = 'UNVERIFIED_CANDIDATE_SHAPE'
             $shapeUnverified++
         }
-        elseif ($matches.Count -eq 1) {
+        elseif ($hashMatches.Count -eq 1) {
             $status = 'PASS'
             $matched++
         }
-        elseif ($matches.Count -gt 1) {
+        elseif ($hashMatches.Count -gt 1) {
             $status = 'AMBIGUOUS'
             $ambiguous++
         }
@@ -568,7 +580,7 @@ ORDER BY import_run_id, source_member_ordinal
             $expectedHash = [string]$m.observed_content_sha256
         }
 
-        $locationSummary = Get-MatchingLocationSummary -Matches $matches
+        $locationSummary = Get-MatchingLocationSummary -MatchingCandidates $hashMatches
         if ([int]$locationSummary.invalid_count -gt 0 -and $status -eq 'PASS') {
             $status = 'UNVERIFIED_CANDIDATE_SHAPE'
             $matched--
@@ -582,7 +594,7 @@ ORDER BY import_run_id, source_member_ordinal
             candidate_count = $candidates.Count
             valid_candidate_count = $validCandidates.Count
             invalid_candidate_shape_count = $invalidCandidateCount + [int]$locationSummary.invalid_count
-            matching_candidate_count = $matches.Count
+            matching_candidate_count = $hashMatches.Count
             status = $status
             matching_locations = [string]$locationSummary.text
         })
