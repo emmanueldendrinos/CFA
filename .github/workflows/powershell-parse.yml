@@ -73,3 +73,8 @@ jobs:
         shell: powershell
         run: |
           .\scripts\windows\Publish-CfaLocalEvidence.ps1 -SelfTest
+
+      - name: Runtime self-test evidence sync wrapper under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\scripts\windows\Sync-CfaEvidence.ps1 -SelfTest
