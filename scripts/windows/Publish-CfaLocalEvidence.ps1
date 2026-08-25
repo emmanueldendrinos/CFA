@@ -80,6 +80,7 @@ function Write-Snapshot {
     $kraken = Get-LatestRun -ParentPath (Join-Path $EvidenceRootPath 'kraken-reconciliation')
     $news = Get-LatestRun -ParentPath (Join-Path $EvidenceRootPath 'news-source-coverage')
     $diagnosis = Get-LatestRun -ParentPath (Join-Path $EvidenceRootPath 'news-acquisition-diagnosis') -Optional
+    $cfaSource = Get-LatestRun -ParentPath (Join-Path $EvidenceRootPath 'gdelt-q2-source-verification') -Optional
 
     $krakenMembersPath = Require-File -Run $kraken -Name 'member-reconciliation.csv'
     $krakenArchivePath = Require-File -Run $kraken -Name 'archive-reconciliation.csv'
@@ -99,8 +100,9 @@ function Write-Snapshot {
     [void]$b.AppendLine('## Source runs')
     [void]$b.AppendLine('')
     [void]$b.AppendLine('- Kraken reconciliation: ' + $kraken.Name)
-    [void]$b.AppendLine('- News source coverage: ' + $news.Name)
-    if ($null -ne $diagnosis) { [void]$b.AppendLine('- News acquisition diagnosis: ' + $diagnosis.Name) }
+    [void]$b.AppendLine('- Legacy news source coverage: ' + $news.Name)
+    if ($null -ne $diagnosis) { [void]$b.AppendLine('- Legacy news acquisition diagnosis: ' + $diagnosis.Name) }
+    if ($null -ne $cfaSource) { [void]$b.AppendLine('- CFA GDELT Q2 source verification: ' + $cfaSource.Name) }
     [void]$b.AppendLine('')
 
     [void]$b.AppendLine('## Kraken reconciliation summary')
@@ -114,7 +116,7 @@ function Write-Snapshot {
     $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'kraken' -RunId $kraken.Name -Title 'Archive reconciliation' -Path $krakenArchivePath
     $hashRows = Add-HashRow -Rows $hashRows -Category 'kraken' -RunId $kraken.Name -Path $krakenMembersPath
 
-    [void]$b.AppendLine('## News source coverage summary')
+    [void]$b.AppendLine('## Legacy news source coverage summary')
     [void]$b.AppendLine('')
     [void]$b.AppendLine('- PASS checks: ' + (Count-Status -Rows $newsChecks -Status 'PASS'))
     [void]$b.AppendLine('- FAIL checks: ' + (Count-Status -Rows $newsChecks -Status 'FAIL'))
@@ -130,11 +132,11 @@ function Write-Snapshot {
         @('Latest bounded run events','latest-run-events.csv')
     )) {
         $path = Require-File -Run $news -Name $section[1]
-        $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'news-coverage' -RunId $news.Name -Title $section[0] -Path $path
+        $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'legacy-news-coverage' -RunId $news.Name -Title $section[0] -Path $path
     }
 
     if ($null -ne $diagnosis) {
-        [void]$b.AppendLine('## News acquisition diagnosis')
+        [void]$b.AppendLine('## Legacy news acquisition diagnosis')
         [void]$b.AppendLine('')
         foreach ($section in @(
             @('Diagnosis checks','diagnosis-checks.csv'),
@@ -149,8 +151,32 @@ function Write-Snapshot {
             @('Core table columns','core-table-columns.csv')
         )) {
             $path = Require-File -Run $diagnosis -Name $section[1]
-            $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'news-diagnosis' -RunId $diagnosis.Name -Title $section[0] -Path $path
+            $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'legacy-news-diagnosis' -RunId $diagnosis.Name -Title $section[0] -Path $path
         }
+    }
+
+    if ($null -ne $cfaSource) {
+        $sourceChecksPath = Require-File -Run $cfaSource -Name 'source-verification-checks.csv'
+        $sourceChecks = @(Import-Csv -LiteralPath $sourceChecksPath)
+        [void]$b.AppendLine('## CFA-owned GDELT Q2 source verification')
+        [void]$b.AppendLine('')
+        [void]$b.AppendLine('- PASS checks: ' + (Count-Status -Rows $sourceChecks -Status 'PASS'))
+        [void]$b.AppendLine('- FAIL checks: ' + (Count-Status -Rows $sourceChecks -Status 'FAIL'))
+        [void]$b.AppendLine('- UNVERIFIED checks: ' + (Count-Status -Rows $sourceChecks -Status 'UNVERIFIED'))
+        [void]$b.AppendLine('')
+        foreach ($section in @(
+            @('CFA source verification checks','source-verification-checks.csv'),
+            @('CFA source contract','source-contract.csv'),
+            @('CFA source slot summary','slot-summary.csv'),
+            @('Provider-missing slots','provider-missing-slots.csv')
+        )) {
+            $path = Require-File -Run $cfaSource -Name $section[1]
+            $hashRows = Add-CsvSection -Builder $b -HashRows $hashRows -Category 'cfa-gdelt-q2-source' -RunId $cfaSource.Name -Title $section[0] -Path $path
+        }
+        $fullChecks = Require-File -Run $cfaSource -Name 'local-file-checks.csv'
+        $hashRows = Add-HashRow -Rows $hashRows -Category 'cfa-gdelt-q2-source' -RunId $cfaSource.Name -Path $fullChecks
+        [void]$b.AppendLine('The full slot-level local-file verification is not embedded because it may contain thousands of rows; its SHA-256 is recorded below.')
+        [void]$b.AppendLine('')
     }
 
     [void]$b.AppendLine('## Source evidence SHA-256')
@@ -164,24 +190,35 @@ function Write-Snapshot {
 
     $receipt = Join-Path $RepoRootPath 'docs\evidence\latest-local-validation.md'
     Write-Utf8NoBom -Path $receipt -Content $b.ToString()
-    return [pscustomobject]@{ receipt_path=$receipt; kraken_run=$kraken.Name; news_run=$news.Name; diagnosis_run=if($null -ne $diagnosis){$diagnosis.Name}else{''} }
+    return [pscustomobject]@{
+        receipt_path=$receipt
+        kraken_run=$kraken.Name
+        news_run=$news.Name
+        diagnosis_run=if($null -ne $diagnosis){$diagnosis.Name}else{''}
+        cfa_source_run=if($null -ne $cfaSource){$cfaSource.Name}else{''}
+    }
 }
 
 function Invoke-SelfTest {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-publish-' + [guid]::NewGuid().ToString('N'))
     try {
         $evidence = Join-Path $root 'CFA-local'; $repo = Join-Path $root 'repo'
-        $k = Join-Path $evidence 'kraken-reconciliation\20260101-k'; $n = Join-Path $evidence 'news-source-coverage\20260101-n'; $d = Join-Path $evidence 'news-acquisition-diagnosis\20260101-d'
-        foreach ($dir in @($k,$n,$d,(Join-Path $repo 'docs\evidence'))) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $k = Join-Path $evidence 'kraken-reconciliation\20260101-k'
+        $n = Join-Path $evidence 'news-source-coverage\20260101-n'
+        $d = Join-Path $evidence 'news-acquisition-diagnosis\20260101-d'
+        $s = Join-Path $evidence 'gdelt-q2-source-verification\20260101-s'
+        foreach ($dir in @($k,$n,$d,$s,(Join-Path $repo 'docs\evidence'))) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         Write-Utf8NoBom -Path (Join-Path $k 'member-reconciliation.csv') -Content "source_member_ordinal,status`n1,PASS`n"
         Write-Utf8NoBom -Path (Join-Path $k 'archive-reconciliation.csv') -Content "import_run_id,status`na,PASS`n"
         Write-Utf8NoBom -Path (Join-Path $n 'coverage-checks.csv') -Content "check_id,status,observed,expected`nA,FAIL,1,2`n"
         foreach ($name in @('acquisition-runs.csv','protocol-contracts.csv','acquisition-object-summary.csv','factor-table-counts.csv','latest-run-events.csv')) { Write-Utf8NoBom -Path (Join-Path $n $name) -Content "a,b`n1,2`n" }
         foreach ($name in @('diagnosis-checks.csv','event-type-summary.csv','object-accounting.csv','completed-event-accounting.csv','duplicate-non-null-payload-hashes.csv','null-payload-hash-rows.csv','completed-event-gaps.csv','latest-100-non-completion-events.csv','asrp-hype-tables.csv','core-table-columns.csv')) { Write-Utf8NoBom -Path (Join-Path $d $name) -Content "a,b`n1,2`n" }
+        Write-Utf8NoBom -Path (Join-Path $s 'source-verification-checks.csv') -Content "check_id,status,observed,expected`nA,PASS,1,1`n"
+        foreach ($name in @('source-contract.csv','slot-summary.csv','provider-missing-slots.csv','local-file-checks.csv')) { Write-Utf8NoBom -Path (Join-Path $s $name) -Content "a,b`n1,2`n" }
         $r = Write-Snapshot -EvidenceRootPath $evidence -RepoRootPath $repo
         if (-not (Test-Path -LiteralPath $r.receipt_path -PathType Leaf)) { throw 'Self-test failed: receipt missing.' }
         $text = [System.IO.File]::ReadAllText($r.receipt_path)
-        foreach ($required in @('20260101-k','20260101-n','20260101-d','News acquisition diagnosis','Source evidence SHA-256')) { if (-not $text.Contains($required)) { throw "Self-test failed: missing $required" } }
+        foreach ($required in @('20260101-k','20260101-n','20260101-d','20260101-s','CFA-owned GDELT Q2 source verification','Source evidence SHA-256')) { if (-not $text.Contains($required)) { throw "Self-test failed: missing $required" } }
         if ($text.Contains($root)) { throw 'Self-test failed: absolute path leaked into receipt.' }
         Write-Host 'SELF-TEST: PASS'
     }
@@ -202,8 +239,9 @@ try {
     $r = Write-Snapshot -EvidenceRootPath $EvidenceRoot -RepoRootPath $RepoRoot
     Write-Host ('Evidence receipt: ' + $r.receipt_path)
     Write-Host ('Kraken run: ' + $r.kraken_run)
-    Write-Host ('News coverage run: ' + $r.news_run)
-    if (-not [string]::IsNullOrWhiteSpace($r.diagnosis_run)) { Write-Host ('News diagnosis run: ' + $r.diagnosis_run) }
+    Write-Host ('Legacy news coverage run: ' + $r.news_run)
+    if (-not [string]::IsNullOrWhiteSpace($r.diagnosis_run)) { Write-Host ('Legacy news diagnosis run: ' + $r.diagnosis_run) }
+    if (-not [string]::IsNullOrWhiteSpace($r.cfa_source_run)) { Write-Host ('CFA GDELT Q2 source run: ' + $r.cfa_source_run) }
     Write-Host 'CFA EVIDENCE PUBLISH: PASS'
 }
 catch {
