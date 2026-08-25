@@ -24,8 +24,8 @@ jobs:
     env:
       ORIGINAL_SCRIPT_SHA256: 6b9ac35f9b650a7daa7e4604aa7ee872adaa9816704d90edd604995576f3e82d
       ORIGINAL_SCRIPT_BYTES: '80999'
-      FINAL_SCRIPT_SHA256: 5af3d5bf81a24f40d8d99e542f772aca547a6668665d52ca0e665adfc50f3a85
-      FINAL_SCRIPT_BYTES: '81033'
+      FINAL_SCRIPT_SHA256: 1f36031579472d1e133605f1204c7c5369ac1abc473c969a78f0513560707bea
+      FINAL_SCRIPT_BYTES: '81035'
       EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
       SCRIPT_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1
       GZIP_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1.gz
@@ -80,7 +80,7 @@ jobs:
           $hash | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'original-script-sha256.txt') -Encoding ASCII
           [string]$item.Length | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'original-script-bytes.txt') -Encoding ASCII
 
-      - name: Apply the one authorized empty-collection contract correction
+      - name: Apply the two authorized runtime-contract corrections
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
@@ -100,6 +100,38 @@ jobs:
               throw "Authorized source fragment occurrence count differs; first=$first; last=$last."
           }
           $corrected = $sourceText.Substring(0, $first) + $new + $sourceText.Substring($first + $old.Length)
+
+          $selfTestStartOld = @(
+              '    try {'
+              "        `$testFile = Join-Path `$testRoot 'hash.txt'"
+          ) -join "`r`n"
+          $selfTestStartNew = @(
+              '    try {'
+              '        Add-Type -AssemblyName System.IO.Compression'
+              '        Add-Type -AssemblyName System.IO.Compression.FileSystem'
+              ''
+              "        `$testFile = Join-Path `$testRoot 'hash.txt'"
+          ) -join "`r`n"
+          $startFirst = $corrected.IndexOf($selfTestStartOld, [StringComparison]::Ordinal)
+          $startLast = $corrected.LastIndexOf($selfTestStartOld, [StringComparison]::Ordinal)
+          if ($startFirst -lt 0 -or $startFirst -ne $startLast) {
+              throw "Self-test start fragment occurrence count differs; first=$startFirst; last=$startLast."
+          }
+          $corrected = $corrected.Substring(0, $startFirst) + $selfTestStartNew + $corrected.Substring($startFirst + $selfTestStartOld.Length)
+
+          $lateLoadOld = @(
+              '        Add-Type -AssemblyName System.IO.Compression'
+              '        Add-Type -AssemblyName System.IO.Compression.FileSystem'
+              "        `$zipSource = Join-Path `$testRoot 'zip-source'"
+          ) -join "`r`n"
+          $lateLoadNew = "        `$zipSource = Join-Path `$testRoot 'zip-source'"
+          $lateFirst = $corrected.IndexOf($lateLoadOld, [StringComparison]::Ordinal)
+          $lateLast = $corrected.LastIndexOf($lateLoadOld, [StringComparison]::Ordinal)
+          if ($lateFirst -lt 0 -or $lateFirst -ne $lateLast) {
+              throw "Late compression-load fragment occurrence count differs; first=$lateFirst; last=$lateLast."
+          }
+          $corrected = $corrected.Substring(0, $lateFirst) + $lateLoadNew + $corrected.Substring($lateFirst + $lateLoadOld.Length)
+
           $ascii = New-Object Text.ASCIIEncoding
           [IO.File]::WriteAllText($env:SCRIPT_PATH, $corrected, $ascii)
           $item = Get-Item -LiteralPath $env:SCRIPT_PATH -ErrorAction Stop
@@ -152,12 +184,46 @@ jobs:
           if ($rowsParameters.Count -ne 1) { throw "Write-CfaCsv Rows parameter count differs: $($rowsParameters.Count)." }
           $attributeNames = @($rowsParameters[0].Attributes | ForEach-Object { $_.TypeName.Name })
           if ($attributeNames -cnotcontains 'AllowEmptyCollection') { throw 'Write-CfaCsv Rows lacks AllowEmptyCollection.' }
+
+          $compressionFunctions = @($ast.FindAll({
+              param($node)
+              if ($node -isnot [Management.Automation.Language.FunctionDefinitionAst]) { return $false }
+              return @($node.Body.FindAll({
+                  param($child)
+                  $child -is [Management.Automation.Language.TypeExpressionAst] -and
+                  $child.TypeName.FullName -like 'IO.Compression.*'
+              }, $true)).Count -gt 0
+          }, $true))
+          foreach ($function in $compressionFunctions) {
+              $firstCompressionType = @(
+                  $function.Body.FindAll({
+                      param($child)
+                      $child -is [Management.Automation.Language.TypeExpressionAst] -and
+                      $child.TypeName.FullName -like 'IO.Compression.*'
+                  }, $true) | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1
+              )
+              $addTypeCommands = @(
+                  $function.Body.FindAll({
+                      param($child)
+                      $child -is [Management.Automation.Language.CommandAst] -and
+                      $child.GetCommandName() -ceq 'Add-Type'
+                  }, $true) | Where-Object { $_.Extent.StartOffset -lt $firstCompressionType[0].Extent.StartOffset }
+              )
+              $addTypeText = ($addTypeCommands | ForEach-Object { $_.Extent.Text }) -join "`n"
+              foreach ($assemblyName in @('System.IO.Compression','System.IO.Compression.FileSystem')) {
+                  if (-not $addTypeText.Contains($assemblyName)) {
+                      throw "Function $($function.Name) uses compression types before loading $assemblyName."
+                  }
+              }
+          }
+
           [pscustomobject][ordered]@{
               parameter_count = $parameterNames.Count
               forbidden_credential_parameters = 0
               forced_default_transaction_read_only = $true
               psql_no_password_flag = $true
               write_csv_rows_allows_empty_collection = $true
+              compression_functions_initialized_before_use = $compressionFunctions.Count
           } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'read-only-surface.json') -Encoding UTF8
 
       - name: Run exact final script self-test
