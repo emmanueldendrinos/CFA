@@ -80,8 +80,8 @@ function Get-ColumnLabel {
 function Get-TextParts {
     param([System.Xml.XmlNode]$Node)
     if ($null -eq $Node) { return '' }
-    $parts = New-Object System.Collections.Generic.List[string]
-    foreach ($t in $Node.SelectNodes(".//*[local-name()='t']")) { $parts.Add([string]$t.InnerText) }
+    $parts = @()
+    foreach ($t in $Node.SelectNodes(".//*[local-name()='t']")) { $parts += ,[string]$t.InnerText }
     if ($parts.Count -gt 0) { return ($parts -join '') }
     return [string]$Node.InnerText
 }
@@ -91,9 +91,9 @@ function Get-SharedStrings {
     $text = Get-EntryText -Archive $Archive -Name 'xl/sharedStrings.xml' -Optional
     if ([string]::IsNullOrWhiteSpace($text)) { return @() }
     $doc = New-XmlDoc -Text $text
-    $items = New-Object System.Collections.Generic.List[string]
-    foreach ($si in $doc.SelectNodes("//*[local-name()='si']")) { $items.Add((Get-TextParts -Node $si)) }
-    return @($items)
+    $items = @()
+    foreach ($si in $doc.SelectNodes("//*[local-name()='si']")) { $items += ,(Get-TextParts -Node $si) }
+    return $items
 }
 
 function Get-CellValue {
@@ -139,7 +139,7 @@ function Get-SheetDescriptors {
     $workbook = New-XmlDoc -Text (Get-EntryText -Archive $Archive -Name 'xl/workbook.xml')
     $rels = New-XmlDoc -Text (Get-EntryText -Archive $Archive -Name 'xl/_rels/workbook.xml.rels')
     $relNs = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-    $result = New-Object System.Collections.Generic.List[object]
+    $result = @()
 
     foreach ($sheet in $workbook.SelectNodes("//*[local-name()='sheets']/*[local-name()='sheet']")) {
         $name = [string]$sheet.GetAttribute('name')
@@ -149,16 +149,16 @@ function Get-SheetDescriptors {
             if ([string]$rel.Attributes['Id'].Value -eq $rid) { $target = [string]$rel.Attributes['Target'].Value; break }
         }
         if ([string]::IsNullOrWhiteSpace($target)) { throw "Relationship not found for sheet '$name'." }
-        $result.Add([pscustomobject]@{ name=$name; entry_name=(Resolve-SheetEntry -Target $target) })
+        $result += ,([pscustomobject]@{ name=$name; entry_name=(Resolve-SheetEntry -Target $target) })
     }
     if ($result.Count -eq 0) { throw 'No worksheets found in workbook.' }
-    return @($result)
+    return $result
 }
 
 function Get-SheetSnapshot {
     param([System.IO.Compression.ZipArchive]$Archive,[object]$Descriptor,[object[]]$SharedStrings)
     $doc = New-XmlDoc -Text (Get-EntryText -Archive $Archive -Name ([string]$Descriptor.entry_name))
-    $rawRows = New-Object System.Collections.Generic.List[object]
+    $rawRows = @()
     [int]$maxCol = -1
 
     foreach ($row in $doc.SelectNodes("//*[local-name()='sheetData']/*[local-name()='row']")) {
@@ -171,18 +171,18 @@ function Get-SheetSnapshot {
             if ($col -gt $maxCol) { $maxCol = $col }
             $map[$col] = Get-CellValue -Cell $cell -SharedStrings $SharedStrings
         }
-        if ($map.Count -gt 0) { $rawRows.Add([pscustomobject]@{ row_number=$rowNo; map=$map }) }
+        if ($map.Count -gt 0) { $rawRows += ,([pscustomobject]@{ row_number=$rowNo; map=$map }) }
     }
 
-    $rows = New-Object System.Collections.Generic.List[object]
+    $rows = @()
     foreach ($raw in $rawRows) {
-        $vals = New-Object System.Collections.Generic.List[string]
+        $vals = @()
         for ($i=0; $i -le $maxCol; $i++) {
-            if ($raw.map.ContainsKey($i)) { $vals.Add([string]$raw.map[$i]) } else { $vals.Add('') }
+            if ($raw.map.ContainsKey($i)) { $vals += ,[string]$raw.map[$i] } else { $vals += ,'' }
         }
-        $rows.Add([pscustomobject]@{ row_number=[int]$raw.row_number; values=@($vals) })
+        $rows += ,([pscustomobject]@{ row_number=[int]$raw.row_number; values=$vals })
     }
-    return [pscustomobject]@{ name=[string]$Descriptor.name; entry_name=[string]$Descriptor.entry_name; max_column_index=$maxCol; rows=@($rows) }
+    return [pscustomobject]@{ name=[string]$Descriptor.name; entry_name=[string]$Descriptor.entry_name; max_column_index=$maxCol; rows=$rows }
 }
 
 function Escape-Markdown {
@@ -203,22 +203,22 @@ function Export-Snapshot {
         $archive = [System.IO.Compression.ZipFile]::OpenRead($resolved)
         $shared = @(Get-SharedStrings -Archive $archive)
         $descriptors = @(Get-SheetDescriptors -Archive $archive)
-        $sheets = New-Object System.Collections.Generic.List[object]
-        foreach ($descriptor in $descriptors) { $sheets.Add((Get-SheetSnapshot -Archive $archive -Descriptor $descriptor -SharedStrings $shared)) }
+        $sheets = @()
+        foreach ($descriptor in $descriptors) { $sheets += ,(Get-SheetSnapshot -Archive $archive -Descriptor $descriptor -SharedStrings $shared) }
     }
     finally { if ($null -ne $archive) { $archive.Dispose() } }
 
-    $hits = New-Object System.Collections.Generic.List[object]
+    $hits = @()
     foreach ($sheet in $sheets) {
         foreach ($row in $sheet.rows) {
             $joined = (($row.values | ForEach-Object { [string]$_ }) -join ' | ')
             foreach ($m in [regex]::Matches($joined,'(?i)DATA-\d{3}')) {
-                $hits.Add([pscustomobject]@{ id=$m.Value.ToUpperInvariant(); sheet=[string]$sheet.name; row_number=[int]$row.row_number; values=@($row.values) })
+                $hits += ,([pscustomobject]@{ id=$m.Value.ToUpperInvariant(); sheet=[string]$sheet.name; row_number=[int]$row.row_number; values=@($row.values) })
             }
         }
     }
 
-    $snapshot = [ordered]@{ source_file='CFA-SoT.xlsx'; source_size_bytes=[long]$info.Length; source_sha256=$hash; sheets=@($sheets); authority_id_hits=@($hits) }
+    $snapshot = [ordered]@{ source_file='CFA-SoT.xlsx'; source_size_bytes=[long]$info.Length; source_sha256=$hash; sheets=$sheets; authority_id_hits=$hits }
     Write-Utf8NoBom -Path $OutJson -Content (($snapshot | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
 
     $b = New-Object System.Text.StringBuilder
@@ -254,16 +254,13 @@ function Export-Snapshot {
             [void]$b.AppendLine('')
             continue
         }
-        $headers = New-Object System.Collections.Generic.List[string]
-        $seps = New-Object System.Collections.Generic.List[string]
-        $headers.Add('Row'); $seps.Add('---:')
-        for ($i=0; $i -le $sheet.max_column_index; $i++) { $headers.Add((Get-ColumnLabel -Index $i)); $seps.Add('---') }
+        $headers = @('Row'); $seps = @('---:')
+        for ($i=0; $i -le $sheet.max_column_index; $i++) { $headers += ,(Get-ColumnLabel -Index $i); $seps += ,'---' }
         [void]$b.AppendLine('| ' + ($headers -join ' | ') + ' |')
         [void]$b.AppendLine('| ' + ($seps -join ' | ') + ' |')
         foreach ($row in $sheet.rows) {
-            $cells = New-Object System.Collections.Generic.List[string]
-            $cells.Add([string]$row.row_number)
-            foreach ($v in $row.values) { $cells.Add((Escape-Markdown -Text ([string]$v))) }
+            $cells = @([string]$row.row_number)
+            foreach ($v in $row.values) { $cells += ,(Escape-Markdown -Text ([string]$v)) }
             [void]$b.AppendLine('| ' + ($cells -join ' | ') + ' |')
         }
         [void]$b.AppendLine('')
