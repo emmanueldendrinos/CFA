@@ -1,5 +1,5 @@
 #requires -Version 5.1
-# Dynamic residual diagnostic: rerun after each published mapping-decision tranche.
+# Dynamic residual diagnostic: refreshed after the 411 APPROVED / 4 NOT_APPLICABLE / 20 UNVERIFIED mapping tranche.
 [CmdletBinding()]
 param([string]$RepoRoot='',[switch]$SelfTest)
 Set-StrictMode -Version Latest
