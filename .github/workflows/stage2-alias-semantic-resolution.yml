@@ -1,0 +1,63 @@
+name: Stage 2 Alias Semantic Resolution
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Resolve-CfaStage2AliasSemantics.ps1'
+      - 'docs/evidence/stage2-alias-recovery.csv'
+      - 'docs/evidence/stage2-alias-context-sample-summary.csv'
+      - '.github/workflows/stage2-alias-semantic-resolution.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse resolver with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resolve-CfaStage2AliasSemantics.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Resolver failed PowerShell 7 parsing.' }
+
+      - name: Parse resolver with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resolve-CfaStage2AliasSemantics.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Resolver failed Windows PowerShell 5.1 parsing.' }
+
+      - name: Self-test alias semantic resolver
+        shell: powershell
+        run: .\scripts\windows\Resolve-CfaStage2AliasSemantics.ps1 -SelfTest
+
+      - name: Resolve alias semantic decisions
+        shell: powershell
+        run: .\scripts\windows\Resolve-CfaStage2AliasSemantics.ps1
+
+      - name: Commit alias semantic decisions
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: powershell
+        run: |
+          $allowed = @(
+            'docs/evidence/stage2-alias-semantic-decisions.md',
+            'docs/evidence/stage2-alias-semantic-decisions.json',
+            'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+          )
+          git -c core.autocrlf=false add -- $allowed
+          $staged = @(git diff --cached --name-only)
+          if ($staged.Count -gt 0) {
+            foreach ($path in $staged) { if ($allowed -notcontains $path) { throw "Unexpected staged path: $path" } }
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Freeze CFA Stage 2 alias semantic decisions'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
