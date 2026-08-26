@@ -6,9 +6,11 @@
 - UNVERIFIED: 18
 - CFA-S2-003: UNVERIFIED
 
-322 approvals are backed by a unique current CoinGecko/Kraken pair bridge. EDGE and LIT are temporal adjudications. Contained adjudications are validated against AF-002. Expanded adjudications are validated against the separately published hashed CoinGecko reference evidence and never modify AF-002. Fiat bases are explicitly NOT_APPLICABLE. Unlisted cases remain UNVERIFIED.
+322 approvals are backed by a unique current CoinGecko/Kraken pair bridge. EDGE and LIT are temporal adjudications. Contained adjudications are validated against AF-002 and may also explicitly preserve an UNVERIFIED conflict. Expanded adjudications are validated against separately published hashed CoinGecko reference evidence and never modify AF-002. Direct adjudications are validated against published direct `/coins/{id}` response evidence, with the direct evidence file hash recorded in the snapshot. Fiat bases are explicitly NOT_APPLICABLE. Unlisted cases remain UNVERIFIED.
 
 Decision table: candidate-analysis/CFA-Stage2-Mapping-Decisions.csv
 Contained adjudication registries: candidate-analysis/CFA-Stage2-Mapping-Adjudications.csv, candidate-analysis/CFA-Stage2-Mapping-Adjudications-02.csv, candidate-analysis/CFA-Stage2-Mapping-Adjudications-03.csv
 Expanded adjudication registry: candidate-analysis/CFA-Stage2-Mapping-Expanded-Adjudications.csv
 Expanded candidate evidence: candidate-analysis/CFA-Stage2-Expanded-CoinGecko-Candidates.csv
+Direct adjudication registry: candidate-analysis/CFA-Stage2-Mapping-Direct-Adjudications.csv
+Direct CoinGecko evidence: candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv
