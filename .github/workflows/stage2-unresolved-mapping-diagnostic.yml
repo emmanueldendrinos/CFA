@@ -61,3 +61,5 @@ jobs:
             git pull --rebase origin main
             git push origin HEAD:main
           }
+
+# Refresh marker: 2026-08-26 current decision-state reconciliation
