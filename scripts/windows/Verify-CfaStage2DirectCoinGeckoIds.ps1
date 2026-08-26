@@ -1,0 +1,71 @@
+#requires -Version 5.1
+[CmdletBinding()]
+param(
+    [string]$RepoRoot='',
+    [string]$ApiRoot='https://api.coingecko.com/api/v3',
+    [ValidateRange(1000,30000)][int]$DelayMs=6000,
+    [switch]$SelfTest
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+
+function Write-Utf8NoBom{param([string]$Path,[string]$Content);$p=Split-Path -Parent $Path;if(-not(Test-Path -LiteralPath $p -PathType Container)){New-Item -ItemType Directory -Path $p -Force|Out-Null};$e=New-Object System.Text.UTF8Encoding($false);[System.IO.File]::WriteAllText($Path,$Content,$e)}
+function Get-Sha256Bytes{param([byte[]]$Bytes);$s=[System.Security.Cryptography.SHA256]::Create();try{return(($s.ComputeHash($Bytes)|ForEach-Object{$_.ToString('x2')})-join'')}finally{$s.Dispose()}}
+function Convert-Response{
+ param([byte[]]$Bytes,[string]$ExpectedId)
+ $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($Bytes)
+ $o=$json|ConvertFrom-Json
+ foreach($n in @('id','name','symbol')){if($o.PSObject.Properties.Name-notcontains$n){throw "CoinGecko response missing $n for $ExpectedId"}}
+ $home='';if($o.PSObject.Properties.Name-contains'links'-and$null-ne$o.links-and$o.links.PSObject.Properties.Name-contains'homepage'){$h=@($o.links.homepage|Where-Object{-not[string]::IsNullOrWhiteSpace([string]$_)});if($h.Count-gt0){$home=[string]$h[0]}}
+ $platform='';if($o.PSObject.Properties.Name-contains'asset_platform_id'){$platform=[string]$o.asset_platform_id}
+ $contract='';if($o.PSObject.Properties.Name-contains'contract_address'){$contract=[string]$o.contract_address}
+ return [pscustomobject]@{id=[string]$o.id;name=[string]$o.name;symbol=[string]$o.symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$home}
+}
+function Invoke-CoinRequest{
+ param([string]$Url,[int]$MaxAttempts=4)
+ for($attempt=1;$attempt-le$MaxAttempts;$attempt++){
+   $req=$null;$resp=$null
+   try{
+     $req=[System.Net.HttpWebRequest]::Create($Url);$req.Method='GET';$req.UserAgent='CFA-stage2-direct-coingecko-id-evidence/1.0';$req.Timeout=45000;$req.ReadWriteTimeout=45000
+     $resp=[System.Net.HttpWebResponse]$req.GetResponse();$stream=$resp.GetResponseStream();$ms=New-Object System.IO.MemoryStream
+     try{$stream.CopyTo($ms);$bytes=$ms.ToArray()}finally{$ms.Dispose();$stream.Dispose()}
+     return [pscustomobject]@{status_code=[int]$resp.StatusCode;bytes=$bytes;error=''}
+   }catch [System.Net.WebException]{
+     $status=0;$body=[byte[]]@();$err=$_.Exception.Message
+     if($null-ne$_.Exception.Response){$wr=[System.Net.HttpWebResponse]$_.Exception.Response;$status=[int]$wr.StatusCode;try{$s=$wr.GetResponseStream();$m=New-Object System.IO.MemoryStream;try{$s.CopyTo($m);$body=$m.ToArray()}finally{$m.Dispose();$s.Dispose()}}catch{};try{$wr.Dispose()}catch{}}
+     if(($status-eq429-or$status-ge500)-and$attempt-lt$MaxAttempts){Start-Sleep -Seconds ([Math]::Min(30,5*$attempt));continue}
+     return [pscustomobject]@{status_code=$status;bytes=$body;error=$err}
+   }finally{if($null-ne$resp){try{$resp.Dispose()}catch{}}}
+ }
+ throw 'unreachable'
+}
+function Invoke-SelfTest{
+ $b=(New-Object System.Text.UTF8Encoding($false)).GetBytes('{"id":"x","name":"Asset X","symbol":"xx","asset_platform_id":"ethereum","contract_address":"0x1","links":{"homepage":["https://x.example"]}}')
+ $r=Convert-Response $b 'x';if($r.id-ne'x'-or$r.name-ne'Asset X'-or$r.symbol-ne'xx'-or$r.homepage-ne'https://x.example'){throw 'response parser'}
+ if((Get-Sha256Bytes $b).Length-ne64){throw 'sha256'}
+ Write-Host 'SELF-TEST: PASS'
+}
+if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
+
+try{
+ if([string]::IsNullOrWhiteSpace($RepoRoot)){$RepoRoot=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))};$RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
+ $seedPath=Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Direct-CoinGecko-ID-Seeds.csv';$decisionPath=Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Mapping-Decisions.csv'
+ $seeds=@(Import-Csv -LiteralPath $seedPath);if($seeds.Count-le0){throw 'Direct CoinGecko ID seed set is empty.'}
+ $decisions=@(Import-Csv -LiteralPath $decisionPath);$byBase=@{};foreach($d in $decisions){$byBase[[string]$d.base_asset_id]=$d}
+ foreach($s in $seeds){$b=[string]$s.base_asset_id;if(-not$byBase.ContainsKey($b)){throw "Seed base missing from mapping decisions: $b"};if([string]$byBase[$b].mapping_status-ne'UNVERIFIED'){throw "Direct-ID seed base no longer UNVERIFIED: $b"}}
+ $rows=@();$ordinal=0
+ foreach($s in $seeds){
+   $ordinal++;if($ordinal-gt1){Start-Sleep -Milliseconds $DelayMs}
+   $id=[string]$s.candidate_id;$url=$ApiRoot.TrimEnd('/')+'/coins/'+[Uri]::EscapeDataString($id)+'?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false'
+   Write-Host ("Direct CoinGecko ID: {0}/{1} {2}/{3}"-f$ordinal,$seeds.Count,[string]$s.base_asset_id,$id)
+   $r=Invoke-CoinRequest $url;$sha='';$name='';$symbol='';$returnedId='';$platform='';$contract='';$homepage='';$parseStatus='NOT_APPLICABLE'
+   if($r.bytes.Length-gt0){$sha=Get-Sha256Bytes $r.bytes}
+   if($r.status_code-eq200){$o=Convert-Response $r.bytes $id;$returnedId=$o.id;$name=$o.name;$symbol=$o.symbol;$platform=$o.asset_platform_id;$contract=$o.contract_address;$homepage=$o.homepage;$parseStatus=if($returnedId-eq$id){'PASS'}else{'FAIL_RETURNED_ID_MISMATCH'}}
+   $rows+=[pscustomobject]@{base_asset_id=[string]$s.base_asset_id;requested_candidate_id=$id;http_status=$r.status_code;response_sha256=$sha;response_bytes=$r.bytes.Length;parse_status=$parseStatus;returned_id=$returnedId;returned_name=$name;returned_symbol=$symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$homepage;seed_basis=[string]$s.seed_basis;request_url=$url;error_message=[string]$r.error}
+ }
+ $csv=Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv';$rows|Sort-Object base_asset_id,requested_candidate_id|Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
+ $ok=@($rows|Where-Object{$_.http_status-eq200-and$_.parse_status-eq'PASS'}).Count;$notFound=@($rows|Where-Object{$_.http_status-eq404}).Count;$other=@($rows|Where-Object{$_.http_status-ne200-and$_.http_status-ne404}).Count
+ $b=New-Object System.Text.StringBuilder;[void]$b.AppendLine('# CFA Stage 2 Direct CoinGecko ID Evidence');[void]$b.AppendLine('');[void]$b.AppendLine('- Seed rows: '+$seeds.Count);[void]$b.AppendLine('- HTTP 200 + returned-id PASS: '+$ok);[void]$b.AppendLine('- HTTP 404: '+$notFound);[void]$b.AppendLine('- Other HTTP failures: '+$other);[void]$b.AppendLine('');[void]$b.AppendLine('Each seed is verified directly against the keyless CoinGecko `/coins/{id}` endpoint. Response bytes are not committed; SHA-256 and bounded identity fields are published. This is evidence only and does not modify AF-002 or approve mappings.');[void]$b.AppendLine('');[void]$b.AppendLine('Evidence table: `candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv`.');Write-Utf8NoBom (Join-Path $RepoRoot 'docs\evidence\stage2-direct-coingecko-id-evidence.md') $b.ToString()
+ Write-Host ('Seed rows: '+$seeds.Count);Write-Host ('Verified direct IDs: '+$ok);Write-Host ('HTTP 404: '+$notFound);Write-Host ('Other HTTP failures: '+$other);Write-Host 'CFA STAGE 2 DIRECT COINGECKO ID EVIDENCE: PASS'
+ if($other-gt0){exit 2}
+}catch{Write-Host 'CFA STAGE 2 DIRECT COINGECKO ID EVIDENCE: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}
