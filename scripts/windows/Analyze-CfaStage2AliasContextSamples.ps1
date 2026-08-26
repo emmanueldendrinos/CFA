@@ -258,7 +258,7 @@ try {
             finally { if ($null -ne $reader) { $reader.Dispose() } else { $stream.Dispose() } }
         }
         finally { $zip.Dispose() }
-        if ($targets.Count -ne 0) { throw "Unresolved sample record IDs remain in $archiveName: $(@($targets.Keys) -join ',')" }
+        if ($targets.Count -ne 0) { throw "Unresolved sample record IDs remain in ${archiveName}: $(@($targets.Keys) -join ',')" }
     }
 
     if ($foundCount -ne $samples.Count -or $results.Count -ne $samples.Count) { throw "Sample accounting mismatch: expected=$($samples.Count) found=$foundCount results=$($results.Count)" }
