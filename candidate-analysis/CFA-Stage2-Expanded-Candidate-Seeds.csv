@@ -1,0 +1,19 @@
+base_asset_id,kraken_q2_name,kraken_q2_ticker,query_names,query_symbols,kraken_evidence_url,evidence_note
+AIR,Altair,AIR,Altair,AIR,https://blog.kraken.com/product/trading-for-toke-movr-pha-and-more-starts-now-for-the-usa-and-ca,Kraken explicitly identifies Altair (AIR) and AIR/EUR AIR/USD.
+K,Kinto,K,Kinto,K,https://www.kraken.com/prices/kinto,Kraken identifies Q2 ticker K as Kinto; AF-002 sidekick candidate is a ticker collision.
+NANO,Nano,NANO,Nano,NANO|XNO,https://www.kraken.com/prices/nano,Kraken identifies Nano under ticker NANO; include XNO as current external alias.
+LUNA,Terra Classic,LUNA,Terra Classic,LUNA|LUNC,https://www.kraken.com/prices/terra-classic,Kraken states original Terra blockchain/token remains LUNA and is Terra Classic.
+LUNA2,Terra,LUNA2,Terra|Terra 2.0,LUNA|LUNA2,https://www.kraken.com/prices/terra-classic,Kraken states Terra 2.0 is called LUNA2.
+TON,Toncoin,TON,Toncoin|The Open Network,TON,https://www.kraken.com/prices/toncoin,Kraken identifies Toncoin / The Open Network native currency as TON.
+FXS,Frax Share,FXS,Frax Share|Frax,FXS,https://www.kraken.com/prices/frax-share,Kraken identifies Frax Share under ticker FXS.
+OM,MANTRA,OM,MANTRA|Mantra,OM,https://www.kraken.com/prices/mantra,Kraken identifies MANTRA under ticker OM.
+INTR,Interlay,INTR,Interlay,INTR,https://www.kraken.com/prices/interlay,Kraken identifies Interlay under ticker INTR.
+IP,Story,IP,Story,IP,https://www.kraken.com/prices/story,Kraken identifies Story under ticker IP.
+KINT,Kintsugi,KINT,Kintsugi,KINT,https://blog.kraken.com/product/trading-for-toke-movr-pha-and-more-starts-now-for-the-usa-and-ca,Kraken explicitly identifies Kintsugi (KINT).
+VELODROME,Velodrome Finance,VELODROME,Velodrome Finance,VELODROME,https://www.kraken.com/prices/velodrome-finance,Kraken identifies Velodrome Finance under ticker VELODROME.
+GST,Green Satoshi Token,GST,Green Satoshi Token,GST,https://www.kraken.com/prices/green-satoshi-token,Kraken identifies Green Satoshi Token under ticker GST.
+CSM,Crust Shadow,CSM,Crust Shadow,CSM,https://www.kraken.com/prices/crust-shadow,Kraken identifies Crust Shadow under ticker CSM.
+APENFT,APENFT,APENFT,APENFT|AINFT,APENFT|NFT|AINFT,https://www.kraken.com/prices/apenft,Kraken identifies the APENFT asset; alternate current naming/tickers are searched but not assumed equivalent.
+CQT,Covalent,CQT,Covalent|Covalent X Token,CQT|CXT,https://www.kraken.com/prices/covalent-x-token,Kraken current asset is Covalent X Token (CXT); seed includes Q2 CQT to inspect migration candidates.
+XXBT,Bitcoin,XBT,Bitcoin,BTC|XBT,https://www.kraken.com/prices/bitcoin,Kraken identifies Bitcoin; Q2 AF-001 uses legacy Kraken base XBT.
+XXDG,Dogecoin,XDG,Dogecoin,DOGE|XDG,https://www.kraken.com/prices/dogecoin,Kraken identifies Dogecoin; Q2 AF-001 uses legacy Kraken base XDG.
