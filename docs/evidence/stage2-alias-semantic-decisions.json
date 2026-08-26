@@ -1,0 +1,18 @@
+{
+    "generated_at_utc":  "2026-08-26T05:18:19.8373522Z",
+    "decision_rows":  45,
+    "approved_alias_identities":  45,
+    "unverified_alias_identities":  0,
+    "gates":  [
+                  {
+                      "gate_id":  "CFA-S2-005",
+                      "status":  "PASS",
+                      "reason":  "Alias identity relationship only. Collision and context matching logic is deferred to Stage 3 news matching."
+                  },
+                  {
+                      "gate_id":  "CFA-S2-006",
+                      "status":  "BLOCKED",
+                      "reason":  "CFA-S2-003 CoinGecko mapping decisions remain unresolved; Stage 3 may not begin until upstream identity/mapping gates are resolved."
+                  }
+              ]
+}
