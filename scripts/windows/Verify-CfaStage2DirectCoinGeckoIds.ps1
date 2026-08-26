@@ -14,15 +14,36 @@ function Get-Sha256Bytes{param([byte[]]$Bytes);$s=[System.Security.Cryptography.
 function Get-PropertyValue{
  param([object]$Object,[string]$PropertyName)
  if($null-eq$Object){return $null}
+ if($Object-is[System.Collections.IDictionary]){
+   foreach($key in @($Object.Keys)){
+     if(([string]$key).Equals($PropertyName,[System.StringComparison]::Ordinal)){return $Object[$key]}
+   }
+   return $null
+ }
  foreach($property in @($Object.PSObject.Properties)){
    if(([string]$property.Name).Equals($PropertyName,[System.StringComparison]::Ordinal)){return $property.Value}
  }
  return $null
 }
+function Convert-CfaJsonObject{
+ param([string]$Json)
+ try{return($Json|ConvertFrom-Json)}
+ catch{
+   $primaryError=$_.Exception.Message
+   try{
+     Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop|Out-Null
+     $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer
+     $serializer.MaxJsonLength=67108864
+     return $serializer.DeserializeObject($Json)
+   }catch{
+     throw ("CoinGecko JSON parse failed. ConvertFrom-Json: {0}; JavaScriptSerializer: {1}"-f$primaryError,$_.Exception.Message)
+   }
+ }
+}
 function Convert-Response{
  param([byte[]]$Bytes,[string]$ExpectedId)
  $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($Bytes)
- $o=$json|ConvertFrom-Json
+ $o=Convert-CfaJsonObject $json
  $idValue=Get-PropertyValue $o 'id';$nameValue=Get-PropertyValue $o 'name';$symbolValue=Get-PropertyValue $o 'symbol'
  if([string]::IsNullOrWhiteSpace([string]$idValue)){throw "CoinGecko response missing id for $ExpectedId"}
  if([string]::IsNullOrWhiteSpace([string]$nameValue)){throw "CoinGecko response missing name for $ExpectedId"}
@@ -36,7 +57,7 @@ function Invoke-CoinRequest{
  for($attempt=1;$attempt-le$MaxAttempts;$attempt++){
    $req=$null;$resp=$null
    try{
-     $req=[System.Net.HttpWebRequest]::Create($Url);$req.Method='GET';$req.UserAgent='CFA-stage2-direct-coingecko-id-evidence/1.1';$req.Timeout=45000;$req.ReadWriteTimeout=45000
+     $req=[System.Net.HttpWebRequest]::Create($Url);$req.Method='GET';$req.UserAgent='CFA-stage2-direct-coingecko-id-evidence/1.2';$req.Timeout=45000;$req.ReadWriteTimeout=45000
      $resp=[System.Net.HttpWebResponse]$req.GetResponse();$stream=$resp.GetResponseStream();$ms=New-Object System.IO.MemoryStream
      try{$stream.CopyTo($ms);$bytes=$ms.ToArray()}finally{$ms.Dispose();$stream.Dispose()}
      return [pscustomobject]@{status_code=[int]$resp.StatusCode;bytes=$bytes;error=''}
@@ -54,6 +75,8 @@ function Invoke-SelfTest{
  $r=Convert-Response $b 'x';if($r.id-ne'x'-or$r.name-ne'Asset X'-or$r.symbol-ne'xx'-or$r.homepage-ne'https://x.example'){throw 'response parser'}
  $minimal=(New-Object System.Text.UTF8Encoding($false)).GetBytes('{"id":"y","name":"Asset Y","symbol":"yy","links":null}')
  $m=Convert-Response $minimal 'y';if($m.id-ne'y'-or$m.homepage-ne''){throw 'minimal response parser'}
+ $emptyKey=(New-Object System.Text.UTF8Encoding($false)).GetBytes('{"id":"z","name":"Asset Z","symbol":"zz","links":{"homepage":["https://z.example"]},"detail_platforms":{"":{"decimal_place":6}}}')
+ $z=Convert-Response $emptyKey 'z';if($z.id-ne'z'-or$z.name-ne'Asset Z'-or$z.symbol-ne'zz'-or$z.homepage-ne'https://z.example'){throw 'empty-key response parser'}
  if((Get-Sha256Bytes $b).Length-ne64){throw 'sha256'}
  Write-Host 'SELF-TEST: PASS'
 }
