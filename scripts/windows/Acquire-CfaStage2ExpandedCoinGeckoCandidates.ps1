@@ -28,10 +28,12 @@ function Get-Sha256Bytes {
 }
 function Convert-CoinListJson {
     param([string]$Json)
+    if([string]::IsNullOrWhiteSpace($Json)){throw 'CoinGecko coins/list JSON is empty.'}
+    $trimmed=$Json.TrimStart()
+    if(-not$trimmed.StartsWith('[')){throw 'CoinGecko coins/list response is not a top-level JSON array.'}
     $parsed=ConvertFrom-Json -InputObject $Json
-    $list=New-Object 'System.Collections.Generic.List[object]'
-    foreach($item in $parsed){[void]$list.Add($item)}
-    $coins=@($list.ToArray())
+    $coins=@()
+    if($parsed -is [System.Array]){$coins=@($parsed)}else{$coins=@($parsed|ForEach-Object{$_})}
     if($coins.Count-eq0){throw 'CoinGecko coins/list parsed to zero records.'}
     foreach($coin in @($coins|Select-Object -First 3)){
         foreach($property in @('id','name','symbol')){if($coin.PSObject.Properties.Name-notcontains$property){throw "Unexpected CoinGecko coins/list record shape: missing $property"}}
@@ -69,6 +71,7 @@ function Match-Candidates {
 function Invoke-SelfTest {
     $parsed=@(Convert-CoinListJson '[{"id":"bitcoin","name":"Bitcoin","symbol":"btc"},{"id":"other","name":"Other","symbol":"xbt"},{"id":"nope","name":"Nope","symbol":"zzz"}]')
     if($parsed.Count-ne3){throw "JSON array expansion cardinality: $($parsed.Count)"}
+    $bad=$false;try{Convert-CoinListJson '{"id":"bitcoin","name":"Bitcoin","symbol":"btc"}'|Out-Null}catch{$bad=$true};if(-not$bad){throw 'top-level array guard'}
     $seed=[pscustomobject]@{base_asset_id='X';kraken_q2_name='Bitcoin';kraken_q2_ticker='XBT';query_names='Bitcoin';query_symbols='BTC|XBT';kraken_evidence_url='https://example.invalid';evidence_note='test'}
     $rows=@(Match-Candidates $seed $parsed @('other'))
     if($rows.Count-ne2){throw 'match cardinality'}
@@ -89,9 +92,11 @@ try {
     $decisionByBase=@{};foreach($d in $decisions){$decisionByBase[[string]$d.base_asset_id]=$d}
     foreach($seed in $seeds){$base=[string]$seed.base_asset_id;if(-not$decisionByBase.ContainsKey($base)){throw "Seed base is absent from mapping decisions: $base"};if([string]$decisionByBase[$base].mapping_status-ne'UNVERIFIED'){throw "Expanded candidate seed is no longer UNVERIFIED: $base"}}
 
-    $url=$ApiRoot.TrimEnd('/')+'/coins/list?include_platform=true'
+    # Platforms are intentionally omitted: this evidence layer needs only CoinGecko id/name/symbol,
+    # and the smaller official response is more robust under Windows PowerShell 5.1.
+    $url=$ApiRoot.TrimEnd('/')+'/coins/list?include_platform=false'
     $client=New-Object System.Net.WebClient
-    try{$client.Headers['User-Agent']='CFA-stage2-expanded-candidate-evidence/1.0';$bytes=$client.DownloadData($url)}finally{$client.Dispose()}
+    try{$client.Headers['User-Agent']='CFA-stage2-expanded-candidate-evidence/1.1';$bytes=$client.DownloadData($url)}finally{$client.Dispose()}
     if($bytes.Length-le0){throw 'CoinGecko coins/list response is empty.'}
     $sourceSha=Get-Sha256Bytes $bytes
     $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($bytes)
