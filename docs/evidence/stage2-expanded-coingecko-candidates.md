@@ -1,9 +1,9 @@
 # CFA Stage 2 Expanded CoinGecko Candidate Evidence
 
-- Source endpoint: `https://api.coingecko.com/api/v3/coins/list?include_platform=true`
-- Source SHA-256: `e6eaf8d8aa969d9dc2616eb1deb7749f5c8920c67703e9d198c129cc369a88d4`
-- Source bytes: 2943745
-- CoinGecko reference records: 18693
+- Source endpoint: `https://api.coingecko.com/api/v3/coins/list?include_platform=false`
+- Source SHA-256: `a5118a77cc7ce7532efd87d7f757ddf624bdf1aa5c22cfe2d912531da6eb0f3b`
+- Source bytes: 1173915
+- CoinGecko reference records: 18717
 - Expansion seeds: 18
 - Candidate evidence rows: 40
 
