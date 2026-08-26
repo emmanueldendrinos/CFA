@@ -1,0 +1,76 @@
+name: Stage 2 Alias Context Sample Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Analyze-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Publish-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Sync-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Run-CfaStage2AliasContextSamples.ps1'
+      - '.github/workflows/stage2-alias-context-sample-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Analyze-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Publish-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Sync-CfaStage2AliasContextSamples.ps1'
+      - 'scripts/windows/Run-CfaStage2AliasContextSamples.ps1'
+      - '.github/workflows/stage2-alias-context-sample-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse context scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          $failed = $false
+          $paths = @(
+            '.\scripts\windows\Analyze-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Publish-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Sync-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Run-CfaStage2AliasContextSamples.ps1'
+          )
+          foreach ($path in $paths) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $failed = $true; Write-Host "Parse errors in ${path}:"; $errors | ForEach-Object { Write-Host $_.Message } }
+          }
+          if ($failed) { throw 'Stage 2 alias context scripts failed PowerShell 7 parsing.' }
+
+      - name: Parse context scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed = $false
+          $paths = @(
+            '.\scripts\windows\Analyze-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Publish-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Sync-CfaStage2AliasContextSamples.ps1',
+            '.\scripts\windows\Run-CfaStage2AliasContextSamples.ps1'
+          )
+          foreach ($path in $paths) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $failed = $true; Write-Host "Parse errors in ${path}:"; $errors | ForEach-Object { Write-Host $_.Message } }
+          }
+          if ($failed) { throw 'Stage 2 alias context scripts failed Windows PowerShell 5.1 parsing.' }
+
+      - name: Self-test context analyzer
+        shell: powershell
+        run: .\scripts\windows\Analyze-CfaStage2AliasContextSamples.ps1 -SelfTest
+
+      - name: Self-test context publisher
+        shell: powershell
+        run: .\scripts\windows\Publish-CfaStage2AliasContextSamples.ps1 -SelfTest
+
+      - name: Self-test context sync
+        shell: powershell
+        run: .\scripts\windows\Sync-CfaStage2AliasContextSamples.ps1 -SelfTest
+
+      - name: Self-test context runner
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage2AliasContextSamples.ps1 -SelfTest
