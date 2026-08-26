@@ -1,12 +1,10 @@
 {
     "source_bridge_sha256":  "10f69735ce961a56d66738ff6c4c12aa2b4aaa304c39d9cbe78c9fa87bb3e840",
+    "adjudication_sha256":  "76a50a69d19ebabcf2bf19c1d09e91b291fec5b773e6650e423d673612b51347",
     "decision_rows":  435,
-    "approved":  324,
-    "unverified":  111,
-    "adjudicated":  [
-                        "EDGE=definitive",
-                        "LIT=litentry"
-                    ],
+    "approved":  378,
+    "not_applicable":  4,
+    "unverified":  53,
     "gate_status":  "UNVERIFIED",
-    "blocking_reason":  "111 assets still lack independently verified CoinGecko mapping identity."
+    "blocking_reason":  "53 assets still lack independently verified CoinGecko mapping identity."
 }

@@ -1,10 +1,12 @@
 # CFA Stage 2 Mapping Decisions
 
 - Decision rows: 435
-- APPROVED: 324
-- UNVERIFIED: 111
+- APPROVED: 378
+- NOT_APPLICABLE: 4
+- UNVERIFIED: 53
 - CFA-S2-003: UNVERIFIED
 
-322 approvals are backed by a unique current CoinGecko/Kraken pair bridge from the published local evidence. EDGE and LIT are separately adjudicated from direct Kraken temporal identity evidence. The remaining 111 assets are not inferred from symbol similarity or candidate count and remain UNVERIFIED.
+322 approvals are backed by a unique current CoinGecko/Kraken pair bridge. EDGE and LIT are temporal adjudications. Additional mappings are applied only from candidate-analysis/CFA-Stage2-Mapping-Adjudications.csv after validating the selected CoinGecko ID, name and symbol against AF-002 and the observed Kraken ticker against the Q2 base symbol. Fiat bases are explicitly NOT_APPLICABLE. Unlisted cases remain UNVERIFIED.
 
 Decision table: candidate-analysis/CFA-Stage2-Mapping-Decisions.csv
+Adjudication registry: candidate-analysis/CFA-Stage2-Mapping-Adjudications.csv
