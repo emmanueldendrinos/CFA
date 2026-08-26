@@ -1,4 +1,5 @@
 #requires -Version 5.1
+# Dynamic residual diagnostic: rerun after each published mapping-decision tranche.
 [CmdletBinding()]
 param([string]$RepoRoot='',[switch]$SelfTest)
 Set-StrictMode -Version Latest
