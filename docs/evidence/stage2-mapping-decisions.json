@@ -1,6 +1,6 @@
 {
     "source_bridge_sha256":  "10f69735ce961a56d66738ff6c4c12aa2b4aaa304c39d9cbe78c9fa87bb3e840",
-    "adjudication_registry_sha256s":  "76a50a69d19ebabcf2bf19c1d09e91b291fec5b773e6650e423d673612b51347|313499e4dd67701a57f714c376a71a92b11b35fc7d5d3c91e67a4b8565610baf|3f0eb6e0623b732f59cc9f66a2af26dfef1899d72122aafda28aa41e5d97bf5f",
+    "adjudication_registry_sha256s":  "76a50a69d19ebabcf2bf19c1d09e91b291fec5b773e6650e423d673612b51347|313499e4dd67701a57f714c376a71a92b11b35fc7d5d3c91e67a4b8565610baf|dca74e0b6929c18bb0115f13181204cae734f62f63960c957bae50bf73fe1760",
     "expanded_adjudication_sha256":  "3872e57ce1a7bbb42e24f581b69f1ac829bae80953795fea7ff0c95c5724c5f4",
     "expanded_candidate_evidence_sha256":  "b1c7c6e9237aad82bedd63c82a863a3d0d0796e9065fd7224bf52e034e287d7c",
     "direct_adjudication_sha256":  "72b74e922ac5ab0ff0da9f9b52e73d4c65f5d5cbf8e2f0dc84391bb6ff1403b3",
@@ -8,9 +8,9 @@
     "direct_adjudication_rows":  0,
     "direct_evidence_rows":  20,
     "decision_rows":  435,
-    "approved":  413,
+    "approved":  412,
     "not_applicable":  4,
-    "unverified":  18,
+    "unverified":  19,
     "gate_status":  "UNVERIFIED",
-    "blocking_reason":  "18 assets still lack independently verified CoinGecko mapping identity."
+    "blocking_reason":  "19 assets still lack independently verified CoinGecko mapping identity."
 }
