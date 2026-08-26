@@ -26,6 +26,18 @@ function Get-Sha256Bytes {
     try{return (($sha.ComputeHash($Bytes)|ForEach-Object{$_.ToString('x2')})-join'')}
     finally{$sha.Dispose()}
 }
+function Convert-CoinListJson {
+    param([string]$Json)
+    $parsed=ConvertFrom-Json -InputObject $Json
+    $list=New-Object 'System.Collections.Generic.List[object]'
+    foreach($item in $parsed){[void]$list.Add($item)}
+    $coins=@($list.ToArray())
+    if($coins.Count-eq0){throw 'CoinGecko coins/list parsed to zero records.'}
+    foreach($coin in @($coins|Select-Object -First 3)){
+        foreach($property in @('id','name','symbol')){if($coin.PSObject.Properties.Name-notcontains$property){throw "Unexpected CoinGecko coins/list record shape: missing $property"}}
+    }
+    return $coins
+}
 function Match-Candidates {
     param([object]$Seed,[object[]]$Coins,[string[]]$ExistingIds)
     $names=@(Split-Pipe ([string]$Seed.query_names));$symbols=@(Split-Pipe ([string]$Seed.query_symbols))
@@ -55,9 +67,10 @@ function Match-Candidates {
     return @($rows|Sort-Object @{Expression='match_score';Descending=$true},candidate_name,candidate_id)
 }
 function Invoke-SelfTest {
+    $parsed=@(Convert-CoinListJson '[{"id":"bitcoin","name":"Bitcoin","symbol":"btc"},{"id":"other","name":"Other","symbol":"xbt"},{"id":"nope","name":"Nope","symbol":"zzz"}]')
+    if($parsed.Count-ne3){throw "JSON array expansion cardinality: $($parsed.Count)"}
     $seed=[pscustomobject]@{base_asset_id='X';kraken_q2_name='Bitcoin';kraken_q2_ticker='XBT';query_names='Bitcoin';query_symbols='BTC|XBT';kraken_evidence_url='https://example.invalid';evidence_note='test'}
-    $coins=@([pscustomobject]@{id='bitcoin';name='Bitcoin';symbol='btc'},[pscustomobject]@{id='other';name='Other';symbol='xbt'},[pscustomobject]@{id='nope';name='Nope';symbol='zzz'})
-    $rows=@(Match-Candidates $seed $coins @('other'))
+    $rows=@(Match-Candidates $seed $parsed @('other'))
     if($rows.Count-ne2){throw 'match cardinality'}
     $btc=@($rows|Where-Object{$_.candidate_id-eq'bitcoin'})[0];if($btc.match_score-ne100-or$btc.already_in_af002-ne$false){throw 'bitcoin match'}
     $other=@($rows|Where-Object{$_.candidate_id-eq'other'})[0];if($other.match_score-ne60-or$other.already_in_af002-ne$true){throw 'existing candidate flag'}
@@ -82,7 +95,7 @@ try {
     if($bytes.Length-le0){throw 'CoinGecko coins/list response is empty.'}
     $sourceSha=Get-Sha256Bytes $bytes
     $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($bytes)
-    $coins=@($json|ConvertFrom-Json);if($coins.Count-lt10000){throw "CoinGecko coins/list record count unexpectedly small: $($coins.Count)"}
+    $coins=@(Convert-CoinListJson $json);if($coins.Count-lt10000){throw "CoinGecko coins/list record count unexpectedly small: $($coins.Count)"}
 
     $out=@();$summary=@()
     foreach($seed in $seeds){
