@@ -1,0 +1,65 @@
+name: Stage 2 Direct CoinGecko ID Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Verify-CfaStage2DirectCoinGeckoIds.ps1'
+      - 'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Seeds.csv'
+      - '.github/workflows/stage2-direct-coingecko-id-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse verifier with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Direct ID verifier failed PowerShell 7 parsing.' }
+
+      - name: Parse verifier with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Direct ID verifier failed Windows PowerShell 5.1 parsing.' }
+
+      - name: Self-test direct ID verifier
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1 -SelfTest
+
+      - name: Verify direct CoinGecko IDs
+        shell: powershell
+        run: |
+          & .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1
+          $code=$LASTEXITCODE
+          if ($code -ne 0 -and $code -ne 2) { throw "Direct CoinGecko ID verifier failed with exit $code." }
+          Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
+
+      - name: Commit direct ID evidence
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: powershell
+        run: |
+          $allowed=@(
+            'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv',
+            'docs/evidence/stage2-direct-coingecko-id-evidence.md'
+          )
+          git -c core.autocrlf=false add -- $allowed
+          $staged=@(git diff --cached --name-only)
+          foreach($path in $staged){if($allowed -notcontains $path){throw "Unexpected staged path: $path"}}
+          if($staged.Count -gt 0){
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Publish CFA Stage 2 direct CoinGecko ID evidence'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
