@@ -20,11 +20,11 @@ function Validate-Adjudication{
    if(@('AUD','EUR','GBP','USD')-notcontains([string]$BridgeRow.base_exchange_symbol)){throw "NOT_APPLICABLE base is not an approved fiat code: $base/$([string]$BridgeRow.base_exchange_symbol)"}
    return
  }
- if($status-ne'APPROVED'){throw "Unsupported adjudication status for $base: $status"}
+ if($status-ne'APPROVED'){throw "Unsupported adjudication status for ${base}: $status"}
  $id=[string]$Adj.approved_coingecko_id;if([string]::IsNullOrWhiteSpace($id)){throw "Approved adjudication missing CoinGecko id: $base"}
  $ids=@(Split-Pipe ([string]$BridgeRow.candidate_ids));if($ids-notcontains$id){throw "Adjudicated CoinGecko id $id is not in AF-002 candidate set for $base"}
  $record=Get-CandidateRecord $CandidateRow $id
- if([string]$record.name-ne[string]$Adj.expected_candidate_name){throw "Candidate name mismatch for $base/$id: AF-002=$([string]$record.name) registry=$([string]$Adj.expected_candidate_name)"}
+ if([string]$record.name-ne[string]$Adj.expected_candidate_name){throw "Candidate name mismatch for $base/${id}: AF-002=$([string]$record.name) registry=$([string]$Adj.expected_candidate_name)"}
  if(-not([string]$record.symbol).Equals([string]$Adj.expected_candidate_symbol,[System.StringComparison]::OrdinalIgnoreCase)){throw "Candidate symbol mismatch for $base/$id"}
  if(-not([string]$Adj.observed_kraken_ticker).Equals([string]$BridgeRow.base_exchange_symbol,[System.StringComparison]::OrdinalIgnoreCase)){throw "Kraken ticker evidence mismatch for $base"}
  if([string]::IsNullOrWhiteSpace([string]$Adj.evidence_source_url)-or[string]::IsNullOrWhiteSpace([string]$Adj.observed_kraken_name)){throw "Incomplete adjudication evidence for $base"}
