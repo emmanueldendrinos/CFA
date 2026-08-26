@@ -16,10 +16,10 @@ function Convert-Response{
  $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($Bytes)
  $o=$json|ConvertFrom-Json
  foreach($n in @('id','name','symbol')){if($o.PSObject.Properties.Name-notcontains$n){throw "CoinGecko response missing $n for $ExpectedId"}}
- $home='';if($o.PSObject.Properties.Name-contains'links'-and$null-ne$o.links-and$o.links.PSObject.Properties.Name-contains'homepage'){$h=@($o.links.homepage|Where-Object{-not[string]::IsNullOrWhiteSpace([string]$_)});if($h.Count-gt0){$home=[string]$h[0]}}
+ $homepageValue='';if($o.PSObject.Properties.Name-contains'links'-and$null-ne$o.links-and$o.links.PSObject.Properties.Name-contains'homepage'){$h=@($o.links.homepage|Where-Object{-not[string]::IsNullOrWhiteSpace([string]$_)});if($h.Count-gt0){$homepageValue=[string]$h[0]}}
  $platform='';if($o.PSObject.Properties.Name-contains'asset_platform_id'){$platform=[string]$o.asset_platform_id}
  $contract='';if($o.PSObject.Properties.Name-contains'contract_address'){$contract=[string]$o.contract_address}
- return [pscustomobject]@{id=[string]$o.id;name=[string]$o.name;symbol=[string]$o.symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$home}
+ return [pscustomobject]@{id=[string]$o.id;name=[string]$o.name;symbol=[string]$o.symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$homepageValue}
 }
 function Invoke-CoinRequest{
  param([string]$Url,[int]$MaxAttempts=4)
@@ -58,10 +58,10 @@ try{
    $ordinal++;if($ordinal-gt1){Start-Sleep -Milliseconds $DelayMs}
    $id=[string]$s.candidate_id;$url=$ApiRoot.TrimEnd('/')+'/coins/'+[Uri]::EscapeDataString($id)+'?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false'
    Write-Host ("Direct CoinGecko ID: {0}/{1} {2}/{3}"-f$ordinal,$seeds.Count,[string]$s.base_asset_id,$id)
-   $r=Invoke-CoinRequest $url;$sha='';$name='';$symbol='';$returnedId='';$platform='';$contract='';$homepage='';$parseStatus='NOT_APPLICABLE'
+   $r=Invoke-CoinRequest $url;$sha='';$name='';$symbol='';$returnedId='';$platform='';$contract='';$homepageValue='';$parseStatus='NOT_APPLICABLE'
    if($r.bytes.Length-gt0){$sha=Get-Sha256Bytes $r.bytes}
-   if($r.status_code-eq200){$o=Convert-Response $r.bytes $id;$returnedId=$o.id;$name=$o.name;$symbol=$o.symbol;$platform=$o.asset_platform_id;$contract=$o.contract_address;$homepage=$o.homepage;$parseStatus=if($returnedId-eq$id){'PASS'}else{'FAIL_RETURNED_ID_MISMATCH'}}
-   $rows+=[pscustomobject]@{base_asset_id=[string]$s.base_asset_id;requested_candidate_id=$id;http_status=$r.status_code;response_sha256=$sha;response_bytes=$r.bytes.Length;parse_status=$parseStatus;returned_id=$returnedId;returned_name=$name;returned_symbol=$symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$homepage;seed_basis=[string]$s.seed_basis;request_url=$url;error_message=[string]$r.error}
+   if($r.status_code-eq200){$o=Convert-Response $r.bytes $id;$returnedId=$o.id;$name=$o.name;$symbol=$o.symbol;$platform=$o.asset_platform_id;$contract=$o.contract_address;$homepageValue=$o.homepage;$parseStatus=if($returnedId-eq$id){'PASS'}else{'FAIL_RETURNED_ID_MISMATCH'}}
+   $rows+=[pscustomobject]@{base_asset_id=[string]$s.base_asset_id;requested_candidate_id=$id;http_status=$r.status_code;response_sha256=$sha;response_bytes=$r.bytes.Length;parse_status=$parseStatus;returned_id=$returnedId;returned_name=$name;returned_symbol=$symbol;asset_platform_id=$platform;contract_address=$contract;homepage=$homepageValue;seed_basis=[string]$s.seed_basis;request_url=$url;error_message=[string]$r.error}
  }
  $csv=Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv';$rows|Sort-Object base_asset_id,requested_candidate_id|Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
  $ok=@($rows|Where-Object{$_.http_status-eq200-and$_.parse_status-eq'PASS'}).Count;$notFound=@($rows|Where-Object{$_.http_status-eq404}).Count;$other=@($rows|Where-Object{$_.http_status-ne200-and$_.http_status-ne404}).Count
