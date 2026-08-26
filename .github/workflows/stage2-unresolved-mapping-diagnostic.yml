@@ -6,6 +6,7 @@ on:
       - 'scripts/windows/Diagnose-CfaStage2UnresolvedMappings.ps1'
       - 'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv'
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
+      - 'candidate-analysis/ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv'
       - '.github/workflows/stage2-unresolved-mapping-diagnostic.yml'
   workflow_dispatch:
 
