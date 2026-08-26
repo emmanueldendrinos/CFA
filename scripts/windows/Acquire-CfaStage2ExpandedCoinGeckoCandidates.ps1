@@ -39,7 +39,8 @@ function Convert-CoinListJson {
     $coins=New-Object System.Collections.ArrayList
     foreach($item in $parsed){
         if($null-eq$item -or -not($item -is [System.Collections.IDictionary])){throw 'Unexpected CoinGecko coins/list element type.'}
-        foreach($property in @('id','name','symbol')){if(-not$item.Contains($property)){throw "Unexpected CoinGecko coins/list record shape: missing $property"}}
+        $keys=@($item.Keys|ForEach-Object{[string]$_})
+        foreach($property in @('id','name','symbol')){if($keys -notcontains $property){throw "Unexpected CoinGecko coins/list record shape: missing $property"}}
         [void]$coins.Add([pscustomobject]@{id=[string]$item['id'];name=[string]$item['name'];symbol=[string]$item['symbol']})
     }
     if($coins.Count-eq0){throw 'CoinGecko coins/list parsed to zero records.'}
@@ -101,7 +102,7 @@ try {
 
     $url=$ApiRoot.TrimEnd('/')+'/coins/list?include_platform=false'
     $client=New-Object System.Net.WebClient
-    try{$client.Headers['User-Agent']='CFA-stage2-expanded-candidate-evidence/1.2';$bytes=$client.DownloadData($url)}finally{$client.Dispose()}
+    try{$client.Headers['User-Agent']='CFA-stage2-expanded-candidate-evidence/1.3';$bytes=$client.DownloadData($url)}finally{$client.Dispose()}
     if($bytes.Length-le0){throw 'CoinGecko coins/list response is empty.'}
     $sourceSha=Get-Sha256Bytes $bytes
     $json=(New-Object System.Text.UTF8Encoding($false,$true)).GetString($bytes)
