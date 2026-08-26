@@ -1,0 +1,63 @@
+name: Stage 2 Expanded CoinGecko Candidates
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Acquire-CfaStage2ExpandedCoinGeckoCandidates.ps1'
+      - 'candidate-analysis/CFA-Stage2-Expanded-Candidate-Seeds.csv'
+      - 'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv'
+      - '.github/workflows/stage2-expanded-coingecko-candidates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse collector with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Acquire-CfaStage2ExpandedCoinGeckoCandidates.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Expanded candidate collector failed PowerShell 7 parsing.' }
+
+      - name: Parse collector with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Acquire-CfaStage2ExpandedCoinGeckoCandidates.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'Expanded candidate collector failed Windows PowerShell 5.1 parsing.' }
+
+      - name: Self-test expanded candidate collector
+        shell: powershell
+        run: .\scripts\windows\Acquire-CfaStage2ExpandedCoinGeckoCandidates.ps1 -SelfTest
+
+      - name: Collect CoinGecko reference evidence
+        shell: powershell
+        run: .\scripts\windows\Acquire-CfaStage2ExpandedCoinGeckoCandidates.ps1
+
+      - name: Commit expanded candidate evidence
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: powershell
+        run: |
+          $allowed = @(
+            'docs/evidence/stage2-expanded-coingecko-candidates.md',
+            'candidate-analysis/CFA-Stage2-Expanded-CoinGecko-Candidates.csv',
+            'candidate-analysis/CFA-Stage2-Expanded-CoinGecko-Summary.csv'
+          )
+          git -c core.autocrlf=false add -- $allowed
+          $staged = @(git diff --cached --name-only)
+          if ($staged.Count -gt 0) {
+            foreach ($path in $staged) { if ($allowed -notcontains $path) { throw "Unexpected staged path: $path" } }
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Publish CFA Stage 2 expanded CoinGecko candidate evidence'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
