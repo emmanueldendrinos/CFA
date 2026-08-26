@@ -1,9 +1,9 @@
 # CFA Stage 2 Mapping Decisions
 
 - Decision rows: 435
-- APPROVED: 411
+- APPROVED: 413
 - NOT_APPLICABLE: 4
-- UNVERIFIED: 20
+- UNVERIFIED: 18
 - CFA-S2-003: UNVERIFIED
 
 322 approvals are backed by a unique current CoinGecko/Kraken pair bridge. EDGE and LIT are temporal adjudications. Contained adjudications are validated against AF-002. Expanded adjudications are validated against the separately published hashed CoinGecko reference evidence and never modify AF-002. Fiat bases are explicitly NOT_APPLICABLE. Unlisted cases remain UNVERIFIED.
