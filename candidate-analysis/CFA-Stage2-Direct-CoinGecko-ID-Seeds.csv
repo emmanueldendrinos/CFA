@@ -1,19 +1,11 @@
 base_asset_id,candidate_id,seed_basis
-AIR,altair,Official CoinGecko Altair API ID evidence
 APENFT,apenft,Existing approved direct adjudication evidence seed
-AVAAI,ava-ai,Official CoinGecko Ava AI API ID evidence
-BRICK,brick,Historical CoinGecko Bricks candidate; direct 404 remains explicit
-CSM,crust-storage-market,Official CoinGecko Crust Shadow API ID evidence
+AVAAI,ava-ai,Existing approved direct adjudication evidence seed
 FXS,frax-share,Existing approved direct adjudication evidence seed
 GST,green-satoshi-token,Existing approved direct adjudication evidence seed
-HPOS10I,harrypotterobamasonic10in,Official CoinGecko Ethereum HPOS10I API ID evidence
-INTR,interlay,Official CoinGecko Interlay API ID evidence
-IP,story-2,Official CoinGecko Data Network page explicitly preserves Story stable API ID story-2 after Story (IP) to Data Network (DATA) rebrand
-K,kinto,CoinGecko Kinto candidate pending direct verification
-KINT,kintsugi,Official CoinGecko Kintsugi API ID evidence
+HPOS10I,harrypotterobamasonic10in,Existing approved direct adjudication evidence seed
+K,kinto,CoinGecko Kinto candidate pending explicit stable API ID verification
 LUNA,terra-luna,Existing approved direct adjudication evidence seed
 REPV2,augur,Existing approved direct adjudication evidence seed
-SDN,shiden,Official CoinGecko Shiden Network API ID evidence
-TERM,term-finance,Official CoinGecko Term Finance API ID evidence
 TON,the-open-network,Existing approved direct adjudication evidence seed
 UST,terrausd,Existing approved direct adjudication evidence seed
