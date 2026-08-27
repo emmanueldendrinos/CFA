@@ -40,11 +40,21 @@ jobs:
       - name: Verify direct CoinGecko IDs
         shell: powershell
         run: |
-          & .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1
+          & .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1 -DelayMs 12000
           $code=$LASTEXITCODE
           if ($code -ne 0 -and $code -ne 2) { throw "Direct CoinGecko ID verifier failed with exit $code." }
           Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
           $global:LASTEXITCODE=0
+
+      - name: Upload direct ID evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfa-stage2-direct-id-evidence
+          path: |
+            candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv
+            docs/evidence/stage2-direct-coingecko-id-evidence.md
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Commit direct ID evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
