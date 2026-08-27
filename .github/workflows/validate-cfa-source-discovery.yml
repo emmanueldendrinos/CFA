@@ -1,0 +1,258 @@
+name: Validate CFA source discovery under native Windows PowerShell 5.1
+
+on:
+  pull_request:
+    paths:
+      - 'validation/cfa-source-discovery/**'
+      - '.github/workflows/validate-cfa-source-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfa-source-discovery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-native-ps51:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+    env:
+      ORIGINAL_SCRIPT_SHA256: 6b9ac35f9b650a7daa7e4604aa7ee872adaa9816704d90edd604995576f3e82d
+      ORIGINAL_SCRIPT_BYTES: '80999'
+      FINAL_SCRIPT_SHA256: 1f36031579472d1e133605f1204c7c5369ac1abc473c969a78f0513560707bea
+      FINAL_SCRIPT_BYTES: '81035'
+      EVIDENCE_DIR: ${{ github.workspace }}\validation-evidence
+      SCRIPT_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1
+      GZIP_PATH: ${{ github.workspace }}\validation-runtime\CFA-Source-Discovery-v1.0.0.ps1.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert native Windows PowerShell Desktop 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+              [int]$PSVersionTable.PSVersion.Major -ne 5 -or
+              [int]$PSVersionTable.PSVersion.Minor -ne 1) {
+              throw "Required Windows PowerShell Desktop 5.1; found $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)."
+          }
+          New-Item -ItemType Directory -Path $env:EVIDENCE_DIR -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path -Parent $env:SCRIPT_PATH) -Force | Out-Null
+          $PSVersionTable | Out-String | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'powershell-version.txt') -Encoding UTF8
+
+      - name: Reconstruct exact original payload
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $partDirectory = Join-Path $env:GITHUB_WORKSPACE 'validation\cfa-source-discovery'
+          $parts = @(Get-ChildItem -LiteralPath $partDirectory -File -Filter 'script.part*.b64' | Sort-Object Name)
+          $expectedNames = @('script.part01.b64','script.part02.b64','script.part03.b64','script.part04.b64')
+          if ($parts.Count -ne $expectedNames.Count) {
+              throw "Payload part count differs: $($parts.Count)."
+          }
+          if ((@($parts.Name) -join "`n") -cne ($expectedNames -join "`n")) {
+              throw 'Payload part names or order differ.'
+          }
+          $encoded = (($parts | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -ErrorAction Stop }) -join '') -replace '\s',''
+          [IO.File]::WriteAllBytes($env:GZIP_PATH, [Convert]::FromBase64String($encoded))
+          $inputStream = [IO.File]::OpenRead($env:GZIP_PATH)
+          try {
+              $gzip = New-Object IO.Compression.GZipStream($inputStream, [IO.Compression.CompressionMode]::Decompress)
+              try {
+                  $outputStream = [IO.File]::Create($env:SCRIPT_PATH)
+                  try { $gzip.CopyTo($outputStream) }
+                  finally { $outputStream.Dispose() }
+              }
+              finally { $gzip.Dispose() }
+          }
+          finally { $inputStream.Dispose() }
+          $item = Get-Item -LiteralPath $env:SCRIPT_PATH -ErrorAction Stop
+          $hash = (Get-FileHash -LiteralPath $env:SCRIPT_PATH -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+          if ([long]$item.Length -ne [long]$env:ORIGINAL_SCRIPT_BYTES -or $hash -cne $env:ORIGINAL_SCRIPT_SHA256) {
+              throw "Original payload identity differs: bytes=$($item.Length); sha256=$hash."
+          }
+          $hash | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'original-script-sha256.txt') -Encoding ASCII
+          [string]$item.Length | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'original-script-bytes.txt') -Encoding ASCII
+
+      - name: Apply the two authorized runtime-contract corrections
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $sourceText = Get-Content -LiteralPath $env:SCRIPT_PATH -Raw -ErrorAction Stop
+          $old = @(
+              '        [Parameter(Mandatory = $true)]'
+              '        [object[]]$Rows,'
+          ) -join "`r`n"
+          $new = @(
+              '        [Parameter(Mandatory = $true)]'
+              '        [AllowEmptyCollection()]'
+              '        [object[]]$Rows,'
+          ) -join "`r`n"
+          $first = $sourceText.IndexOf($old, [StringComparison]::Ordinal)
+          $last = $sourceText.LastIndexOf($old, [StringComparison]::Ordinal)
+          if ($first -lt 0 -or $first -ne $last) {
+              throw "Authorized source fragment occurrence count differs; first=$first; last=$last."
+          }
+          $corrected = $sourceText.Substring(0, $first) + $new + $sourceText.Substring($first + $old.Length)
+
+          $selfTestStartOld = @(
+              '    try {'
+              "        `$testFile = Join-Path `$testRoot 'hash.txt'"
+          ) -join "`r`n"
+          $selfTestStartNew = @(
+              '    try {'
+              '        Add-Type -AssemblyName System.IO.Compression'
+              '        Add-Type -AssemblyName System.IO.Compression.FileSystem'
+              ''
+              "        `$testFile = Join-Path `$testRoot 'hash.txt'"
+          ) -join "`r`n"
+          $startFirst = $corrected.IndexOf($selfTestStartOld, [StringComparison]::Ordinal)
+          $startLast = $corrected.LastIndexOf($selfTestStartOld, [StringComparison]::Ordinal)
+          if ($startFirst -lt 0 -or $startFirst -ne $startLast) {
+              throw "Self-test start fragment occurrence count differs; first=$startFirst; last=$startLast."
+          }
+          $corrected = $corrected.Substring(0, $startFirst) + $selfTestStartNew + $corrected.Substring($startFirst + $selfTestStartOld.Length)
+
+          $lateLoadOld = @(
+              '        Add-Type -AssemblyName System.IO.Compression'
+              '        Add-Type -AssemblyName System.IO.Compression.FileSystem'
+              "        `$zipSource = Join-Path `$testRoot 'zip-source'"
+          ) -join "`r`n"
+          $lateLoadNew = "        `$zipSource = Join-Path `$testRoot 'zip-source'"
+          $lateFirst = $corrected.IndexOf($lateLoadOld, [StringComparison]::Ordinal)
+          $lateLast = $corrected.LastIndexOf($lateLoadOld, [StringComparison]::Ordinal)
+          if ($lateFirst -lt 0 -or $lateFirst -ne $lateLast) {
+              throw "Late compression-load fragment occurrence count differs; first=$lateFirst; last=$lateLast."
+          }
+          $corrected = $corrected.Substring(0, $lateFirst) + $lateLoadNew + $corrected.Substring($lateFirst + $lateLoadOld.Length)
+
+          $ascii = New-Object Text.ASCIIEncoding
+          [IO.File]::WriteAllText($env:SCRIPT_PATH, $corrected, $ascii)
+          $item = Get-Item -LiteralPath $env:SCRIPT_PATH -ErrorAction Stop
+          $hash = (Get-FileHash -LiteralPath $env:SCRIPT_PATH -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+          if ([long]$item.Length -ne [long]$env:FINAL_SCRIPT_BYTES -or $hash -cne $env:FINAL_SCRIPT_SHA256) {
+              throw "Corrected script identity differs: bytes=$($item.Length); sha256=$hash."
+          }
+          if ((Get-Content -LiteralPath $env:SCRIPT_PATH -Raw).IndexOf('[AllowEmptyCollection()]', [StringComparison]::Ordinal) -lt 0) {
+              throw 'Corrected script does not contain the authorized attribute.'
+          }
+          $hash | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'final-script-sha256.txt') -Encoding ASCII
+          [string]$item.Length | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'final-script-bytes.txt') -Encoding ASCII
+
+      - name: Parse every token with native Windows PowerShell 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($env:SCRIPT_PATH, [ref]$tokens, [ref]$parseErrors)
+          @($parseErrors) | ForEach-Object { $_.ToString() } | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-errors.txt') -Encoding UTF8
+          if (@($parseErrors).Count -ne 0) {
+              throw "Native Windows PowerShell 5.1 parsing failed with $(@($parseErrors).Count) error(s)."
+          }
+          [pscustomobject][ordered]@{
+              token_count = @($tokens).Count
+              parse_error_count = @($parseErrors).Count
+              root_ast_type = $ast.GetType().FullName
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'parse-summary.json') -Encoding UTF8
+
+      - name: Audit credential and read-only controls structurally
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($env:SCRIPT_PATH, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw 'AST audit received a script with parse errors.' }
+          $parameterNames = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath.ToLowerInvariant() })
+          foreach ($forbiddenName in @('password','pgpassword')) {
+              if ($parameterNames -ccontains $forbiddenName) { throw "Forbidden credential parameter exists: $forbiddenName" }
+          }
+          $text = Get-Content -LiteralPath $env:SCRIPT_PATH -Raw -ErrorAction Stop
+          foreach ($literal in @('default_transaction_read_only=on','--no-password')) {
+              if (-not $text.Contains($literal)) { throw "Required read-only control is absent: $literal" }
+          }
+          $writeCsvFunctions = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Write-CfaCsv' }, $true))
+          if ($writeCsvFunctions.Count -ne 1) { throw "Write-CfaCsv function count differs: $($writeCsvFunctions.Count)." }
+          $rowsParameters = @($writeCsvFunctions[0].Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -ceq 'Rows' })
+          if ($rowsParameters.Count -ne 1) { throw "Write-CfaCsv Rows parameter count differs: $($rowsParameters.Count)." }
+          $attributeNames = @($rowsParameters[0].Attributes | ForEach-Object { $_.TypeName.Name })
+          if ($attributeNames -cnotcontains 'AllowEmptyCollection') { throw 'Write-CfaCsv Rows lacks AllowEmptyCollection.' }
+
+          $compressionFunctions = @($ast.FindAll({
+              param($node)
+              if ($node -isnot [Management.Automation.Language.FunctionDefinitionAst]) { return $false }
+              return @($node.Body.FindAll({
+                  param($child)
+                  $child -is [Management.Automation.Language.TypeExpressionAst] -and
+                  $child.TypeName.FullName -like 'IO.Compression.*'
+              }, $true)).Count -gt 0
+          }, $true))
+          foreach ($function in $compressionFunctions) {
+              $firstCompressionType = @(
+                  $function.Body.FindAll({
+                      param($child)
+                      $child -is [Management.Automation.Language.TypeExpressionAst] -and
+                      $child.TypeName.FullName -like 'IO.Compression.*'
+                  }, $true) | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1
+              )
+              $addTypeCommands = @(
+                  $function.Body.FindAll({
+                      param($child)
+                      $child -is [Management.Automation.Language.CommandAst] -and
+                      $child.GetCommandName() -ceq 'Add-Type'
+                  }, $true) | Where-Object { $_.Extent.StartOffset -lt $firstCompressionType[0].Extent.StartOffset }
+              )
+              $addTypeText = ($addTypeCommands | ForEach-Object { $_.Extent.Text }) -join "`n"
+              foreach ($assemblyName in @('System.IO.Compression','System.IO.Compression.FileSystem')) {
+                  if (-not $addTypeText.Contains($assemblyName)) {
+                      throw "Function $($function.Name) uses compression types before loading $assemblyName."
+                  }
+              }
+          }
+
+          [pscustomobject][ordered]@{
+              parameter_count = $parameterNames.Count
+              forbidden_credential_parameters = 0
+              forced_default_transaction_read_only = $true
+              psql_no_password_flag = $true
+              write_csv_rows_allows_empty_collection = $true
+              compression_functions_initialized_before_use = $compressionFunctions.Count
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'read-only-surface.json') -Encoding UTF8
+
+      - name: Run exact final script self-test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $output = @(& "$PSHOME\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $env:SCRIPT_PATH -SelfTest 2>&1)
+          $exitCode = $LASTEXITCODE
+          $output | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'self-test.log') -Encoding UTF8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { throw "Exact final script self-test failed with exit code $exitCode." }
+          if (($output -join "`n") -notmatch 'PASS: CFA source discovery script passed native Windows PowerShell 5.1 self-test') {
+              throw 'Exact final script self-test did not emit the required PASS marker.'
+          }
+
+      - name: Verify offline and read-only validation boundary
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $log = Get-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'self-test.log') -Raw -ErrorAction Stop
+          if ($log -notmatch 'PostgreSQL connections attempted: 0') { throw 'Self-test did not prove zero PostgreSQL connections.' }
+          if ($log -notmatch 'Kraken source bytes copied: 0') { throw 'Self-test did not prove zero Kraken source-byte copies.' }
+          'PASS' | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'offline-boundary.txt') -Encoding ASCII
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfa-source-discovery-native-ps51-${{ github.run_id }}
+          path: ${{ github.workspace }}\validation-evidence
+          if-no-files-found: error
+          retention-days: 30
