@@ -4,7 +4,7 @@
     "expanded_adjudication_sha256":  "3872e57ce1a7bbb42e24f581b69f1ac829bae80953795fea7ff0c95c5724c5f4",
     "expanded_candidate_evidence_sha256":  "b1c7c6e9237aad82bedd63c82a863a3d0d0796e9065fd7224bf52e034e287d7c",
     "direct_adjudication_sha256":  "5cac12730edb3dc453008b8ca03ea4c9e02786ecb1b5237ef5abe44bcb0727b2",
-    "direct_coingecko_evidence_sha256":  "5c020a03988021820f8d18d0f557f4ba757e1cd6667ee4f5143245e7ec48cb9b",
+    "direct_coingecko_evidence_sha256":  "bc8004ef1c1273218012ec7968951146c8b239af7ab5614a1f9d15109bd89b02",
     "direct_adjudication_rows":  9,
     "direct_evidence_rows":  10,
     "decision_rows":  435,
