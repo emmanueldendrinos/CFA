@@ -1,23 +1,25 @@
 # CFA Stage 3 Kraken / GDELT News Matching Contract
 
-Status: REVISION_FROZEN / EXACT_Q2_RERUN_UNVERIFIED
+Status: **UNVERIFIED**
 
 The 2026-08-27 accepted-match review of local run `20260827-141039-b007155a1589400889a8a669cecf9240` found obvious false positives. Under SoT correction and completion rules, that review invalidates the prior matching result for downstream use. This revision freezes a narrower deterministic matching rule; it does not freeze Stage 3 completion.
 
 CoinGecko is not part of the active CFA news-analysis path. Historical provider artifacts remain only for audit lineage.
 
-## Revision task IDs
+## Frozen revision task IDs
 
-| Task ID | Frozen requirement | Status |
-|---|---|---|
-| S3-PREC-001 | Preserve the 435 Kraken eligible assets, four fiat exclusions, 431 crypto-news assets, 45 approved AF-003 seed identities, and zero-collision Stage 3 alias universe | PRESERVED |
-| S3-PREC-002 | Record the directly reviewed false-positive evidence and set `CFA-S3-005` to FAIL for the prior run | PASS |
-| S3-PREC-003 | Separate manual-name and exchange-symbol matching semantics; no single case-insensitive matcher may govern both | IMPLEMENTATION_CANDIDATE |
-| S3-PREC-004 | Tighten `XXRP|Ripple` and `SHIB|Shiba Inu` using evidence-driven match-policy overrides without changing their Stage 2 alias-identity decisions | IMPLEMENTATION_CANDIDATE |
-| S3-PREC-005 | Preserve GKG parsing, source accounting, record grain, deduplication, and output lineage | IMPLEMENTATION_CANDIDATE |
-| S3-PREC-006 | Parse and self-test the exact revised PowerShell artifact in Windows PowerShell 5.1 and PowerShell 7; validate full alias/override inputs | UNVERIFIED until CI passes |
-| S3-PREC-007 | Rerun the exact full-Q2 matcher and repeat bounded accepted/rejected review | UNVERIFIED; local Q2 source required |
-| S3-PREC-008 | Do not freeze news matching or proceed to response/factor design until revised `CFA-S3-005` passes | BLOCKED |
+| Task ID | Frozen requirement |
+|---|---|
+| S3-PREC-001 | Preserve the 435 Kraken eligible assets, four fiat exclusions, 431 crypto-news assets, 45 approved AF-003 seed identities, and zero-collision Stage 3 alias universe. |
+| S3-PREC-002 | Record the directly reviewed false-positive evidence and set `CFA-S3-005` to FAIL for the prior run. |
+| S3-PREC-003 | Separate manual-name and exchange-symbol matching semantics; no single case-insensitive matcher may govern both. |
+| S3-PREC-004 | Tighten `XXRP|Ripple` and `SHIB|Shiba Inu` using evidence-driven match-policy overrides without changing their Stage 2 alias-identity decisions. |
+| S3-PREC-005 | Preserve GKG parsing, source accounting, record grain, deduplication, and output lineage. |
+| S3-PREC-006 | Parse and self-test the exact revised PowerShell artifact in Windows PowerShell 5.1 and PowerShell 7; validate full alias/override inputs. |
+| S3-PREC-007 | Rerun the exact full-Q2 matcher and repeat bounded accepted/rejected review. |
+| S3-PREC-008 | Do not freeze news matching or proceed to response/factor design until revised `CFA-S3-005` passes. |
+
+Results are recorded separately in repository CI, run evidence, and the gate table below; task requirements are not rewritten to fit implementation results.
 
 ## Active inputs
 
@@ -47,12 +49,12 @@ This identity universe is unchanged by the precision correction.
 
 | Gate | Requirement | Current status |
 |---|---|---|
-| S3-ID-01 | 435 Kraken assets -> exactly four fiat exclusions -> 431 news assets; all 45 AF-003 seeds included; every news asset has an alias; zero cross-asset alias collisions | PASS on current repository evidence; definition preserved |
-| CFA-S3-002 | GKG record shape is exactly 27 tab-separated fields; malformed rows are rejected and counted | UNVERIFIED for revised exact-Q2 run |
-| CFA-S3-003 | Matching is deterministic under the rules below; no fuzzy/entity-provider/LLM matching | REVISION_FROZEN |
-| CFA-S3-004 | Full Q2 GKG scan completes with exact archive/row/reject/match accounting and no duplicate `(base_asset_id, record_id)` output | UNVERIFIED after correction; prior output invalidated |
-| CFA-S3-005 | Bounded accepted/rejected samples are directly reviewed for obvious false positives and false negatives | FAIL for prior run; revised rerun review UNVERIFIED |
-| CFA-S3-006 | News matching may be frozen for response/factor design only after the preceding Stage 3 gates pass | BLOCKED |
+| S3-ID-01 | 435 Kraken assets -> exactly four fiat exclusions -> 431 news assets; all 45 AF-003 seeds included; every news asset has an alias; zero cross-asset alias collisions | **PASS** |
+| CFA-S3-002 | GKG record shape is exactly 27 tab-separated fields; malformed rows are rejected and counted | **UNVERIFIED** for the revised exact-Q2 run |
+| CFA-S3-003 | Matching is deterministic under the rules below; no fuzzy/entity-provider/LLM matching | **PASS** for the revised rule implementation and self-tests; this does not prove Q2 match quality |
+| CFA-S3-004 | Full Q2 GKG scan completes with exact archive/row/reject/match accounting and no duplicate `(base_asset_id, record_id)` output | **UNVERIFIED** after correction; prior output invalidated |
+| CFA-S3-005 | Bounded accepted/rejected samples are directly reviewed for obvious false positives and false negatives | **UNVERIFIED** for the revised run; the prior run is separately recorded as **FAIL** |
+| CFA-S3-006 | News matching may be frozen for response/factor design only after the preceding Stage 3 gates pass | **BLOCKED** |
 
 ## GKG surfaces
 
