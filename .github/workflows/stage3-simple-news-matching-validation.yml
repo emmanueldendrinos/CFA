@@ -1,0 +1,89 @@
+name: Stage 3 Simple News Matching Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
+      - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
+      - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
+      - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
+      - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'docs/evidence/stage3-simple-news-matching-contract.md'
+      - '.github/workflows/stage3-simple-news-matching-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
+      - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
+      - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
+      - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
+      - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'docs/evidence/stage3-simple-news-matching-contract.md'
+      - '.github/workflows/stage3-simple-news-matching-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse active news scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          foreach($path in @(
+            '.\scripts\windows\Verify-CfaActiveNewsInputs.ps1',
+            '.\scripts\windows\Review-CfaStage2Identity.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatching.ps1'
+          )){
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw "Active news script failed PowerShell 7 parsing: $path"}
+          }
+
+      - name: Parse active news scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach($path in @(
+            '.\scripts\windows\Verify-CfaActiveNewsInputs.ps1',
+            '.\scripts\windows\Review-CfaStage2Identity.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatching.ps1'
+          )){
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw "Active news script failed Windows PowerShell 5.1 parsing: $path"}
+          }
+
+      - name: Self-test active input verifier
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1 -SelfTest
+
+      - name: Self-test Stage 2 news readiness
+        shell: powershell
+        run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
+
+      - name: Self-test Stage 3 matcher
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -SelfTest
+
+      - name: Verify exact active source bytes
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1
+
+      - name: Verify Stage 2 Kraken and alias readiness
+        shell: powershell
+        run: .\scripts\windows\Review-CfaStage2Identity.ps1
+
+      - name: Enforce Stage 3 entry contract
+        shell: powershell
+        run: |
+          $review=Get-Content -LiteralPath '.\docs\evidence\stage2-identity-review.json' -Raw | ConvertFrom-Json
+          $byId=@{};foreach($g in @($review.gates)){$byId[[string]$g.gate_id]=$g}
+          if([string]$byId['CFA-S2-003'].status-ne'NOT_APPLICABLE'){throw 'CoinGecko mapping gate is still active.'}
+          if([string]$byId['CFA-S2-005'].status-ne'PASS'){throw 'Alias semantic gate is not PASS.'}
+          if([string]$byId['CFA-S2-006'].status-ne'PASS'){throw 'Stage 3 entry gate is not PASS.'}
+          Write-Host 'CFA STAGE 3 ENTRY CONTRACT: PASS'
