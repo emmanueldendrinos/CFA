@@ -8,7 +8,7 @@ FXS,frax-share,Existing approved direct adjudication evidence seed
 GST,green-satoshi-token,Existing approved direct adjudication evidence seed
 HPOS10I,harrypotterobamasonic10in,Official CoinGecko Ethereum HPOS10I API ID evidence
 INTR,interlay,Official CoinGecko Interlay API ID evidence
-IP,story,Official CoinGecko Story API ID evidence; web slug story-2 is not the API ID
+IP,story-2,Official CoinGecko Data Network page explicitly preserves Story stable API ID story-2 after Story (IP) to Data Network (DATA) rebrand
 K,kinto,CoinGecko Kinto candidate pending direct verification
 KINT,kintsugi,Official CoinGecko Kintsugi API ID evidence
 LUNA,terra-luna,Existing approved direct adjudication evidence seed
