@@ -82,7 +82,7 @@ function Test-SeedLifecycle{
  foreach($d in $Decisions){$base=[string]$d.base_asset_id;if([string]::IsNullOrWhiteSpace($base)){throw 'Mapping decision has an empty base_asset_id.'};if($byBase.ContainsKey($base)){throw "Duplicate mapping decision base: $base"};$byBase[$base]=$d}
  $directByBase=@{}
  foreach($a in $DirectAdjudications){$base=[string]$a.base_asset_id;if([string]::IsNullOrWhiteSpace($base)){throw 'Direct adjudication has an empty base_asset_id.'};if([string]$a.decision_status-ne'APPROVED'){throw "Direct adjudication must be APPROVED: $base"};if($directByBase.ContainsKey($base)){throw "Duplicate direct adjudication base: $base"};$directByBase[$base]=$a}
- $seen=@{}
+ $seen=@{};$coveredDirect=@{}
  foreach($s in $Seeds){
    $base=[string]$s.base_asset_id;$id=[string]$s.candidate_id
    if([string]::IsNullOrWhiteSpace($base)-or[string]::IsNullOrWhiteSpace($id)){throw 'Direct-ID seed base_asset_id and candidate_id are required.'}
@@ -96,9 +96,16 @@ function Test-SeedLifecycle{
      if([string]::IsNullOrWhiteSpace($approvedId)){throw "Direct adjudication missing approved CoinGecko id: $base"}
      if($id-ne$approvedId){throw "Approved direct-ID seed does not match its direct adjudication: $base seed=$id approved=$approvedId"}
      if([string]$decision.approved_coingecko_id-ne$approvedId){throw "Mapping decision/direct adjudication id mismatch: $base decision=$([string]$decision.approved_coingecko_id) direct=$approvedId"}
+     $coveredDirect[$base]=$id
      continue
    }
    throw "Direct-ID seed base has unsupported mapping status: $base/$status"
+ }
+ foreach($base in @($directByBase.Keys)){
+   if(-not$byBase.ContainsKey($base)){throw "Direct adjudication base missing from mapping decisions: $base"}
+   $approvedId=[string]$directByBase[$base].approved_coingecko_id;$decision=$byBase[$base]
+   if([string]$decision.mapping_status-ne'APPROVED'-or[string]$decision.approved_coingecko_id-ne$approvedId){throw "Direct adjudication is not preserved by the mapping decision: $base/$approvedId"}
+   if(-not$coveredDirect.ContainsKey($base)){throw "Approved direct adjudication missing exact evidence seed: $base/$approvedId"}
  }
 }
 function Invoke-SelfTest{
@@ -117,10 +124,11 @@ function Invoke-SelfTest{
  )
  $direct=@([pscustomobject]@{base_asset_id='A';decision_status='APPROVED';approved_coingecko_id='approved-id'})
  Test-SeedLifecycle @([pscustomobject]@{base_asset_id='U';candidate_id='candidate'},[pscustomobject]@{base_asset_id='A';candidate_id='approved-id'}) $decisions $direct
- Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='B';candidate_id='other-id'}) $decisions $direct} 'APPROVED without a matching direct adjudication'
+ Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='B';candidate_id='other-id'}) $decisions @()} 'APPROVED without a matching direct adjudication'
  Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='A';candidate_id='stale-id'}) $decisions $direct} 'does not match its direct adjudication'
- Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='N';candidate_id='none'}) $decisions $direct} 'unsupported mapping status'
- Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='U';candidate_id='candidate'},[pscustomobject]@{base_asset_id='U';candidate_id='candidate'}) $decisions $direct} 'Duplicate direct-ID seed'
+ Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='N';candidate_id='none'}) $decisions @()} 'unsupported mapping status'
+ Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='U';candidate_id='candidate'},[pscustomobject]@{base_asset_id='U';candidate_id='candidate'}) $decisions @()} 'Duplicate direct-ID seed'
+ Assert-Throws {Test-SeedLifecycle @([pscustomobject]@{base_asset_id='U';candidate_id='candidate'}) $decisions $direct} 'missing exact evidence seed'
  Write-Host 'SELF-TEST: PASS'
 }
 if($SelfTest){try{Invoke-SelfTest;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
@@ -149,7 +157,7 @@ try{
  }
  $csv=Join-Path $RepoRoot 'candidate-analysis\CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv';$rows|Sort-Object base_asset_id,requested_candidate_id|Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
  $ok=@($rows|Where-Object{$_.http_status-eq200-and$_.parse_status-eq'PASS'}).Count;$notFound=@($rows|Where-Object{$_.http_status-eq404}).Count;$parseFailures=@($rows|Where-Object{$_.http_status-eq200-and$_.parse_status-ne'PASS'}).Count;$other=@($rows|Where-Object{$_.http_status-ne200-and$_.http_status-ne404}).Count
- $b=New-Object System.Text.StringBuilder;[void]$b.AppendLine('# CFA Stage 2 Direct CoinGecko ID Evidence');[void]$b.AppendLine('');[void]$b.AppendLine('- Seed rows: '+$seeds.Count);[void]$b.AppendLine('- HTTP 200 + returned-id PASS: '+$ok);[void]$b.AppendLine('- HTTP 404: '+$notFound);[void]$b.AppendLine('- HTTP 200 parse/nonmatching failures: '+$parseFailures);[void]$b.AppendLine('- Other HTTP failures: '+$other);[void]$b.AppendLine('');[void]$b.AppendLine('Each seed is verified directly against the keyless CoinGecko `/coins/{id}` endpoint. UNVERIFIED mapping bases may be probed for new evidence; APPROVED bases may be rerun only when the seed exactly matches an existing direct adjudication. Response bytes are not committed; SHA-256 and bounded identity fields are published. 404s, parse anomalies, and other source failures remain explicit UNVERIFIED evidence and are not converted into mapping decisions.');[void]$b.AppendLine('');[void]$b.AppendLine('Evidence table: `candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv`.');Write-Utf8NoBom (Join-Path $RepoRoot 'docs\evidence\stage2-direct-coingecko-id-evidence.md') $b.ToString()
+ $b=New-Object System.Text.StringBuilder;[void]$b.AppendLine('# CFA Stage 2 Direct CoinGecko ID Evidence');[void]$b.AppendLine('');[void]$b.AppendLine('- Seed rows: '+$seeds.Count);[void]$b.AppendLine('- HTTP 200 + returned-id PASS: '+$ok);[void]$b.AppendLine('- HTTP 404: '+$notFound);[void]$b.AppendLine('- HTTP 200 parse/nonmatching failures: '+$parseFailures);[void]$b.AppendLine('- Other HTTP failures: '+$other);[void]$b.AppendLine('');[void]$b.AppendLine('Each seed is verified directly against the keyless CoinGecko `/coins/{id}` endpoint. UNVERIFIED mapping bases may be probed for new evidence; APPROVED bases must retain exactly matching direct-adjudication evidence seeds. Response bytes are not committed; SHA-256 and bounded identity fields are published. 404s, parse anomalies, and other source failures remain explicit UNVERIFIED evidence and are not converted into mapping decisions.');[void]$b.AppendLine('');[void]$b.AppendLine('Evidence table: `candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv`.');Write-Utf8NoBom (Join-Path $RepoRoot 'docs\evidence\stage2-direct-coingecko-id-evidence.md') $b.ToString()
  Write-Host ('Seed rows: '+$seeds.Count);Write-Host ('Verified direct IDs: '+$ok);Write-Host ('HTTP 404: '+$notFound);Write-Host ('Parse/nonmatching failures: '+$parseFailures);Write-Host ('Other HTTP failures: '+$other);Write-Host 'CFA STAGE 2 DIRECT COINGECKO ID EVIDENCE: PASS'
  if($other-gt0-or$parseFailures-gt0){exit 2}
 }catch{Write-Host 'CFA STAGE 2 DIRECT COINGECKO ID EVIDENCE: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}
