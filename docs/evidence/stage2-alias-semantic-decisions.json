@@ -1,18 +1,20 @@
 {
-    "generated_at_utc":  "2026-08-26T05:18:19.8373522Z",
+    "generated_at_utc":  "2026-08-27T12:22:30.7578589Z",
     "decision_rows":  45,
     "approved_alias_identities":  45,
     "unverified_alias_identities":  0,
+    "active_news_identity_path":  "Kraken base asset -\u003e approved AF-003 alias -\u003e raw GDELT record",
+    "coingecko_status":  "NOT_APPLICABLE_TO_NEWS_MATCHING",
     "gates":  [
                   {
                       "gate_id":  "CFA-S2-005",
                       "status":  "PASS",
-                      "reason":  "Alias identity relationship only. Collision and context matching logic is deferred to Stage 3 news matching."
+                      "reason":  "All 45 frozen AF-003 alias identities are approved."
                   },
                   {
                       "gate_id":  "CFA-S2-006",
-                      "status":  "BLOCKED",
-                      "reason":  "CFA-S2-003 CoinGecko mapping decisions remain unresolved; Stage 3 may not begin until upstream identity/mapping gates are resolved."
+                      "status":  "PASS",
+                      "reason":  "Stage 3 entry depends on Kraken coverage and alias readiness; CoinGecko is not an active dependency."
                   }
               ]
 }
