@@ -1,0 +1,74 @@
+{
+  "review_id": "CFA-STAGE3-SAMPLE-REVIEW-20260827",
+  "review_date": "2026-08-27",
+  "evidence_run_id": "20260827-141039-b007155a1589400889a8a669cecf9240",
+  "evidence_surface": "user-supplied console extract from stage3-news-matches.csv",
+  "evidence_extract_sha256": "3c79c29367d45934b4467f585e53df181420e42d3fd6c2e0411c7aac5878b9a3",
+  "evidence_extract_bytes": 572960,
+  "gates": {
+    "CFA-S3-004": "UNVERIFIED",
+    "CFA-S3-005": "FAIL",
+    "CFA-S3-006": "BLOCKED"
+  },
+  "invalidation_reason": "Direct review found obvious false positives in accepted Stage 3 matches. Any matching correction invalidates the prior full-Q2 matching output and dependent hashes/summaries until rerun.",
+  "representative_false_positives": [
+    {
+      "base_asset_id": "XXRP",
+      "record_id": "20250513144500-438",
+      "class": "AMBIGUOUS_MANUAL_NAME",
+      "observation": "Ripple matched ordinary-language ripple in a Tesla article."
+    },
+    {
+      "base_asset_id": "SHIB",
+      "record_id": "20250509230000-224",
+      "class": "AMBIGUOUS_MANUAL_NAME",
+      "observation": "Shiba Inu matched an ordinary dog-breed article."
+    },
+    {
+      "base_asset_id": "TERM",
+      "record_id": "20250430041500-904",
+      "class": "CASE_INSENSITIVE_SYMBOL_WORD",
+      "observation": "TERM matched ordinary prison-term wording."
+    },
+    {
+      "base_asset_id": "KEY",
+      "record_id": "20250508200000-1642",
+      "class": "CASE_INSENSITIVE_SYMBOL_WORD",
+      "observation": "KEY matched ordinary key-Senate-vote wording."
+    },
+    {
+      "base_asset_id": "OP",
+      "record_id": "20250522131500-1092",
+      "class": "GLOBAL_CONTEXT_COMMON_NAME",
+      "observation": "Optimism matched generic regulatory/market optimism rather than the OP asset."
+    },
+    {
+      "base_asset_id": "XXDG",
+      "record_id": "20250512073000-186",
+      "class": "SYMBOL_ACRONYM_COLLISION",
+      "observation": "DOGE matched the government acronym rather than Dogecoin."
+    },
+    {
+      "base_asset_id": "ATH",
+      "record_id": "20250605024500-883",
+      "class": "CRYPTO_JARGON_SYMBOL_COLLISION",
+      "observation": "ATH meant all-time high in a Bitcoin headline rather than the ATH asset."
+    },
+    {
+      "base_asset_id": "TOKEN",
+      "record_id": "20250518203000-376",
+      "class": "GENERIC_OR_NONCRYPTO_SYMBOL_COLLISION",
+      "observation": "TOKEN matched the band name Sleep Token."
+    }
+  ],
+  "frozen_correction_task_ids": [
+    "S3-PREC-001",
+    "S3-PREC-002",
+    "S3-PREC-003",
+    "S3-PREC-004",
+    "S3-PREC-005",
+    "S3-PREC-006",
+    "S3-PREC-007",
+    "S3-PREC-008"
+  ]
+}
