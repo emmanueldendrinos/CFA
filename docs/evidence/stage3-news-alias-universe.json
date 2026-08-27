@@ -1,0 +1,16 @@
+{
+    "gate_id":  "S3-ID-01",
+    "status":  "PASS",
+    "eligible_kraken_assets":  435,
+    "excluded_fiat_assets":  [
+                                 "ZAUD",
+                                 "ZEUR",
+                                 "ZGBP",
+                                 "ZUSD"
+                             ],
+    "news_assets":  431,
+    "approved_seed_aliases":  45,
+    "generated_alias_rows":  470,
+    "cross_asset_alias_collisions":  0,
+    "alias_registry_sha256":  "11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9"
+}
