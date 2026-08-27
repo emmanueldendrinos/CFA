@@ -11,6 +11,7 @@ on:
       - 'scripts/windows/Verify-CfaGdeltQ2Source.ps1'
       - 'scripts/windows/Run-CfaStage1.ps1'
       - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Build-CfaStage3NewsAliases.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
@@ -27,6 +28,7 @@ on:
       - 'scripts/windows/Verify-CfaGdeltQ2Source.ps1'
       - 'scripts/windows/Run-CfaStage1.ps1'
       - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Build-CfaStage3NewsAliases.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
@@ -57,6 +59,7 @@ jobs:
             'scripts/windows/Verify-CfaGdeltQ2Source.ps1',
             'scripts/windows/Run-CfaStage1.ps1',
             'scripts/windows/Review-CfaStage2Identity.ps1',
+            'scripts/windows/Build-CfaStage3NewsAliases.ps1',
             'scripts/windows/Run-CfaStage3NewsMatching.ps1'
           ) | Set-Content -LiteralPath $env:RUNNER_TEMP\active-cfa-scripts.txt
 
@@ -110,9 +113,13 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Run-CfaStage1.ps1 -SelfTest
 
-      - name: Self-test Stage 2 Kraken and alias readiness
+      - name: Self-test Stage 2 Kraken and seed-alias readiness
         shell: powershell
         run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
+
+      - name: Self-test Stage 3 alias builder
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3NewsAliases.ps1 -SelfTest
 
       - name: Self-test Stage 3 news matcher
         shell: powershell
@@ -122,12 +129,26 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1
 
-      - name: Resolve Stage 2 Kraken and alias readiness
+      - name: Resolve Stage 2 Kraken and seed-alias readiness
         shell: powershell
         run: |
           & .\scripts\windows\Review-CfaStage2Identity.ps1
           $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
           if($code-ne0){throw "Stage 2 Kraken/GDELT readiness failed with exit $code."}
+
+      - name: Build full Kraken Stage 3 news alias universe
+        shell: powershell
+        run: |
+          & .\scripts\windows\Build-CfaStage3NewsAliases.ps1
+          $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($code-ne0){throw "S3-ID-01 alias universe build failed with exit $code."}
+
+      - name: Validate matcher inputs on full universe
+        shell: powershell
+        run: |
+          & .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -ValidateInputsOnly
+          $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($code-ne0){throw "Stage 3 matcher input validation failed with exit $code."}
 
       - name: Enforce simple Stage 3 entry gate
         shell: powershell
@@ -138,16 +159,23 @@ jobs:
           if([string]$byId['CFA-S2-003'].status-ne'NOT_APPLICABLE'){throw 'Retired CoinGecko mapping gate is active.'}
           if([string]$byId['CFA-S2-005'].status-ne'PASS'){throw 'Alias semantic validation is not PASS.'}
           if([string]$byId['CFA-S2-006'].status-ne'PASS'){throw 'Stage 3 entry gate is not PASS.'}
+          $universe=Get-Content -LiteralPath '.\docs\evidence\stage3-news-alias-universe.json' -Raw | ConvertFrom-Json
+          if([string]$universe.status-ne'PASS'){throw 'S3-ID-01 is not PASS.'}
+          if([int]$universe.news_assets-ne431){throw "S3-ID-01 news asset count is $($universe.news_assets), expected 431."}
+          if([int]$universe.cross_asset_alias_collisions-ne0){throw 'S3-ID-01 has cross-asset alias collisions.'}
           Write-Host 'CFA SIMPLE STAGE 3 ENTRY GATE: PASS'
 
-      - name: Commit active Stage 2 readiness evidence
+      - name: Commit active Stage 2 and Stage 3 readiness evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
         run: |
           $allowed=@(
             'candidate-analysis/CFA-Stage2-Alias-Review.csv',
             'docs/evidence/stage2-identity-review.md',
-            'docs/evidence/stage2-identity-review.json'
+            'docs/evidence/stage2-identity-review.json',
+            'candidate-analysis/CFA-Stage3-News-Aliases.csv',
+            'docs/evidence/stage3-news-alias-universe.md',
+            'docs/evidence/stage3-news-alias-universe.json'
           )
           git -c core.autocrlf=false add -- $allowed
           $staged=@(git diff --cached --name-only)
@@ -157,7 +185,7 @@ jobs:
           if($staged.Count-gt0){
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Publish CFA Kraken and GDELT news readiness evidence'
+            git commit -m 'Publish CFA full Kraken news alias readiness evidence'
             git pull --rebase origin main
             git push origin HEAD:main
           }
