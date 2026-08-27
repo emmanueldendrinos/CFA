@@ -59,6 +59,22 @@ jobs:
           Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
           $global:LASTEXITCODE=0
 
+      - name: Refresh dependent mapping evidence for publication
+        shell: powershell
+        run: |
+          .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+          .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
+          $allowed=@(
+            'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv',
+            'docs/evidence/stage2-direct-coingecko-id-evidence.md',
+            'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv',
+            'docs/evidence/stage2-mapping-decisions.md',
+            'docs/evidence/stage2-mapping-decisions.json'
+          )
+          $dirty=@(git diff --name-only)
+          foreach($path in $dirty){if($allowed-notcontains$path){throw "Unexpected dirty path before atomic Stage 2 evidence publish: $path"}}
+          Write-Host ('Atomic Stage 2 evidence dirty paths: '+($dirty-join','))
+
       - name: Upload direct ID evidence
         uses: actions/upload-artifact@v4
         with:
@@ -69,21 +85,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Commit direct ID evidence
+      - name: Commit direct and dependent mapping evidence atomically
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
         run: |
-          $allowed=@(
+          $direct=@(
             'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv',
             'docs/evidence/stage2-direct-coingecko-id-evidence.md'
           )
+          $allowed=@(
+            'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv',
+            'docs/evidence/stage2-direct-coingecko-id-evidence.md',
+            'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv',
+            'docs/evidence/stage2-mapping-decisions.md',
+            'docs/evidence/stage2-mapping-decisions.json'
+          )
+          $dirty=@(git diff --name-only)
+          foreach($path in $dirty){if($allowed-notcontains$path){throw "Unexpected dirty path before atomic Stage 2 evidence transaction: $path"}}
+
+          $saved=Join-Path $env:RUNNER_TEMP ('cfa-stage2-direct-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $saved -Force|Out-Null
+          foreach($path in $direct){
+            $target=Join-Path $saved ([IO.Path]::GetFileName($path))
+            Copy-Item -LiteralPath $path -Destination $target -Force
+          }
+
+          git reset --hard HEAD
+          git fetch origin main
+          git rebase origin/main
+          if($LASTEXITCODE-ne0){throw 'Could not rebase clean Stage 2 evidence transaction onto latest main.'}
+
+          foreach($path in $direct){
+            $source=Join-Path $saved ([IO.Path]::GetFileName($path))
+            Copy-Item -LiteralPath $source -Destination $path -Force
+          }
+          .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+          if($LASTEXITCODE-ne0){throw 'Stage 2 mapping resolver failed during atomic evidence publication.'}
+          .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
+          if($LASTEXITCODE-ne0){throw 'Stage 2 canonical mapping overlay failed during atomic evidence publication.'}
+
+          $dirty=@(git diff --name-only)
+          foreach($path in $dirty){if($allowed-notcontains$path){throw "Unexpected dirty path after atomic Stage 2 evidence regeneration: $path"}}
           git -c core.autocrlf=false add -- $allowed
           $staged=@(git diff --cached --name-only)
           foreach($path in $staged){if($allowed-notcontains$path){throw "Unexpected staged path: $path"}}
-          if($staged.Count -gt 0){
+          $unstaged=@(git diff --name-only)
+          if($unstaged.Count-gt0){throw ('Unexpected unstaged paths before atomic Stage 2 evidence commit: '+($unstaged-join','))}
+          if($staged.Count-gt0){
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Publish CFA Stage 2 direct CoinGecko ID evidence'
-            git pull --rebase origin main
+            git commit -m 'Publish CFA Stage 2 direct and dependent mapping evidence'
             git push origin HEAD:main
           }
