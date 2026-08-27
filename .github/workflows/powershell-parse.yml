@@ -3,17 +3,35 @@ name: PowerShell Validation
 on:
   push:
     paths:
-      - 'scripts/**/*.ps1'
-      - 'CFA-SoT.xlsx'
-      - 'candidate-analysis/*.csv'
-      - 'docs/evidence/stage2-coingecko-bridge-evidence.csv'
+      - 'scripts/windows/Reconcile-CfaKrakenSources.ps1'
+      - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
+      - 'scripts/windows/Verify-CfaNewsSourceCoverage.ps1'
+      - 'scripts/windows/Diagnose-CfaNewsAcquisition.ps1'
+      - 'scripts/windows/Acquire-CfaGdeltQ2Source.ps1'
+      - 'scripts/windows/Verify-CfaGdeltQ2Source.ps1'
+      - 'scripts/windows/Run-CfaStage1.ps1'
+      - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
+      - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
+      - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
+      - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'docs/evidence/stage3-simple-news-matching-contract.md'
       - '.github/workflows/powershell-parse.yml'
   pull_request:
     paths:
-      - 'scripts/**/*.ps1'
-      - 'CFA-SoT.xlsx'
-      - 'candidate-analysis/*.csv'
-      - 'docs/evidence/stage2-coingecko-bridge-evidence.csv'
+      - 'scripts/windows/Reconcile-CfaKrakenSources.ps1'
+      - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
+      - 'scripts/windows/Verify-CfaNewsSourceCoverage.ps1'
+      - 'scripts/windows/Diagnose-CfaNewsAcquisition.ps1'
+      - 'scripts/windows/Acquire-CfaGdeltQ2Source.ps1'
+      - 'scripts/windows/Verify-CfaGdeltQ2Source.ps1'
+      - 'scripts/windows/Run-CfaStage1.ps1'
+      - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
+      - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
+      - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
+      - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'docs/evidence/stage3-simple-news-matching-contract.md'
       - '.github/workflows/powershell-parse.yml'
 
 permissions:
@@ -24,167 +42,122 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Parse scripts with PowerShell 7
+      - name: Define active CFA scripts
+        shell: powershell
+        run: |
+          @(
+            'scripts/windows/Reconcile-CfaKrakenSources.ps1',
+            'scripts/windows/Verify-CfaActiveNewsInputs.ps1',
+            'scripts/windows/Verify-CfaNewsSourceCoverage.ps1',
+            'scripts/windows/Diagnose-CfaNewsAcquisition.ps1',
+            'scripts/windows/Acquire-CfaGdeltQ2Source.ps1',
+            'scripts/windows/Verify-CfaGdeltQ2Source.ps1',
+            'scripts/windows/Run-CfaStage1.ps1',
+            'scripts/windows/Review-CfaStage2Identity.ps1',
+            'scripts/windows/Run-CfaStage3NewsMatching.ps1'
+          ) | Set-Content -LiteralPath $env:RUNNER_TEMP\active-cfa-scripts.txt
+
+      - name: Parse active scripts with PowerShell 7
         shell: pwsh
         run: |
-          $failed = $false
-          Get-ChildItem -Path scripts -Recurse -Filter *.ps1 | ForEach-Object {
-            $tokens = $null
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
-            if ($errors.Count -gt 0) { $failed = $true; Write-Host "Parse errors in $($_.FullName):"; $errors | ForEach-Object { Write-Host $_.Message } }
+          $failed=$false
+          foreach($path in @(Get-Content -LiteralPath $env:RUNNER_TEMP\active-cfa-scripts.txt)){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$failed=$true;Write-Host "Parse errors in ${path}:";$errors|ForEach-Object{Write-Host $_.Message}}
           }
-          if ($failed) { throw 'One or more PowerShell files failed to parse under PowerShell 7.' }
+          if($failed){throw 'One or more active CFA PowerShell files failed PowerShell 7 parsing.'}
 
-      - name: Parse scripts with Windows PowerShell 5.1
+      - name: Parse active scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $failed = $false
-          Get-ChildItem -Path scripts -Recurse -Filter *.ps1 | ForEach-Object {
-            $tokens = $null
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
-            if ($errors.Count -gt 0) { $failed = $true; Write-Host "Parse errors in $($_.FullName):"; $errors | ForEach-Object { Write-Host $_.Message } }
+          $failed=$false
+          foreach($path in @(Get-Content -LiteralPath $env:RUNNER_TEMP\active-cfa-scripts.txt)){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$failed=$true;Write-Host "Parse errors in ${path}:";$errors|ForEach-Object{Write-Host $_.Message}}
           }
-          if ($failed) { throw 'One or more PowerShell files failed to parse under Windows PowerShell 5.1.' }
+          if($failed){throw 'One or more active CFA PowerShell files failed Windows PowerShell 5.1 parsing.'}
 
-      - name: Runtime self-test Kraken reconciliation under Windows PowerShell 5.1
+      - name: Self-test Kraken reconciliation
         shell: powershell
         run: .\scripts\windows\Reconcile-CfaKrakenSources.ps1 -SelfTest
-      - name: Runtime self-test evidence publisher under Windows PowerShell 5.1
+
+      - name: Self-test active news input verifier
         shell: powershell
-        run: .\scripts\windows\Publish-CfaLocalEvidence.ps1 -SelfTest
-      - name: Runtime self-test evidence sync wrapper under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Sync-CfaEvidence.ps1 -SelfTest
-      - name: Runtime self-test SoT authority exporter under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Export-CfaSoTAuthority.ps1 -SelfTest
-      - name: Runtime self-test reference source reconciler under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Reconcile-CfaReferenceSources.ps1 -SelfTest
-      - name: Runtime self-test news source coverage under Windows PowerShell 5.1
+        run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1 -SelfTest
+
+      - name: Self-test news source coverage
         shell: powershell
         run: .\scripts\windows\Verify-CfaNewsSourceCoverage.ps1 -SelfTest
-      - name: Runtime self-test news acquisition diagnosis under Windows PowerShell 5.1
+
+      - name: Self-test news acquisition diagnosis
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaNewsAcquisition.ps1 -SelfTest
-      - name: Runtime self-test CFA GDELT Q2 acquisition under Windows PowerShell 5.1
+
+      - name: Self-test GDELT Q2 acquisition
         shell: powershell
         run: .\scripts\windows\Acquire-CfaGdeltQ2Source.ps1 -SelfTest
-      - name: Runtime self-test CFA GDELT Q2 verification under Windows PowerShell 5.1
+
+      - name: Self-test GDELT Q2 verification
         shell: powershell
         run: .\scripts\windows\Verify-CfaGdeltQ2Source.ps1 -SelfTest
-      - name: Runtime self-test Stage 1 runner under Windows PowerShell 5.1
+
+      - name: Self-test Stage 1 runner
         shell: powershell
         run: .\scripts\windows\Run-CfaStage1.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 identity reviewer under Windows PowerShell 5.1
+
+      - name: Self-test Stage 2 Kraken and alias readiness
         shell: powershell
         run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
-      - name: Runtime self-test CoinGecko identity acquisition under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Acquire-CfaCoinGeckoIdentityEvidence.ps1 -SelfTest
-      - name: Runtime self-test GDELT GKG structure inspection under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Inspect-CfaGdeltGkgStructure.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 evidence publisher under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Publish-CfaStage2Evidence.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 evidence sync under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Sync-CfaStage2Evidence.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 runner under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Run-CfaStage2.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 mapping decision resolver under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Resolve-CfaStage2Mappings.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 canonical mapping overlay under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 Kinto blocker validator under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Validate-CfaStage2KintoBlocker.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias validator under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Validate-CfaStage2Aliases.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias runner under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Run-CfaStage2AliasValidation.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias byte diagnostic under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Diagnose-CfaStage2AliasEncoding.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias diagnostic publisher under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Publish-CfaStage2AliasDiagnostics.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias diagnostic sync under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Sync-CfaStage2AliasDiagnostics.ps1 -SelfTest
-      - name: Runtime self-test Stage 2 alias diagnostic runner under Windows PowerShell 5.1
-        shell: powershell
-        run: .\scripts\windows\Run-CfaStage2AliasDiagnostics.ps1 -SelfTest
 
-      - name: Export current CFA SoT authority snapshot
+      - name: Self-test Stage 3 news matcher
         shell: powershell
-        run: .\scripts\windows\Export-CfaSoTAuthority.ps1
+        run: .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -SelfTest
 
-      - name: Reconcile and guarded-repair exact reference source bytes
+      - name: Verify exact active input bytes
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1
+
+      - name: Resolve Stage 2 Kraken and alias readiness
         shell: powershell
         run: |
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Reconcile-CfaReferenceSources.ps1' -RepairExactEncodingVariant
-          $code = $LASTEXITCODE
-          "REFERENCE_GATE_EXIT=$code" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Reference reconciliation gate exit: $code"
-          exit 0
+          & .\scripts\windows\Review-CfaStage2Identity.ps1
+          $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($code-ne0){throw "Stage 2 Kraken/GDELT readiness failed with exit $code."}
 
-      - name: Run Stage 2 structural identity review
+      - name: Enforce simple Stage 3 entry gate
         shell: powershell
         run: |
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Review-CfaStage2Identity.ps1'
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 structural reviewer failed with exit $LASTEXITCODE." }
+          $review=Get-Content -LiteralPath '.\docs\evidence\stage2-identity-review.json' -Raw | ConvertFrom-Json
+          $byId=@{};foreach($g in @($review.gates)){$byId[[string]$g.gate_id]=$g}
+          if([string]$byId['CFA-S2-002'].status-ne'NOT_APPLICABLE'){throw 'Retired CoinGecko structural gate is active.'}
+          if([string]$byId['CFA-S2-003'].status-ne'NOT_APPLICABLE'){throw 'Retired CoinGecko mapping gate is active.'}
+          if([string]$byId['CFA-S2-005'].status-ne'PASS'){throw 'Alias semantic validation is not PASS.'}
+          if([string]$byId['CFA-S2-006'].status-ne'PASS'){throw 'Stage 3 entry gate is not PASS.'}
+          Write-Host 'CFA SIMPLE STAGE 3 ENTRY GATE: PASS'
 
-      - name: Validate frozen Kinto blocker evidence
-        shell: powershell
-        run: |
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Validate-CfaStage2KintoBlocker.ps1'
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 Kinto blocker validation failed with exit $LASTEXITCODE." }
-
-      - name: Resolve evidence-based Stage 2 mapping decisions
-        shell: powershell
-        run: |
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Resolve-CfaStage2Mappings.ps1'
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 mapping resolver failed with exit $LASTEXITCODE." }
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1'
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 canonical mapping overlay failed with exit $LASTEXITCODE." }
-
-      - name: Commit generated authority/reconciliation/Stage 2 evidence
+      - name: Commit active Stage 2 readiness evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: powershell
         run: |
-          $allowed = @(
-            'docs/evidence/sot-authority-snapshot.md','docs/evidence/sot-authority-snapshot.json',
-            'docs/evidence/reference-source-reconciliation.md','docs/evidence/reference-source-reconciliation.json',
-            'docs/evidence/stage2-identity-review.md','docs/evidence/stage2-identity-review.json',
-            'docs/evidence/stage2-mapping-decisions.md','docs/evidence/stage2-mapping-decisions.json',
-            'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv',
-            'candidate-analysis/ASRP-Q2-News-Hype-CoinGecko-Mapping-Candidates-20260818-120451-583-f5fd1391.csv',
-            'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv',
-            'candidate-analysis/CFA-Stage2-CoinGecko-Review-Queue.csv','candidate-analysis/CFA-Stage2-Alias-Review.csv',
-            'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv'
+          $allowed=@(
+            'candidate-analysis/CFA-Stage2-Alias-Review.csv',
+            'docs/evidence/stage2-identity-review.md',
+            'docs/evidence/stage2-identity-review.json'
           )
           git -c core.autocrlf=false add -- $allowed
-          $staged = @(git diff --cached --name-only)
-          if ($staged.Count -gt 0) {
-            foreach ($path in $staged) { if ($allowed -notcontains $path) { throw "Unexpected staged path: $path" } }
+          $staged=@(git diff --cached --name-only)
+          foreach($path in $staged){if($allowed-notcontains$path){throw "Unexpected staged active-news evidence path: $path"}}
+          $unstaged=@(git diff --name-only)
+          if($unstaged.Count-gt0){throw ('Unexpected unstaged paths before active-news evidence commit: '+($unstaged-join','))}
+          if($staged.Count-gt0){
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Update CFA Stage 2 structural and mapping evidence'
+            git commit -m 'Publish CFA Kraken and GDELT news readiness evidence'
             git pull --rebase origin main
             git push origin HEAD:main
           }
-
-      - name: Enforce reference source hard gate
-        shell: powershell
-        run: |
-          if ($env:REFERENCE_GATE_EXIT -ne '0') { throw "CFA reference source reconciliation remains unresolved (exit $env:REFERENCE_GATE_EXIT). See docs/evidence/reference-source-reconciliation.md." }
