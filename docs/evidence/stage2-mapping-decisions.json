@@ -4,13 +4,15 @@
     "expanded_adjudication_sha256":  "3872e57ce1a7bbb42e24f581b69f1ac829bae80953795fea7ff0c95c5724c5f4",
     "expanded_candidate_evidence_sha256":  "b1c7c6e9237aad82bedd63c82a863a3d0d0796e9065fd7224bf52e034e287d7c",
     "direct_adjudication_sha256":  "5cac12730edb3dc453008b8ca03ea4c9e02786ecb1b5237ef5abe44bcb0727b2",
-    "direct_coingecko_evidence_sha256":  "b6f5b0df13e1e03717ae41afedbb23e7e722bc6c076d05b6d875e2d301ab5536",
+    "direct_coingecko_evidence_sha256":  "3c69aaa710b6b362fb02e3cae66a18abb58dfb8721e85d303285c573f5cc20e3",
     "direct_adjudication_rows":  9,
     "direct_evidence_rows":  18,
     "decision_rows":  435,
-    "approved":  421,
+    "approved":  429,
     "not_applicable":  4,
-    "unverified":  10,
+    "unverified":  2,
     "gate_status":  "UNVERIFIED",
-    "blocking_reason":  "10 assets still lack independently verified CoinGecko mapping identity."
+    "blocking_reason":  "2 assets still lack independently verified CoinGecko mapping identity: K|XREP.",
+    "canonical_adjudication_sha256":  "c4ca9ef480e4f4878cf20234151d537697398ce92c3cc7167f9c9af6b075dbc7",
+    "canonical_adjudication_rows":  8
 }
