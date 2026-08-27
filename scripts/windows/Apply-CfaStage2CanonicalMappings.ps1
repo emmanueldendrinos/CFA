@@ -40,11 +40,11 @@ function Assert-HttpsSource {
     if (-not $uri.Scheme.Equals('https',[System.StringComparison]::OrdinalIgnoreCase)) {
         throw ('{0} must use HTTPS: {1}' -f $Label,$Text)
     }
-    $host = [string]$uri.Host
+    $sourceHost = [string]$uri.Host
     $suffix = '.' + $ExpectedHostSuffix
-    $hostOk = $host.Equals($ExpectedHostSuffix,[System.StringComparison]::OrdinalIgnoreCase) -or $host.EndsWith($suffix,[System.StringComparison]::OrdinalIgnoreCase)
+    $hostOk = $sourceHost.Equals($ExpectedHostSuffix,[System.StringComparison]::OrdinalIgnoreCase) -or $sourceHost.EndsWith($suffix,[System.StringComparison]::OrdinalIgnoreCase)
     if (-not $hostOk) {
-        throw ('{0} host is outside {1}: {2}' -f $Label,$ExpectedHostSuffix,$host)
+        throw ('{0} host is outside {1}: {2}' -f $Label,$ExpectedHostSuffix,$sourceHost)
     }
 }
 
