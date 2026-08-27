@@ -100,6 +100,9 @@ jobs:
       - name: Runtime self-test Stage 2 mapping decision resolver under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Resolve-CfaStage2Mappings.ps1 -SelfTest
+      - name: Runtime self-test Stage 2 canonical mapping overlay under Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1 -SelfTest
       - name: Runtime self-test Stage 2 alias validator under Windows PowerShell 5.1
         shell: powershell
         run: .\scripts\windows\Validate-CfaStage2Aliases.ps1 -SelfTest
@@ -143,6 +146,8 @@ jobs:
         run: |
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Resolve-CfaStage2Mappings.ps1'
           if ($LASTEXITCODE -ne 0) { throw "Stage 2 mapping resolver failed with exit $LASTEXITCODE." }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1'
+          if ($LASTEXITCODE -ne 0) { throw "Stage 2 canonical mapping overlay failed with exit $LASTEXITCODE." }
 
       - name: Commit generated authority/reconciliation/Stage 2 evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
