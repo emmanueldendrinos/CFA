@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/windows/Verify-CfaStage2DirectCoinGeckoIds.ps1'
       - 'scripts/windows/Apply-CfaStage2CanonicalMappings.ps1'
+      - 'scripts/windows/Validate-CfaStage2XrepBlocker.ps1'
       - 'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Seeds.csv'
       - 'candidate-analysis/CFA-Stage2-Mapping-Canonical-Adjudications.csv'
       - '.github/workflows/stage2-direct-coingecko-id-validation.yml'
@@ -43,6 +44,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1 -SelfTest
 
+      - name: Self-test XREP blocker dependency
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage2XrepBlocker.ps1 -SelfTest
+
       - name: Resolve current mapping decisions for lifecycle validation
         shell: powershell
         run: |
@@ -57,6 +62,15 @@ jobs:
           $code=if($null -eq $LASTEXITCODE){0}else{[int]$LASTEXITCODE}
           if ($code -ne 0 -and $code -ne 2) { throw "Direct CoinGecko ID verifier failed with exit $code." }
           Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
+          $global:LASTEXITCODE=0
+
+      - name: Validate XREP blocker against fresh direct evidence
+        shell: powershell
+        run: |
+          $global:LASTEXITCODE=$null
+          & .\scripts\windows\Validate-CfaStage2XrepBlocker.ps1
+          $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($code-ne0){throw "XREP blocker invalidated by fresh direct evidence; exit $code."}
           $global:LASTEXITCODE=0
 
       - name: Refresh dependent mapping evidence for publication
@@ -119,6 +133,10 @@ jobs:
             $source=Join-Path $saved ([IO.Path]::GetFileName($path))
             Copy-Item -LiteralPath $source -Destination $path -Force
           }
+          $global:LASTEXITCODE=$null
+          & .\scripts\windows\Validate-CfaStage2XrepBlocker.ps1
+          $xrepCode=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($xrepCode-ne0){throw "XREP blocker invalidated after rebase by fresh direct evidence; exit $xrepCode."}
           .\scripts\windows\Resolve-CfaStage2Mappings.ps1
           if($LASTEXITCODE-ne0){throw 'Stage 2 mapping resolver failed during atomic evidence publication.'}
           .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
