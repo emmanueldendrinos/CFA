@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
       - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Build-CfaStage3NewsAliases.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'scripts/windows/Verify-CfaActiveNewsInputs.ps1'
       - 'scripts/windows/Review-CfaStage2Identity.ps1'
+      - 'scripts/windows/Build-CfaStage3NewsAliases.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatching.ps1'
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
@@ -38,10 +40,11 @@ jobs:
           foreach($path in @(
             '.\scripts\windows\Verify-CfaActiveNewsInputs.ps1',
             '.\scripts\windows\Review-CfaStage2Identity.ps1',
+            '.\scripts\windows\Build-CfaStage3NewsAliases.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatching.ps1'
           )){
-            $tokens=$null; $errors=$null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw "Active news script failed PowerShell 7 parsing: $path"}
           }
 
@@ -51,10 +54,11 @@ jobs:
           foreach($path in @(
             '.\scripts\windows\Verify-CfaActiveNewsInputs.ps1',
             '.\scripts\windows\Review-CfaStage2Identity.ps1',
+            '.\scripts\windows\Build-CfaStage3NewsAliases.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatching.ps1'
           )){
-            $tokens=$null; $errors=$null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw "Active news script failed Windows PowerShell 5.1 parsing: $path"}
           }
 
@@ -66,6 +70,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Review-CfaStage2Identity.ps1 -SelfTest
 
+      - name: Self-test Stage 3 alias builder
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3NewsAliases.ps1 -SelfTest
+
       - name: Self-test Stage 3 matcher
         shell: powershell
         run: .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -SelfTest
@@ -74,16 +82,28 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Verify-CfaActiveNewsInputs.ps1
 
-      - name: Verify Stage 2 Kraken and alias readiness
+      - name: Verify Stage 2 Kraken and seed-alias readiness
         shell: powershell
         run: .\scripts\windows\Review-CfaStage2Identity.ps1
+
+      - name: Build full Kraken news alias universe
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3NewsAliases.ps1
+
+      - name: Validate matcher inputs on full universe
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -ValidateInputsOnly
 
       - name: Enforce Stage 3 entry contract
         shell: powershell
         run: |
-          $review=Get-Content -LiteralPath '.\docs\evidence\stage2-identity-review.json' -Raw | ConvertFrom-Json
+          $review=Get-Content -LiteralPath '.\docs\evidence\stage2-identity-review.json' -Raw|ConvertFrom-Json
           $byId=@{};foreach($g in @($review.gates)){$byId[[string]$g.gate_id]=$g}
           if([string]$byId['CFA-S2-003'].status-ne'NOT_APPLICABLE'){throw 'CoinGecko mapping gate is still active.'}
           if([string]$byId['CFA-S2-005'].status-ne'PASS'){throw 'Alias semantic gate is not PASS.'}
           if([string]$byId['CFA-S2-006'].status-ne'PASS'){throw 'Stage 3 entry gate is not PASS.'}
+          $universe=Get-Content -LiteralPath '.\docs\evidence\stage3-news-alias-universe.json' -Raw|ConvertFrom-Json
+          if([string]$universe.status-ne'PASS'){throw 'S3-ID-01 is not PASS.'}
+          if([int]$universe.news_assets-ne431){throw "S3-ID-01 news asset count is $($universe.news_assets), expected 431."}
+          if([int]$universe.cross_asset_alias_collisions-ne0){throw 'S3-ID-01 has cross-asset alias collisions.'}
           Write-Host 'CFA STAGE 3 ENTRY CONTRACT: PASS'
