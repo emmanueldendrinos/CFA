@@ -1,21 +1,19 @@
 base_asset_id,candidate_id,seed_basis
-AIR,altair,Canonical CoinGecko Altair page
-BRICK,brick,Canonical CoinGecko r/FortNiteBR Bricks page
-LUNA,terra-luna,Canonical CoinGecko Terra Luna Classic page
-TON,the-open-network,Canonical historical CoinGecko Toncoin id candidate
-APENFT,apenft,Canonical historical CoinGecko APENFT id candidate
-AVAAI,ava-ai,Canonical CoinGecko Ava AI page
-CSM,crust-shadow,Canonical CoinGecko Crust Shadow page
-FXS,frax-share,Canonical CoinGecko Frax/Frax Share migration page
-GST,green-satoshi-token,Canonical CoinGecko STEPN Green Satoshi Token on Solana page
-HPOS10I,harrypotterobamasonic10inu,Canonical CoinGecko HarryPotterObamaSonic10Inu page
-INTR,interlay,Canonical CoinGecko Interlay id candidate
-IP,story,Historical CoinGecko Story slug candidate
-IP,data-network,Current CoinGecko Story-to-Data-Network redirect candidate
-KINT,kintsugi,Canonical CoinGecko Kintsugi page
-REPV2,augur,Current CoinGecko Augur record candidate
-REPV2,reputation,CoinGecko Reputation/REP v2 migration record candidate
-SDN,shiden-network,Canonical CoinGecko Shiden Network page
-TERM,term-finance,Canonical CoinGecko Term Finance page
-K,kinto,Canonical CoinGecko Kinto page
-UST,terrausd,Canonical CoinGecko TerraClassicUSD historical id candidate
+AIR,altair,Official CoinGecko Altair API ID evidence
+APENFT,apenft,Existing approved direct adjudication evidence seed
+AVAAI,ava-ai,Official CoinGecko Ava AI API ID evidence
+BRICK,brick,Historical CoinGecko Bricks candidate; direct 404 remains explicit
+CSM,crust-storage-market,Official CoinGecko Crust Shadow API ID evidence
+FXS,frax-share,Existing approved direct adjudication evidence seed
+GST,green-satoshi-token,Existing approved direct adjudication evidence seed
+HPOS10I,harrypotterobamasonic10in,Official CoinGecko Ethereum HPOS10I API ID evidence
+INTR,interlay,Official CoinGecko Interlay API ID evidence
+IP,story-2,Official CoinGecko Story/Data Network API ID evidence
+K,kinto,CoinGecko Kinto candidate pending direct verification
+KINT,kintsugi,Official CoinGecko Kintsugi API ID evidence
+LUNA,terra-luna,Existing approved direct adjudication evidence seed
+REPV2,augur,Existing approved direct adjudication evidence seed
+SDN,shiden,Official CoinGecko Shiden Network API ID evidence
+TERM,term-finance,Official CoinGecko Term Finance API ID evidence
+TON,the-open-network,Existing approved direct adjudication evidence seed
+UST,terrausd,Existing approved direct adjudication evidence seed
