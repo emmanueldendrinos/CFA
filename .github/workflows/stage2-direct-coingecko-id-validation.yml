@@ -40,8 +40,9 @@ jobs:
       - name: Verify direct CoinGecko IDs
         shell: powershell
         run: |
+          $global:LASTEXITCODE=$null
           & .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1 -DelayMs 12000
-          $code=$LASTEXITCODE
+          $code=if($null -eq $LASTEXITCODE){0}else{[int]$LASTEXITCODE}
           if ($code -ne 0 -and $code -ne 2) { throw "Direct CoinGecko ID verifier failed with exit $code." }
           Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
           $global:LASTEXITCODE=0
