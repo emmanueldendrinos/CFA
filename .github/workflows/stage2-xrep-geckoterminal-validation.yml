@@ -1,0 +1,50 @@
+name: Stage 2 XREP GeckoTerminal Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Verify-CfaStage2XrepGeckoTerminal.ps1'
+      - 'candidate-analysis/CFA-Stage2-GeckoTerminal-Xrep-Seeds.csv'
+      - '.github/workflows/stage2-xrep-geckoterminal-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse XREP verifier with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'XREP GeckoTerminal verifier failed PowerShell 7 parsing.' }
+
+      - name: Parse XREP verifier with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'XREP GeckoTerminal verifier failed Windows PowerShell 5.1 parsing.' }
+
+      - name: Self-test XREP verifier
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1 -SelfTest
+
+      - name: Acquire exact XREP and REPv2 identity evidence
+        shell: powershell
+        run: .\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1
+
+      - name: Upload XREP GeckoTerminal evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfa-stage2-xrep-geckoterminal-evidence
+          path: |
+            candidate-analysis/CFA-Stage2-GeckoTerminal-Xrep-Evidence.csv
+            docs/evidence/stage2-xrep-geckoterminal-evidence.md
+          if-no-files-found: error
+          retention-days: 7
