@@ -59,10 +59,15 @@ jobs:
       - name: Resolve Stage 2 mappings with XREP blocker
         shell: powershell
         run: |
-          .\scripts\windows\Resolve-CfaStage2Mappings.ps1
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 mapping resolver failed with exit $LASTEXITCODE." }
-          .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
-          if ($LASTEXITCODE -ne 0) { throw "Stage 2 canonical mapping overlay failed with exit $LASTEXITCODE." }
+          $global:LASTEXITCODE=$null
+          & .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+          $resolverCode=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if ($resolverCode -ne 0) { throw "Stage 2 mapping resolver failed with exit $resolverCode." }
+          $global:LASTEXITCODE=$null
+          & .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
+          $overlayCode=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if ($overlayCode -ne 0) { throw "Stage 2 canonical mapping overlay failed with exit $overlayCode." }
+          $global:LASTEXITCODE=0
 
       - name: Upload XREP GeckoTerminal drift evidence
         uses: actions/upload-artifact@v4
