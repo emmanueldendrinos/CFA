@@ -4,7 +4,12 @@ on:
   push:
     paths:
       - 'scripts/windows/Verify-CfaStage2XrepGeckoTerminal.ps1'
+      - 'scripts/windows/Validate-CfaStage2XrepBlocker.ps1'
       - 'candidate-analysis/CFA-Stage2-GeckoTerminal-Xrep-Seeds.csv'
+      - 'candidate-analysis/CFA-Stage2-GeckoTerminal-Xrep-Evidence.csv'
+      - 'candidate-analysis/CFA-Stage2-Xrep-Blocker-Evidence.csv'
+      - 'candidate-analysis/CFA-Stage2-Mapping-Adjudications-03.csv'
+      - 'docs/evidence/stage2-xrep-geckoterminal-evidence.md'
       - '.github/workflows/stage2-xrep-geckoterminal-validation.yml'
   workflow_dispatch:
 
@@ -17,29 +22,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Parse XREP verifier with PowerShell 7
+      - name: Parse XREP scripts with PowerShell 7
         shell: pwsh
         run: |
-          $tokens=$null; $errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'XREP GeckoTerminal verifier failed PowerShell 7 parsing.' }
+          foreach($path in @('.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1','.\scripts\windows\Validate-CfaStage2XrepBlocker.ps1')){
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw "XREP Stage 2 script failed PowerShell 7 parsing: $path" }
+          }
 
-      - name: Parse XREP verifier with Windows PowerShell 5.1
+      - name: Parse XREP scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $tokens=$null; $errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'XREP GeckoTerminal verifier failed Windows PowerShell 5.1 parsing.' }
+          foreach($path in @('.\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1','.\scripts\windows\Validate-CfaStage2XrepBlocker.ps1')){
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw "XREP Stage 2 script failed Windows PowerShell 5.1 parsing: $path" }
+          }
 
       - name: Self-test XREP verifier
         shell: powershell
         run: .\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1 -SelfTest
 
-      - name: Acquire exact XREP and REPv2 identity evidence
+      - name: Self-test XREP blocker validator
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage2XrepBlocker.ps1 -SelfTest
+
+      - name: Validate frozen XREP blocker evidence
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage2XrepBlocker.ps1
+
+      - name: Acquire exact XREP and REPv2 identity evidence for drift check
         shell: powershell
         run: .\scripts\windows\Verify-CfaStage2XrepGeckoTerminal.ps1
 
-      - name: Upload XREP GeckoTerminal evidence
+      - name: Resolve Stage 2 mappings with XREP blocker
+        shell: powershell
+        run: |
+          .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Stage 2 mapping resolver failed with exit $LASTEXITCODE." }
+          .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Stage 2 canonical mapping overlay failed with exit $LASTEXITCODE." }
+
+      - name: Upload XREP GeckoTerminal drift evidence
         uses: actions/upload-artifact@v4
         with:
           name: cfa-stage2-xrep-geckoterminal-evidence
