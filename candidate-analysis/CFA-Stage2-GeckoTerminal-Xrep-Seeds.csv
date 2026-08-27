@@ -1,0 +1,3 @@
+base_asset_id,network_id,token_address,token_role,source_url,seed_basis
+XREP,eth,0x1985365e9f78359a9b6ad760e32412f4a445e862,Q2_XREP_REPV1,https://github.com/AugurProject/V2Migration/blob/master/V2Deployment.md,"Augur v2 migration documentation identifies 0x1985.. as the current REP token to migrate to REPv2; CFA Q2 Kraken evidence separately identifies XREP/REP"
+REPV2,eth,0x221657776846890989a759ba2973e427dff5c9bb,Q2_REPV2,https://etherscan.io/token/0x221657776846890989a759ba2973e427dff5c9bb,"CFA direct CoinGecko evidence maps REPV2 to stable id augur with this Ethereum contract; used as the distinct-version control"
