@@ -59,6 +59,23 @@ jobs:
           Write-Host "DIRECT_ID_EVIDENCE_EXIT=$code"
           $global:LASTEXITCODE=0
 
+      - name: Reconcile direct evidence publish workspace
+        shell: powershell
+        run: |
+          $resolverOnly=@(
+            'candidate-analysis/CFA-Stage2-Mapping-Decisions.csv',
+            'docs/evidence/stage2-mapping-decisions.md',
+            'docs/evidence/stage2-mapping-decisions.json'
+          )
+          $allowed=@(
+            'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Evidence.csv',
+            'docs/evidence/stage2-direct-coingecko-id-evidence.md'
+          )
+          git restore -- $resolverOnly
+          $dirty=@(git diff --name-only)
+          foreach($path in $dirty){if($allowed-notcontains$path){throw "Unexpected dirty path before direct evidence publish: $path"}}
+          Write-Host ('Direct evidence publish dirty paths: '+($dirty-join','))
+
       - name: Upload direct ID evidence
         uses: actions/upload-artifact@v4
         with:
@@ -80,6 +97,8 @@ jobs:
           git -c core.autocrlf=false add -- $allowed
           $staged=@(git diff --cached --name-only)
           foreach($path in $staged){if($allowed-notcontains$path){throw "Unexpected staged path: $path"}}
+          $unstaged=@(git diff --name-only)
+          if($unstaged.Count -gt 0){throw ('Unexpected unstaged paths before direct evidence commit: '+($unstaged-join','))}
           if($staged.Count -gt 0){
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
