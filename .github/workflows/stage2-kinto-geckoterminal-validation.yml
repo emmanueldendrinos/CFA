@@ -6,19 +6,18 @@ on:
       - 'scripts/windows/Verify-CfaStage2KintoGeckoTerminal.ps1'
       - 'scripts/windows/Verify-CfaStage2KintoGeckoTerminalTokenData.ps1'
       - 'candidate-analysis/CFA-Stage2-GeckoTerminal-Kinto-Seeds.csv'
+      - 'candidate-analysis/CFA-Stage2-Kinto-Blocker-Evidence.csv'
       - '.github/workflows/stage2-kinto-geckoterminal-validation.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Parse Kinto verifiers with PowerShell 7
         shell: pwsh
@@ -65,26 +64,3 @@ jobs:
             docs/evidence/stage2-kinto-geckoterminal-token-data-evidence.md
           if-no-files-found: error
           retention-days: 7
-
-      - name: Commit exact Kinto evidence
-        if: github.event_name == 'push'
-        shell: powershell
-        run: |
-          $allowed=@(
-            'candidate-analysis/CFA-Stage2-GeckoTerminal-Kinto-Evidence.csv',
-            'candidate-analysis/CFA-Stage2-GeckoTerminal-Kinto-TokenData-Evidence.csv',
-            'docs/evidence/stage2-kinto-geckoterminal-evidence.md',
-            'docs/evidence/stage2-kinto-geckoterminal-token-data-evidence.md'
-          )
-          git -c core.autocrlf=false add -- $allowed
-          $staged=@(git diff --cached --name-only)
-          foreach($path in $staged){if($allowed-notcontains$path){throw "Unexpected staged Kinto evidence path: $path"}}
-          $unstaged=@(git diff --name-only)
-          if($unstaged.Count -gt 0){throw ('Unexpected unstaged paths before Kinto evidence commit: '+($unstaged-join','))}
-          if($staged.Count -gt 0){
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Publish CFA Stage 2 Kinto GeckoTerminal evidence'
-            git pull --rebase origin "${{ github.ref_name }}"
-            git push origin "HEAD:${{ github.ref_name }}"
-          }
