@@ -1,0 +1,3 @@
+base_asset_id,network_id,token_address,temporal_role,seed_basis
+K,arbitrum,0x010700ab046dd8e92b0e3587842080df36364ed3,Q2_2025_ACTIVE_CONTRACT,"Kinto official documentation identifies this as the deprecated Arbitrum K contract; migration occurred July 10 2025 after Q2"
+K,arbitrum,0x6ba19ee69d5dde3ab70185c801fa404f66fedb58,POST_Q2_MIGRATED_CONTRACT,"Kinto official documentation identifies this as the replacement Arbitrum K contract after the July 10 2025 migration"
