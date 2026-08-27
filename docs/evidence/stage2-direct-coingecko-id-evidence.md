@@ -1,8 +1,8 @@
 # CFA Stage 2 Direct CoinGecko ID Evidence
 
-- Seed rows: 18
+- Seed rows: 10
 - HTTP 200 + returned-id PASS: 9
-- HTTP 404: 9
+- HTTP 404: 1
 - HTTP 200 parse/nonmatching failures: 0
 - Other HTTP failures: 0
 
