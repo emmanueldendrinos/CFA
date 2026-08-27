@@ -4,7 +4,9 @@ on:
   push:
     paths:
       - 'scripts/windows/Verify-CfaStage2DirectCoinGeckoIds.ps1'
+      - 'scripts/windows/Apply-CfaStage2CanonicalMappings.ps1'
       - 'candidate-analysis/CFA-Stage2-Direct-CoinGecko-ID-Seeds.csv'
+      - 'candidate-analysis/CFA-Stage2-Mapping-Canonical-Adjudications.csv'
       - '.github/workflows/stage2-direct-coingecko-id-validation.yml'
   workflow_dispatch:
 
@@ -37,9 +39,15 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1 -SelfTest
 
+      - name: Self-test canonical mapping overlay
+        shell: powershell
+        run: .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1 -SelfTest
+
       - name: Resolve current mapping decisions for lifecycle validation
         shell: powershell
-        run: .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+        run: |
+          .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+          .\scripts\windows\Apply-CfaStage2CanonicalMappings.ps1
 
       - name: Verify direct CoinGecko IDs
         shell: powershell
@@ -71,7 +79,7 @@ jobs:
           )
           git -c core.autocrlf=false add -- $allowed
           $staged=@(git diff --cached --name-only)
-          foreach($path in $staged){if($allowed -notcontains $path){throw "Unexpected staged path: $path"}}
+          foreach($path in $staged){if($allowed-notcontains$path){throw "Unexpected staged path: $path"}}
           if($staged.Count -gt 0){
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
