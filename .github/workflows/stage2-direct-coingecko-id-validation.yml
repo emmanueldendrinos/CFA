@@ -37,6 +37,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Verify-CfaStage2DirectCoinGeckoIds.ps1 -SelfTest
 
+      - name: Resolve current mapping decisions for lifecycle validation
+        shell: powershell
+        run: .\scripts\windows\Resolve-CfaStage2Mappings.ps1
+
       - name: Verify direct CoinGecko IDs
         shell: powershell
         run: |
