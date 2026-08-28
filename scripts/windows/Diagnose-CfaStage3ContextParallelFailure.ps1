@@ -42,7 +42,8 @@ function Get-ExceptionLines {
 function Get-DiagnosticCSharp {
     param([string]$InventoryScript)
     $text=Get-Content -LiteralPath $InventoryScript -Raw
-    $m=[regex]::Match($text,"(?s)\$CSharp=@'\r?\n(?<code>.*?)\r?\n'@")
+    $pattern='(?s)\$CSharp=@''\r?\n(?<code>.*?)\r?\n''@'
+    $m=[regex]::Match($text,$pattern)
     if(-not$m.Success){throw 'Could not extract embedded C# scanner source from inventory artifact.'}
     $code=$m.Groups['code'].Value
     if($code-notmatch'namespace CfaStage3Context'){throw 'Expected scanner namespace not found.'}
