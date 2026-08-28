@@ -1,0 +1,45 @@
+name: Stage 3 Context Diagnostic Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Diagnose-CfaStage3ContextParallelFailure.ps1'
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - '.github/workflows/stage3-context-diagnostic-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Diagnose-CfaStage3ContextParallelFailure.ps1'
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - '.github/workflows/stage3-context-diagnostic-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse diagnostic with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Diagnose-CfaStage3ContextParallelFailure.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Parallel diagnostic failed PowerShell 7 parsing.'}
+
+      - name: Parse diagnostic with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Diagnose-CfaStage3ContextParallelFailure.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Parallel diagnostic failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test diagnostic with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Diagnose-CfaStage3ContextParallelFailure.ps1 -SelfTest
+
+      - name: Self-test diagnostic with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage3ContextParallelFailure.ps1 -SelfTest

@@ -1,0 +1,106 @@
+name: Stage 3 Context Inventory Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - 'docs/evidence/stage3-context-adjudication-contract.md'
+      - 'candidate-analysis/CFA-Stage3-News-Aliases.csv'
+      - '.github/workflows/stage3-context-inventory-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - 'docs/evidence/stage3-context-adjudication-contract.md'
+      - 'candidate-analysis/CFA-Stage3-News-Aliases.csv'
+      - '.github/workflows/stage3-context-inventory-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse extractor with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage3ContextInventory.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Context inventory extractor failed PowerShell 7 parsing.'}
+
+      - name: Parse extractor with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage3ContextInventory.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Context inventory extractor failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test extractor with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -SelfTest
+
+      - name: Self-test extractor with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -SelfTest
+
+      - name: Regression-test post-scan selection and reading helpers
+        shell: powershell
+        run: |
+          $path=(Resolve-Path '.\scripts\windows\Build-CfaStage3ContextInventory.ps1').ProviderPath
+          $tokens=$null;$errors=$null
+          $ast=[System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+          if($errors.Count-gt0){throw 'Extractor AST could not be parsed for helper regression.'}
+          $wanted=@('Csv','Write-CsvRow','Open-CandidateWriter','Select-Stratum','Build-ReadingPopulation')
+          foreach($name in $wanted){
+            $fn=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true))
+            if($fn.Count-ne1){throw "Expected one function definition for ${name}; observed $($fn.Count)."}
+            Invoke-Expression $fn[0].Extent.Text
+          }
+          $Utf8=New-Object System.Text.UTF8Encoding($false)
+          $root=Join-Path ([System.IO.Path]::GetTempPath()) ('cfa-context-helper-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $root -Force|Out-Null
+          try{
+            $header=@('sample_stratum','selection_rank','lineage_key','context_sha256','context_byte_length','archive_file','archive_timestamp_utc','row_ordinal','record_id','gdelt_date_utc','source_common_name','document_identifier','page_title','themes_raw','persons_raw','organizations_raw','all_names_raw','extras_raw','context_replacement_present','discovery_candidate','discovery_broad_anchor','discovery_candidate_asset_count','discovery_candidate_asset_ids','discovery_candidate_aliases')
+            function Row([string]$rank,[string]$lineage,[string]$hash,[string]$stratum,[string]$ordinal){
+              [pscustomobject]@{sample_stratum=$stratum;selection_rank=$rank;lineage_key=$lineage;context_sha256=$hash;context_byte_length='10';archive_file='20250401000000.gkg.csv.zip';archive_timestamp_utc='2025-04-01T00:00:00Z';row_ordinal=$ordinal;record_id=('r'+$ordinal);gdelt_date_utc='20250401000000';source_common_name='source';document_identifier='url';page_title='title';themes_raw='';persons_raw='';organizations_raw='';all_names_raw='';extras_raw='';context_replacement_present='False';discovery_candidate='True';discovery_broad_anchor='True';discovery_candidate_asset_count='1';discovery_candidate_asset_ids='AVAX';discovery_candidate_aliases='AVAX'}
+            }
+            $candidate=Join-Path $root 'candidate.csv'
+            @(Row ('03'+'0'*62) 'c' ('c'*64) 'UNBIASED' '3';Row ('01'+'0'*62) 'a' ('a'*64) 'UNBIASED' '1';Row ('02'+'0'*62) 'b' ('a'*64) 'UNBIASED' '2')|Export-Csv -LiteralPath $candidate -NoTypeInformation -Encoding UTF8
+            $selection=Join-Path $root 'selection.csv';$sw=Open-CandidateWriter $selection $header;$seen=New-Object 'System.Collections.Generic.HashSet[string]'
+            try{$selected=Select-Stratum $candidate 2 $seen $sw $header}finally{$sw.Dispose()}
+            if($selected-ne2-or$seen.Count-ne2){throw 'Select-Stratum cardinality regression.'}
+            $s=@(Import-Csv -LiteralPath $selection)
+            if($s.Count-ne2-or$s[0].lineage_key-ne'a'-or$s[1].lineage_key-ne'b'){throw 'Select-Stratum rank ordering regression.'}
+            $extra=Row ('04'+'0'*62) 'd' ('a'*64) 'RETRIEVAL_NEGATIVE' '4'
+            @($s)+@($extra)|Export-Csv -LiteralPath $selection -NoTypeInformation -Encoding UTF8
+            $readingPath=Join-Path $root 'reading.csv';$r=Build-ReadingPopulation $selection $readingPath $root 100
+            if($r.unique_contexts-ne1){throw 'Reading context dedup regression.'}
+            $rr=@(Import-Csv -LiteralPath $readingPath)
+            if($rr.Count-ne1-or[int]$rr[0].selection_occurrence_count-ne3){throw 'Reading occurrence-count regression.'}
+            if($rr[0].selection_strata-notmatch'UNBIASED'-or$rr[0].selection_strata-notmatch'RETRIEVAL_NEGATIVE'){throw 'Reading stratum-union regression.'}
+            if($r.manifest.Count-ne1-or[int]$r.manifest[0].rows-ne1){throw 'Batch manifest cardinality regression.'}
+            $batch=Join-Path $root ([string]$r.manifest[0].file)
+            if(-not(Test-Path -LiteralPath $batch -PathType Leaf)){throw 'Batch output was not created.'}
+            if((Get-FileHash -LiteralPath $batch -Algorithm SHA256).Hash.ToLowerInvariant()-ne[string]$r.manifest[0].sha256){throw 'Batch manifest SHA-256 regression.'}
+            Write-Host 'CFA STAGE 3 POST-SCAN HELPER REGRESSION: PASS'
+          }finally{Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue}
+
+      - name: Validate exact candidate inputs
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -ValidateInputsOnly
+
+      - name: Enforce frozen context contract
+        shell: powershell
+        run: |
+          $text=Get-Content -LiteralPath '.\docs\evidence\stage3-context-adjudication-contract.md' -Raw
+          foreach($id in 1..8|ForEach-Object{'S3-CTX-{0:D3}'-f$_}){if($text-notmatch[regex]::Escape($id)){throw "Frozen task ID missing from contract: $id"}}
+          if($text-notmatch'40,000'){throw 'Discovery selection size is not frozen.'}
+          if($text-notmatch'15,000'){throw 'Discovery stratum size is not frozen.'}
+          if($text-notmatch'10,000'){throw 'Edge stratum size is not frozen.'}
+          if($text-notmatch'99%'){throw 'Retrieval recall validation threshold is not frozen.'}
+          if($text-notmatch'context-discovery-selection\.csv'){throw 'Statistical selection artifact is not defined.'}
+          if($text-notmatch'context-discovery-reading\.csv'){throw 'Reading-population artifact is not defined.'}
+          Write-Host 'CFA STAGE 3 CONTEXT CONTRACT: PASS'

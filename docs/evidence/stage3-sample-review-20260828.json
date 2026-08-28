@@ -1,0 +1,137 @@
+{
+  "review_date": "2026-08-28",
+  "run_id": "20260828-125505-1d682a2599b245f7bdb06ce44a69764a",
+  "review_status": "FAIL",
+  "source_artifacts": {
+    "stage3_match_summary_sha256": "6a74d87afd5a747e27e6533da7948386e250a15d8e1ec433462929afae661bab",
+    "stage3_match_samples_sha256": "965e102586c6c6a6c510dae40238e8840b0ded97de2c5fa3313e22bdb9abc1f8",
+    "sample_rows": 4521,
+    "match_rows": 1685,
+    "reject_context_rows": 2836,
+    "sample_assets": 378,
+    "sample_asset_alias_pairs": 415
+  },
+  "run_gates": {
+    "S3-ID-01": "PASS",
+    "CFA-S3-002": "PASS",
+    "CFA-S3-003": "PASS",
+    "CFA-S3-004": "PASS",
+    "CFA-S3-005": "FAIL",
+    "CFA-S3-006": "BLOCKED"
+  },
+  "representative_false_positives": [
+    {
+      "base_asset_id": "S",
+      "alias_text": "S",
+      "record_id": "20250401000000-565",
+      "title": "Dow Climbs 418, Nasdaq Falls 24, S&P 500 Adds 31",
+      "defect_class": "single-letter symbol collides with S&P notation; generic market syntax incorrectly supplies identity"
+    },
+    {
+      "base_asset_id": "KEY",
+      "alias_text": "KEY",
+      "record_id": "20250404084500-376",
+      "title": "KeyCorp (NYSE:KEY) Price Target Cut to $16.50 by Analysts at JPMorgan Chase & Co.",
+      "defect_class": "Kraken symbol collides with an equity ticker; price vocabulary incorrectly supplies identity"
+    },
+    {
+      "base_asset_id": "XXDG",
+      "alias_text": "DOGE",
+      "record_id": "20250401073000-602",
+      "title": "Elon Musk-led DOGE finally gains access to highly sensitive Federal Personnel, Payroll System",
+      "defect_class": "government DOGE acronym accepted because ordinary-language gains matches market vocabulary"
+    },
+    {
+      "base_asset_id": "UST",
+      "alias_text": "UST",
+      "record_id": "20250416211500-852",
+      "title": "Munis firmer as UST yields fall",
+      "defect_class": "Treasury-market acronym collides with Kraken symbol; fall vocabulary incorrectly supplies crypto identity"
+    },
+    {
+      "base_asset_id": "W",
+      "alias_text": "W",
+      "record_id": "20250408194500-1344",
+      "title": "Wayfair (NYSE:W) Stock Price Down 8%  – Here's Why",
+      "defect_class": "single-letter Kraken symbol collides with equity ticker"
+    },
+    {
+      "base_asset_id": "ZETA",
+      "alias_text": "ZETA",
+      "record_id": "20250402180000-2234",
+      "title": "Zeta Global (NYSE:ZETA) Stock Price Up 2.5%  – Should You Buy?",
+      "defect_class": "Kraken symbol collides with equity ticker"
+    },
+    {
+      "base_asset_id": "XRT",
+      "alias_text": "XRT",
+      "record_id": "20250419083000-634",
+      "title": "Renaissance Technologies LLC Lowers Stock Holdings in SPDR S&P Retail ETF (NYSEARCA:XRT)",
+      "defect_class": "Kraken symbol collides with ETF ticker"
+    },
+    {
+      "base_asset_id": "XRT",
+      "alias_text": "XRT",
+      "record_id": "20250408121500-315",
+      "title": "XRPTurbo Launches $XRT Token On Bitmart, Set To Release",
+      "defect_class": "Kraken symbol collides with an unrelated crypto token; crypto syntax alone cannot establish asset identity"
+    },
+    {
+      "base_asset_id": "OP",
+      "alias_text": "Optimism",
+      "record_id": "20250408131500-562",
+      "title": "Investor Optimism Defies Volatility",
+      "defect_class": "common-word manual name accepted because investor vocabulary is not asset-specific"
+    },
+    {
+      "base_asset_id": "XXLM",
+      "alias_text": "Stellar",
+      "record_id": "20250409191500-826",
+      "title": "Stellar 10Y Auction Prices At 2nd Highest Stop Through On Record Despite Plunge In Directs",
+      "defect_class": "common adjective accepted because price vocabulary is not asset-specific"
+    },
+    {
+      "base_asset_id": "EOS",
+      "alias_text": "EOS",
+      "record_id": "20250416171500-1887",
+      "title": "Gym chain EoS Fitness explores $1 billion sale, sources say",
+      "defect_class": "ambiguous acronym/name accepted because chain vocabulary is not asset-specific"
+    },
+    {
+      "base_asset_id": "POL",
+      "alias_text": "Polygon",
+      "record_id": "20250427123000-665",
+      "title": "Polygon Live  2025 - Ticket Prices & Festival Line Up",
+      "defect_class": "common-word name accepted because prices vocabulary is not asset-specific"
+    }
+  ],
+  "representative_false_negatives": [
+    {
+      "base_asset_id": "AVAX",
+      "alias_text": "AVAX",
+      "record_id": "20250402171500-331",
+      "title": "Avalanche (AVAX) To Outpace Both Bitcoin and Ethereum By End of 2029, Standard Chartered Predicts After Initiating Coverage",
+      "defect_class": "same-asset canonical name plus symbol and explicit crypto assets are insufficient under current local-market-word rule"
+    },
+    {
+      "base_asset_id": "ATOM",
+      "alias_text": "ATOM",
+      "record_id": "20250415164500-1558",
+      "title": "Cosmos Hits Market Capitalization of $1.59 Billion (ATOM)",
+      "defect_class": "same-asset canonical name plus symbol is rejected because the accepted local vocabulary is incomplete"
+    }
+  ],
+  "defect_boundary": {
+    "symbol_identity": "A Kraken exchange symbol is verified inside the Kraken market universe but is not globally unique news identity. Equity tickers, ETF tickers, government acronyms, ordinary abbreviations, and unrelated crypto projects can use the same text.",
+    "context_identity": "Generic market or organizational words such as price, trading, gains, fall, support, investor, chain, and similar terms cannot by themselves disambiguate a common-word or acronym alias.",
+    "current_rule_result": "The current rule is both too permissive and too restrictive; ad-hoc alias blacklists would not repair the defect class."
+  },
+  "frozen_remediation_tasks": [
+    {"task_id": "S3-SEM2-001", "requirement": "Preserve the corrected full-Q2 source/run accounting as PASS evidence while recording CFA-S3-005 FAIL for the bounded review."},
+    {"task_id": "S3-SEM2-002", "requirement": "Treat default Kraken exchange symbols as unverified standalone news identity; zero collision inside Kraken is not sufficient semantic approval for news matching."},
+    {"task_id": "S3-SEM2-003", "requirement": "Treat generic market/context vocabulary as insufficient standalone disambiguation for common-word or acronym aliases."},
+    {"task_id": "S3-SEM2-004", "requirement": "Return to upstream alias-identity/corroboration design before modifying matching; do not repair this defect with row-specific or alias-specific blacklists."},
+    {"task_id": "S3-SEM2-005", "requirement": "Before any new full-Q2 scan, regression-test revised semantics against the observed false-positive and false-negative classes in this review."},
+    {"task_id": "S3-SEM2-006", "requirement": "Only after component/sample regressions pass may the exact full-Q2 matcher be rerun and CFA-S3-005 reviewed again."}
+  ]
+}
