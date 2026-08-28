@@ -10,6 +10,9 @@ on:
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
       - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'candidate-analysis/CFA-Stage3-Alias-Match-Overrides.csv'
+      - 'docs/evidence/stage3-sample-review-20260827.json'
+      - 'docs/evidence/stage3-sample-review-20260827.md'
       - 'docs/evidence/stage3-simple-news-matching-contract.md'
       - '.github/workflows/stage3-simple-news-matching-validation.yml'
   pull_request:
@@ -21,6 +24,9 @@ on:
       - 'candidate-analysis/ASRP-Q2-Pair-Identity-Frozen-v1.0.0.csv'
       - 'candidate-analysis/ASRP-Q2-GDELT-GKG-Operational-Aliases-v1.0.0.csv'
       - 'candidate-analysis/CFA-Stage2-Alias-Semantic-Decisions.csv'
+      - 'candidate-analysis/CFA-Stage3-Alias-Match-Overrides.csv'
+      - 'docs/evidence/stage3-sample-review-20260827.json'
+      - 'docs/evidence/stage3-sample-review-20260827.md'
       - 'docs/evidence/stage3-simple-news-matching-contract.md'
       - '.github/workflows/stage3-simple-news-matching-validation.yml'
   workflow_dispatch:
@@ -74,7 +80,7 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Build-CfaStage3NewsAliases.ps1 -SelfTest
 
-      - name: Self-test Stage 3 matcher
+      - name: Self-test Stage 3 matcher precision rules
         shell: powershell
         run: .\scripts\windows\Run-CfaStage3NewsMatching.ps1 -SelfTest
 
@@ -89,6 +95,25 @@ jobs:
       - name: Build full Kraken news alias universe
         shell: powershell
         run: .\scripts\windows\Build-CfaStage3NewsAliases.ps1
+
+      - name: Validate Stage 3 precision evidence and overrides
+        shell: powershell
+        run: |
+          $review=Get-Content -LiteralPath '.\docs\evidence\stage3-sample-review-20260827.json' -Raw|ConvertFrom-Json
+          if(([string]$review.gates.'CFA-S3-004') -ne 'UNVERIFIED'){throw 'Prior CFA-S3-004 invalidation state is not UNVERIFIED.'}
+          if(([string]$review.gates.'CFA-S3-005') -ne 'FAIL'){throw 'Prior CFA-S3-005 review is not recorded as FAIL.'}
+          if(([string]$review.gates.'CFA-S3-006') -ne 'BLOCKED'){throw 'CFA-S3-006 must remain BLOCKED.'}
+          $overrides=@(Import-Csv -LiteralPath '.\candidate-analysis\CFA-Stage3-Alias-Match-Overrides.csv')
+          if($overrides.Count-ne2){throw "Expected exactly 2 evidence-driven match-policy overrides; observed $($overrides.Count)."}
+          $expected=@{'SHIB|shiba inu'='TITLE_CRYPTO_NAME';'XXRP|ripple'='TITLE_CRYPTO_NAME'}
+          foreach($row in $overrides){
+            $key=([string]$row.base_asset_id)+'|'+([string]$row.alias_text).Trim().ToLowerInvariant()
+            if(-not$expected.ContainsKey($key)){throw "Unexpected Stage 3 match-policy override: $key"}
+            if(([string]$row.match_policy) -ne ([string]$expected[$key])){throw "Unexpected policy for ${key}: $($row.match_policy)"}
+            [void]$expected.Remove($key)
+          }
+          if($expected.Count-ne0){throw 'Required Stage 3 match-policy override is missing.'}
+          Write-Host 'CFA STAGE 3 PRECISION EVIDENCE: PASS'
 
       - name: Validate matcher inputs on full universe
         shell: powershell

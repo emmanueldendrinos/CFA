@@ -1,0 +1,3 @@
+base_asset_id,alias_text,match_policy,evidence_run_id,evidence_record_id,reason
+SHIB,Shiba Inu,TITLE_CRYPTO_NAME,20260827-141039-b007155a1589400889a8a669cecf9240,20250509230000-224,Accepted context-free match was an ordinary Shiba Inu dog article; require an explicit crypto title anchor.
+XXRP,Ripple,TITLE_CRYPTO_NAME,20260827-141039-b007155a1589400889a8a669cecf9240,20250513144500-438,Accepted context-free match used ordinary-language ripple in a Tesla article; require an explicit crypto title anchor.
