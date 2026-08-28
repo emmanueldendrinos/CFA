@@ -119,8 +119,8 @@ function Get-AliasTools{
  if($collisions.Count-gt0){throw 'Cross-asset Stage 3 alias collisions: '+($collisions-join';')}
  $nameParts=@($nameAliases|Sort-Object -Unique|Sort-Object Length -Descending|ForEach-Object{[regex]::Escape($_)})
  $symbolParts=@($symbolAliases|Sort-Object -Unique|Sort-Object Length -Descending|ForEach-Object{[regex]::Escape($_)})
- $nameRegex=if($nameParts.Count-gt0){New-Object System.Text.RegularExpressions.Regex(('(?<![\p{L}\p{N}])(?:'+($nameParts-join'|')+')(?![\p{L}\p{N}])'),([Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant))}else{$null}
- $symbolRegex=if($symbolParts.Count-gt0){New-Object System.Text.RegularExpressions.Regex(('(?<![\p{L}\p{N}])(?:'+($symbolParts-join'|')+')(?![\p{L}\p{N}])'),[Text.RegularExpressions.RegexOptions]::CultureInvariant)}else{$null}
+ $nameRegex=if($nameParts.Count-gt0){New-Object Text.RegularExpressions.Regex(('(?<![\p{L}\p{N}])(?:'+($nameParts-join'|')+')(?![\p{L}\p{N}])'),([Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant))}else{$null}
+ $symbolRegex=if($symbolParts.Count-gt0){New-Object Text.RegularExpressions.Regex(('(?<![\p{L}\p{N}])(?:'+($symbolParts-join'|')+')(?![\p{L}\p{N}])'),[Text.RegularExpressions.RegexOptions]::CultureInvariant)}else{$null}
  return [pscustomobject]@{byKey=$byKey;nameLookup=$nameLookup;symbolLookup=$symbolLookup;nameRegex=$nameRegex;symbolRegex=$symbolRegex;assetCount=$assets.Count;aliasCount=$Rows.Count;overrideCount=$overrides.Count}
 }
 
