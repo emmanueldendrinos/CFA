@@ -15,7 +15,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $ExpectedFieldCount=27
 $ExpectedArchives=7163
-$ExpectedRows=9091236L
+$ExpectedRows=9183757L
 $ExpectedMalformedRows=5L
 $RecordIdIndex=0;$DateIndex=1;$SourceIndex=3;$DocumentIndex=4;$ThemesIndex=8;$PersonsIndex=12;$OrganizationsIndex=14;$AllNamesIndex=23;$ExtrasIndex=26
 $CryptoTitleRegex=New-Object System.Text.RegularExpressions.Regex('(?<![\p{L}\p{N}])(?:crypto|cryptocurrency|cryptocurrencies|blockchain|token|tokens|coin|coins|web3|defi|nft|nfts|staking|wallet|wallets|digital\s+asset|digital\s+assets)(?![\p{L}\p{N}])',([Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant))
@@ -125,6 +125,7 @@ function Get-AliasTools{
 }
 
 function Invoke-SelfTest{
+ if($ExpectedArchives-ne7163-or$ExpectedRows-ne9183757L-or$ExpectedMalformedRows-ne5L){throw 'source accounting constants'}
  $p=Parse-OffsetNames 'Bitcoin,10;Broken;Ethereum,25';if($p.items.Count-ne2-or$p.malformed-ne1){throw 'offset parser'}
  if(-not(Test-EconBitcoin 'ECON_BITCOIN,5;OTHER,1')){throw 'theme match'};if(Test-EconBitcoin 'ECON_BITCOINISH,5'){throw 'theme false positive'}
  $title=Get-PageTitle 'x<PAGE_TITLE>Bitcoin Cash &amp; crypto rally</PAGE_TITLE>y';if($title-ne'Bitcoin Cash & crypto rally'){throw 'title parser'};if(-not$CryptoTitleRegex.IsMatch($title)){throw 'crypto title anchor'};if(-not$MarketTitleRegex.IsMatch($title)){throw 'market title anchor'}
