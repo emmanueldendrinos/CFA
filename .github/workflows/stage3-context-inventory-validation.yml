@@ -1,0 +1,64 @@
+name: Stage 3 Context Inventory Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - 'docs/evidence/stage3-context-adjudication-contract.md'
+      - 'candidate-analysis/CFA-Stage3-News-Aliases.csv'
+      - '.github/workflows/stage3-context-inventory-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Build-CfaStage3ContextInventory.ps1'
+      - 'docs/evidence/stage3-context-adjudication-contract.md'
+      - 'candidate-analysis/CFA-Stage3-News-Aliases.csv'
+      - '.github/workflows/stage3-context-inventory-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse extractor with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage3ContextInventory.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Context inventory extractor failed PowerShell 7 parsing.'}
+
+      - name: Parse extractor with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage3ContextInventory.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Context inventory extractor failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test extractor with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -SelfTest
+
+      - name: Self-test extractor with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -SelfTest
+
+      - name: Validate exact candidate inputs
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage3ContextInventory.ps1 -ValidateInputsOnly
+
+      - name: Enforce frozen context contract
+        shell: powershell
+        run: |
+          $text=Get-Content -LiteralPath '.\docs\evidence\stage3-context-adjudication-contract.md' -Raw
+          foreach($id in 1..8|ForEach-Object{'S3-CTX-{0:D3}'-f$_}){if($text-notmatch[regex]::Escape($id)){throw "Frozen task ID missing from contract: $id"}}
+          if($text-notmatch'40,000'){throw 'Discovery selection size is not frozen.'}
+          if($text-notmatch'15,000'){throw 'Discovery stratum size is not frozen.'}
+          if($text-notmatch'10,000'){throw 'Edge stratum size is not frozen.'}
+          if($text-notmatch'99%'){throw 'Retrieval recall validation threshold is not frozen.'}
+          if($text-notmatch'context-discovery-selection\.csv'){throw 'Statistical selection artifact is not defined.'}
+          if($text-notmatch'context-discovery-reading\.csv'){throw 'Reading-population artifact is not defined.'}
+          Write-Host 'CFA STAGE 3 CONTEXT CONTRACT: PASS'
