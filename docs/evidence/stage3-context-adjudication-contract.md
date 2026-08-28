@@ -12,8 +12,8 @@ The governing distinction is explicit: PostgreSQL and deterministic code may par
 |---|---|
 | `S3-CTX-001` | Define and implement a lossless mechanical context-packet inventory over the verified Q2 GKG source. No asset or event conclusion may be emitted. |
 | `S3-CTX-002` | Measure exact source accounting, cryptographic context-key cardinality, repeated-context frequency, context-field missingness, and provisional high-recall discovery-candidate coverage. |
-| `S3-CTX-003` | Produce a deterministic 40,000-row discovery population: 15,000 unbiased rows, 15,000 provisional-retrieval negatives, and 10,000 asset/edge-enriched rows, deduplicated for reading while preserving sampling provenance. |
-| `S3-CTX-004` | Directly adjudicate the discovery population to design and freeze the semantic asset/event schema and a production high-recall retrieval rule. Fixed retrieval rules remain candidate generators only. |
+| `S3-CTX-003` | Select exactly 40,000 deterministic source-row occurrences for discovery: 15,000 unbiased rows, 15,000 provisional-retrieval negatives, and 10,000 asset/edge-enriched rows. Preserve all 40,000 selections for statistical inference, then deduplicate only the model-reading workload by context key while retaining occurrence counts and strata. |
+| `S3-CTX-004` | Directly adjudicate the discovery reading population to design and freeze the semantic asset/event schema and a production high-recall retrieval rule. Fixed retrieval rules remain candidate generators only. |
 | `S3-CTX-005` | Validate the frozen retrieval rule on a fresh 60,000-row holdout: 50,000 retrieval negatives plus 10,000 asset/context holdout rows. Require a lower 95% confidence bound of at least 99% for estimated retrieval recall before production adjudication. |
 | `S3-CTX-006` | Contextually adjudicate 100% of the final retrieved context population; every decision records exact input hash, schema/spec version, model/version, structured output, evidence, status, and decision hash. |
 | `S3-CTX-007` | Store frozen semantic decisions in PostgreSQL with lineage back to every source row and source-slot availability; preserve `UNVERIFIED` whenever context is insufficient. |
@@ -67,7 +67,7 @@ The model-facing context content is identified by `context_sha256`, computed fro
 
 `record_id`, GDELT date, archive name, and row ordinal are lineage, not semantic content, and are excluded from this context key. Repeated source rows with the same context key may be adjudicated once while retaining every lineage occurrence and earliest source availability.
 
-The extractor reports SHA-256 context-key distinctness and repeated-key counts. It does not claim semantic event deduplication: two different URLs or differently represented packets can describe the same real-world event and remain distinct until contextual event clustering.
+The extractor reports SHA-256 context-key distinctness and repeated-key counts. It also records canonical byte length and treats the same SHA-256 with a different canonical byte length as a blocking collision indicator. It does not claim semantic event deduplication: two different URLs or differently represented packets can describe the same real-world event and remain distinct until contextual event clustering.
 
 ## Provisional discovery retrieval
 
@@ -85,32 +85,44 @@ No candidate cue is an asset-identity or event conclusion. False positives are a
 
 ## Discovery sampling design
 
-The first contextual-reading population is fixed at 40,000 rows before semantic schema design.
+The first discovery **selection** is fixed at exactly 40,000 source-row occurrences before semantic schema design.
 
 ### Stratum A — unbiased corpus discovery: 15,000
 
-A deterministic pseudo-random sample from all valid Q2 source rows, independent of retrieval cues. This estimates the actual prevalence and variety of crypto-relevant records without matcher bias.
+A deterministic pseudo-random source-row sample from all valid Q2 rows, independent of retrieval cues. This is the only development stratum that can directly estimate overall source-row prevalence without retrieval conditioning.
 
 ### Stratum B — provisional-retrieval negatives: 15,000
 
-A deterministic pseudo-random sample from rows for which the provisional discovery cue is false. This is specifically for discovering missed terminology, sources, entity patterns, and event forms.
+A deterministic pseudo-random sample from source rows for which the provisional discovery cue is false. This is specifically for discovering missed terminology, sources, entity patterns, and event forms.
 
 ### Stratum C — asset/edge enriched: 10,000
 
-A deterministic sample enriched for candidate-alias occurrences, ambiguous/common symbols, multi-asset contexts, and broad crypto cues. The extractor records candidate asset IDs only as retrieval provenance; they are not semantic labels.
+A deterministic sample enriched for provisional candidate rows, including candidate-alias occurrences, ambiguous/common symbols, multi-asset contexts, and broad crypto cues. Candidate asset IDs are retrieval provenance only; they are not semantic labels.
 
-Sampling is hash-based and reproducible from source lineage. A larger deterministic oversample is generated during the single archive scan; after scanning, rows are sorted by selection rank, repeated context keys already chosen in an earlier stratum are skipped, and exact target counts are selected. If any stratum cannot supply its frozen target, `S3-CTX-003 = FAIL`.
+Sampling is hash-based and reproducible from physical source lineage. A larger deterministic oversample is emitted during the single archive scan; after scanning, each stratum is sorted by selection rank. Source lineages already selected by an earlier stratum are skipped so the selection table contains 40,000 distinct source rows. If any stratum cannot supply its frozen target, `S3-CTX-003 = FAIL`.
 
-The 40,000-row discovery population is development evidence and may be used to improve retrieval and the semantic schema. It is not a validation holdout.
+### Statistical selection versus reading population
+
+`context-discovery-selection.csv` preserves all 40,000 selected source-row occurrences. This table governs sampling proportions and later prevalence/recall calculations.
+
+The model should not repeatedly read byte-identical context. Therefore `context-discovery-reading.csv` deduplicates the 40,000 selections by `context_sha256` **only for adjudication efficiency**. Each reading row records:
+
+- `selection_occurrence_count` — how many of the 40,000 selected source rows have that context key;
+- `selection_strata` — every discovery stratum in which that context occurred;
+- one representative selected lineage row plus the complete model-facing context.
+
+A contextual decision for one reading row is projected back to all corresponding selection occurrences for statistical analysis. Deduplication therefore does not change source-row sampling weights.
+
+The 40,000-row discovery selection is development evidence and may be used to improve retrieval and the semantic schema. It is not a validation holdout.
 
 ## Holdout design after discovery
 
 The future 60,000-row holdout is not generated until the production retrieval specification is frozen, to prevent contamination.
 
-- 50,000 fresh retrieval-negative rows for recall estimation.
-- 10,000 fresh asset/context-enriched rows for semantic identity/event validation.
+- 50,000 fresh retrieval-negative source rows for recall estimation.
+- 10,000 fresh asset/context-enriched source rows for semantic identity/event validation.
 
-Holdout rows must be selected deterministically while excluding every discovery context key. If retrieval is revised after seeing holdout errors, that holdout becomes development evidence and a new independent holdout is required.
+Holdout source lineages must exclude every discovery selection lineage. Model reading may again deduplicate identical contexts while retaining every holdout selection occurrence and sampling weight. If retrieval is revised after seeing holdout errors, that holdout becomes development evidence and a new independent holdout is required.
 
 ## Semantic adjudication requirements
 
@@ -153,20 +165,21 @@ This distinction is required so media amplification is not mistaken for event fr
 
 - `context-inventory-summary.json`
 - `context-inventory-summary.md`
-- `context-discovery-sample.csv`
-- `context-discovery-batch-manifest.csv`
-- `context-discovery-batch-####.csv`
+- `context-discovery-selection.csv` — exactly 40,000 source-row selections when `S3-CTX-003 = PASS`;
+- `context-discovery-reading.csv` — context-deduplicated model-reading population with occurrence counts/strata;
+- `context-discovery-batch-manifest.csv`;
+- `context-discovery-batch-####.csv` — deterministic partitions of the reading population for upload/review;
 - temporary cryptographic-hash shards used only to count context-key cardinality; removed after successful reconciliation unless `-KeepHashShards` is requested.
 
-The discovery sample contains the complete model-facing context fields plus source lineage and sampling/retrieval provenance. Batch files are deterministic partitions of the exact same selected sample for upload/review convenience.
+The batch files partition the reading population, not the statistical selection table. The manifest records batch rows, bytes, SHA-256, and represented discovery strata.
 
 ## First-run hard gates
 
 | Gate | Requirement | Initial status |
 |---|---|---|
 | `S3-CTX-001` | Exact extractor artifact parses/self-tests and emits no semantic asset/event conclusion | **UNVERIFIED** until exact artifact validation |
-| `S3-CTX-002` | 7,163 archives; 9,183,757 rows; 5 quarantined malformed rows; 0 missing-critical valid-row failures; context inventory reconciles | **UNVERIFIED** until local full scan |
-| `S3-CTX-003` | Exact 15k/15k/10k discovery strata selected reproducibly with provenance and cross-stratum context dedup for reading | **UNVERIFIED** until local full scan |
+| `S3-CTX-002` | 7,163 archives; 9,183,757 rows; 5 quarantined malformed rows; 9,183,752 valid rows; 0 missing-critical failures; cryptographic context-key accounting reconciles | **UNVERIFIED** until local full scan |
+| `S3-CTX-003` | Exactly 15k/15k/10k source-row selections with unique physical lineage plus a context-deduplicated reading population retaining occurrence counts/strata | **UNVERIFIED** until local full scan |
 | `S3-CTX-004` | Discovery contextual adjudication and semantic/retrieval design | **BLOCKED** until `S3-CTX-001..003` PASS |
 | `S3-CTX-005` | Fresh 60k holdout validation | **BLOCKED** |
 | `S3-CTX-006` | Production contextual adjudication | **BLOCKED** |
