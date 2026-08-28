@@ -4,20 +4,36 @@ Status: **UNVERIFIED**
 
 This contract supersedes the failed fixed-rule semantic matcher as the forward Stage 3 design. The failed matcher and its evidence remain preserved for audit lineage. This contract does not reopen Stage 1 source coverage or the corrected full-Q2 source accounting.
 
-The governing distinction is explicit: PostgreSQL and deterministic code may parse, hash, deduplicate, retrieve, sample, store, and aggregate. They may not make the final semantic decision that a GDELT record is about a Kraken asset or that a specific event occurred. Those decisions require contextual adjudication from the available source context and must be stored as versioned, immutable derived evidence.
+The governing distinction is explicit: PostgreSQL and deterministic code may parse, retrieve candidates, sample, hash selected/model-facing contexts, store, and aggregate. They may not make the final semantic decision that a GDELT record is about a Kraken asset or that a specific event occurred. Those decisions require contextual adjudication from the available source context and must be stored as versioned, immutable derived evidence.
 
 ## Frozen task IDs
 
 | Task ID | Requirement |
 |---|---|
-| `S3-CTX-001` | Define and implement a lossless mechanical context-packet inventory over the verified Q2 GKG source. No asset or event conclusion may be emitted. |
-| `S3-CTX-002` | Measure exact source accounting, cryptographic context-key cardinality, repeated-context frequency, context-field missingness, and provisional high-recall discovery-candidate coverage. |
-| `S3-CTX-003` | Select exactly 40,000 deterministic source-row occurrences for discovery: 15,000 unbiased rows, 15,000 provisional-retrieval negatives, and 10,000 asset/edge-enriched rows. Preserve all 40,000 selections for statistical inference, then deduplicate only the model-reading workload by context key while retaining occurrence counts and strata. |
+| `S3-CTX-001` | Define and implement a lossless mechanical context inventory over the verified Q2 GKG source. No asset or event conclusion may be emitted. |
+| `S3-CTX-002` | Measure exact source accounting, context-field missingness, and provisional high-recall discovery-candidate coverage over all valid source rows. Global all-row context-key cardinality is **NOT_APPLICABLE** because no downstream conclusion requires it. |
+| `S3-CTX-003` | Select exactly 40,000 deterministic source-row occurrences for discovery: 15,000 unbiased rows, 15,000 provisional-retrieval negatives, and 10,000 asset/edge-enriched rows. Preserve all 40,000 selections for statistical inference, then cryptographically hash/deduplicate only the selected model-reading workload while retaining occurrence counts and strata. |
 | `S3-CTX-004` | Directly adjudicate the discovery reading population to design and freeze the semantic asset/event schema and a production high-recall retrieval rule. Fixed retrieval rules remain candidate generators only. |
 | `S3-CTX-005` | Validate the frozen retrieval rule on a fresh 60,000-row holdout: 50,000 retrieval negatives plus 10,000 asset/context holdout rows. Require a lower 95% confidence bound of at least 99% for estimated retrieval recall before production adjudication. |
 | `S3-CTX-006` | Contextually adjudicate 100% of the final retrieved context population; every decision records exact input hash, schema/spec version, model/version, structured output, evidence, status, and decision hash. |
 | `S3-CTX-007` | Store frozen semantic decisions in PostgreSQL with lineage back to every source row and source-slot availability; preserve `UNVERIFIED` whenever context is insufficient. |
 | `S3-CTX-008` | Define leakage-controlled news-event/hype factors only after semantic adjudication and event clustering are validated. Responses, model-ready data, and PLS remain blocked until then. |
+
+## 2026-08-28 performance correction
+
+The first local candidate run of the context inventory was stopped as a diagnostic failure before completion. At approximately local `2026-08-28 21:21:58`, process PID `13972` had accumulated about `8,677.4` CPU seconds and the run directory `20260828-155637-2186b79fb325486fbe34eb3314bd9ef8` contained 259 files / 92.6 MB, dominated by 256 per-prefix context-hash shards. The implementation was computing and writing a SHA-256 context key for every valid source row, enumerating all alias matches on every row, constructing rich PowerShell objects for every row, and computing additional SHA-256 sampling ranks.
+
+That design performed expensive work unrelated to the statistical or semantic endpoint. Global exact-context cardinality across all 9.18M source rows is not required to estimate crypto-news prevalence, validate retrieval recall, adjudicate selected contexts, or build final factors. It is therefore **NOT_APPLICABLE**, not a hard gate.
+
+The corrected extractor preserves the same source/accounting and discovery objectives while changing only mechanical execution:
+
+1. every valid source row is still parsed and counted;
+2. the provisional discovery cue is evaluated for every valid row using boolean/short-circuit tests only;
+3. one deterministic sampling SHA-256 is computed per valid source row, with separate bytes used for the three discovery strata;
+4. rich alias diagnostics, full context SHA-256, and PowerShell row objects are materialized only for deterministic oversample rows that can enter discovery selection;
+5. cryptographic context deduplication occurs on the exact selected/model-facing population, where it affects reading efficiency without changing sampling weights.
+
+Any output from the stopped first candidate run is invalidated and must not be used as Stage 3 evidence.
 
 ## Upstream evidence retained
 
@@ -35,10 +51,10 @@ The 1,573 provider-missing source slots are source missingness. They must never 
 
 ## Context packet
 
-For each valid GKG source row the mechanical extractor records only directly inspected fields and derived mechanical metadata:
+For each valid GKG source row the mechanical scan inspects only directly verified fields and derived mechanical metadata:
 
 - `record_id` — GKG field 0.
-- `gdelt_date_utc` — GKG field 1 as source text; semantic interpretation beyond validated shape is not inferred here.
+- `gdelt_date_utc` — GKG field 1 as source text.
 - `source_common_name` — field 3.
 - `document_identifier` — field 4.
 - `themes_raw` — field 8.
@@ -54,7 +70,7 @@ The archive timestamp is the conservative source-availability timestamp for late
 
 ## Canonical semantic-context key
 
-The model-facing context content is identified by `context_sha256`, computed from a versioned length-prefixed UTF-8 byte encoding of these exact fields in this order:
+Rows that enter a model-facing discovery, holdout, or production-adjudication population receive `context_sha256`, computed from versioned length-prefixed UTF-8 bytes of these exact fields in this order:
 
 1. `source_common_name`
 2. `document_identifier`
@@ -65,9 +81,9 @@ The model-facing context content is identified by `context_sha256`, computed fro
 7. `all_names_raw`
 8. `extras_raw`
 
-`record_id`, GDELT date, archive name, and row ordinal are lineage, not semantic content, and are excluded from this context key. Repeated source rows with the same context key may be adjudicated once while retaining every lineage occurrence and earliest source availability.
+`record_id`, GDELT date, archive name, and row ordinal are lineage, not semantic content, and are excluded from this context key. Repeated selected source rows with the same context key may be adjudicated once while retaining every selected occurrence and its source lineage.
 
-The extractor reports SHA-256 context-key distinctness and repeated-key counts. It also records canonical byte length and treats the same SHA-256 with a different canonical byte length as a blocking collision indicator. It does not claim semantic event deduplication: two different URLs or differently represented packets can describe the same real-world event and remain distinct until contextual event clustering.
+Global all-row context-key cardinality is deliberately not computed. This does not prevent later production retrieval from hashing and deduplicating 100% of the final retrieved population before contextual adjudication.
 
 ## Provisional discovery retrieval
 
@@ -99,15 +115,15 @@ A deterministic pseudo-random sample from source rows for which the provisional 
 
 A deterministic sample enriched for provisional candidate rows, including candidate-alias occurrences, ambiguous/common symbols, multi-asset contexts, and broad crypto cues. Candidate asset IDs are retrieval provenance only; they are not semantic labels.
 
-Sampling is hash-based and reproducible from physical source lineage. A larger deterministic oversample is emitted during the single archive scan; after scanning, each stratum is sorted by selection rank. Source lineages already selected by an earlier stratum are skipped so the selection table contains 40,000 distinct source rows. If any stratum cannot supply its frozen target, `S3-CTX-003 = FAIL`.
+Sampling is reproducible from physical source lineage under `CFA_STAGE3_SAMPLE_V2`. One SHA-256 is computed from version, archive filename, row ordinal, and record ID. Independent bytes of that digest determine oversample membership for the three strata. The full digest, rotated per stratum, supplies deterministic selection ordering. Source lineages already selected by an earlier stratum are skipped so the selection table contains 40,000 distinct source rows. If any stratum cannot supply its frozen target, `S3-CTX-003 = FAIL`.
 
 ### Statistical selection versus reading population
 
 `context-discovery-selection.csv` preserves all 40,000 selected source-row occurrences. This table governs sampling proportions and later prevalence/recall calculations.
 
-The model should not repeatedly read byte-identical context. Therefore `context-discovery-reading.csv` deduplicates the 40,000 selections by `context_sha256` **only for adjudication efficiency**. Each reading row records:
+`context-discovery-reading.csv` deduplicates those 40,000 selections by `context_sha256` **only for adjudication efficiency**. Each reading row records:
 
-- `selection_occurrence_count` — how many of the 40,000 selected source rows have that context key;
+- `selection_occurrence_count` — how many selected source rows have that context key;
 - `selection_strata` — every discovery stratum in which that context occurred;
 - one representative selected lineage row plus the complete model-facing context.
 
@@ -168,18 +184,17 @@ This distinction is required so media amplification is not mistaken for event fr
 - `context-discovery-selection.csv` — exactly 40,000 source-row selections when `S3-CTX-003 = PASS`;
 - `context-discovery-reading.csv` — context-deduplicated model-reading population with occurrence counts/strata;
 - `context-discovery-batch-manifest.csv`;
-- `context-discovery-batch-####.csv` — deterministic partitions of the reading population for upload/review;
-- temporary cryptographic-hash shards used only to count context-key cardinality; removed after successful reconciliation unless `-KeepHashShards` is requested.
+- `context-discovery-batch-####.csv` — deterministic partitions of the reading population for upload/review.
 
-The batch files partition the reading population, not the statistical selection table. The manifest records batch rows, bytes, SHA-256, and represented discovery strata.
+The batch files partition the reading population, not the statistical selection table. The manifest records batch rows, bytes, SHA-256, and represented discovery strata. Temporary oversample files are deleted after successful selection.
 
 ## First-run hard gates
 
 | Gate | Requirement | Initial status |
 |---|---|---|
-| `S3-CTX-001` | Exact extractor artifact parses/self-tests and emits no semantic asset/event conclusion | **UNVERIFIED** until exact artifact validation |
-| `S3-CTX-002` | 7,163 archives; 9,183,757 rows; 5 quarantined malformed rows; 9,183,752 valid rows; 0 missing-critical failures; cryptographic context-key accounting reconciles | **UNVERIFIED** until local full scan |
-| `S3-CTX-003` | Exactly 15k/15k/10k source-row selections with unique physical lineage plus a context-deduplicated reading population retaining occurrence counts/strata | **UNVERIFIED** until local full scan |
+| `S3-CTX-001` | Exact optimized extractor artifact parses/self-tests, its fast and detailed discovery paths agree on regression cases, and it emits no semantic asset/event conclusion | **UNVERIFIED** until exact artifact validation |
+| `S3-CTX-002` | 7,163 archives; 9,183,757 rows; 5 quarantined malformed rows; 9,183,752 valid rows; 0 missing-critical failures; source/context-field accounting reconciles | **UNVERIFIED** until corrected local full scan |
+| `S3-CTX-003` | Exactly 15k/15k/10k source-row selections with unique physical lineage plus a context-deduplicated reading population retaining occurrence counts/strata | **UNVERIFIED** until corrected local full scan |
 | `S3-CTX-004` | Discovery contextual adjudication and semantic/retrieval design | **BLOCKED** until `S3-CTX-001..003` PASS |
 | `S3-CTX-005` | Fresh 60k holdout validation | **BLOCKED** |
 | `S3-CTX-006` | Production contextual adjudication | **BLOCKED** |
