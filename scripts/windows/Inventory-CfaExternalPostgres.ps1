@@ -202,7 +202,7 @@ function Invoke-PsqlQuery {
     $lines = @(& $PsqlPath @args 2>&1)
     $exit = $LASTEXITCODE
     if($exit -ne 0){
-        throw "psql failed for database '$Database' with exit code $exit:`n$($lines -join [Environment]::NewLine)"
+        throw "psql failed for database '$Database' with exit code ${exit}:`n$($lines -join [Environment]::NewLine)"
     }
     Write-Utf8NoBom $OutputPath @($lines | ForEach-Object { [string]$_ })
     return $lines
