@@ -1,65 +1,36 @@
-# CFA GDELT Q2 Cloud Storage archival contract — 2026-08-29
+# CFA GDELT Q2 cloud archival contract — 2026-08-29
 
-Status: **VALIDATION CANDIDATE / UNVERIFIED** until the exact local upload and post-upload reconciliation pass.
+Status: **VALIDATION CANDIDATE**.
 
-Authority boundary: CFA SoT and CFA Stage 1 verified source evidence remain authoritative. This work changes source storage location only. It does not redefine the GDELT source population, news semantics, factors, responses, or any downstream analytical conclusion.
+Authority boundary: the verified Q2 GDELT native/base GKG source corpus remains the CFA news-source authority. Google Cloud Storage is only an alternate byte-preserving storage location for those already verified raw archives. BigQuery is not the raw ZIP authority.
 
-## Purpose
+Frozen archival gates:
 
-Relocate the verified CFA Q2 GDELT native/base GKG archive corpus from local disk to Google Cloud Storage (GCS) without losing byte identity, source-slot lineage, or reproducibility. BigQuery is not the raw ZIP authority; GCS holds the exact archive bytes and BigQuery/PostgreSQL may hold structured analytical data derived later.
+- `CFA-GCS-001`: reconcile PostgreSQL source registry to local downloaded archive population before upload.
+- `CFA-GCS-002`: verify local size and SHA-256 for every downloaded source archive before first upload.
+- `CFA-GCS-003`: upload exactly the verified downloaded archive population to one bounded GCS raw prefix.
+- `CFA-GCS-004`: reconcile cloud object name, size and MD5 to the frozen local manifest.
+- `CFA-GCS-005`: prove no unexpected extra raw objects exist in the bounded raw prefix.
+- `CFA-GCS-006`: authorize local source deletion only after direct review of an exact all-PASS cloud receipt.
 
-## Frozen tasks
+Resume gates after completed local validation:
 
-| Task | Requirement | Initial state |
-|---|---|---|
-| `CFA-GCS-001` | Reconcile the exact PostgreSQL source contract and all 7,163 downloaded source rows against local file size and SHA-256 before upload. | **UNVERIFIED** |
-| `CFA-GCS-002` | Resolve one explicit GCS project/bucket/prefix; create the bucket only if absent, using uniform bucket-level access and public-access prevention. | **UNVERIFIED** |
-| `CFA-GCS-003` | Upload exactly the 7,163 verified downloaded archives to the frozen raw-object prefix. Do not upload provider-missing slots as empty objects. | **UNVERIFIED** |
-| `CFA-GCS-004` | Post-upload reconcile cloud object count, object name, byte size and MD5 against a local one-pass SHA-256+MD5 manifest. Parallel composite uploads are disabled so uploaded objects retain MD5 metadata. | **UNVERIFIED** |
-| `CFA-GCS-005` | Upload the bounded source manifest, cloud reconciliation and summary under a separate manifest prefix. | **UNVERIFIED** |
-| `CFA-GCS-006` | Local deletion authorization. Local source deletion is permitted only after direct review of an exact all-PASS `CFA-GCS-001..005` receipt. The uploader never deletes local source files. | **BLOCKED** |
+- `CFA-GCS-R01`: reuse only the exact completed 7,163-row local manifest and reconcile it back to PostgreSQL object key/path/size/SHA-256.
+- `CFA-GCS-R02`: verify each local source file still exists and retains the same size recorded by the completed manifest.
+- `CFA-GCS-R03`: create/reuse the bounded GCS bucket and upload/resume the corpus without altering local files.
+- `CFA-GCS-R04`: require final exact cloud object count/name/size/MD5 reconciliation.
+- `CFA-GCS-R05`: local deletion authorization remains **BLOCKED** pending direct review.
 
-## Frozen CFA source identity
+Observed target-host defects and corrections:
 
-- product: `GDELT 2.0 native/base GKG fifteen-minute update archives`
-- interval: 2025-04-01 00:00:00 UTC through 2025-07-01 00:00:00 UTC exclusive
-- nominal slots: 8,736
-- downloaded slots: 7,163
-- provider-missing slots: 1,573
-- unresolved slots: 0
-- source contract SHA-256: `11f3d81f61533efd0b1984c8f84da3e68128c05142923f4e7a62a76c8de9002e`
+1. Windows selected `gcloud.ps1`, which was blocked by execution policy. Corrected by explicit `gcloud.cmd`/`gcloud.exe` resolution.
+2. Windows PowerShell 5.1 produced null text for empty redirected native streams. Corrected by explicit string normalization.
+3. The initial per-command project argument construction was malformed. Resume path uses process-scoped `CLOUDSDK_CORE_PROJECT` instead.
+4. The completed local validation run `20260829-081354-ddb0416d678f418a8d418fbc86501f6d` produced 7,163 manifest rows with SHA-256 `d33f6d28b1f061de7c8ef34b6d7325329e2b85175679ac28f15b1a47b63e8418` and subsequently reconciled PASS back to PostgreSQL.
+5. V4/V5 bucket probes returned the expected 404 for a missing bucket, but Windows PowerShell 5.1 promoted native stderr into a terminating error before wrapper exit-code handling because `$ErrorActionPreference='Stop'`. V6 temporarily uses `Continue` only for the native `gcloud` invocation, captures stderr itself, restores the caller setting, then enforces the exit code in the wrapper. Its regression emits native stderr and exits 7 under `$ErrorActionPreference='Stop'`.
 
-Provider-missing slots remain represented in PostgreSQL source-slot lineage and are not materialized as fake zero-byte cloud objects.
+Current resume artifact: `scripts/windows/Resume-CfaGdeltQ2ToGcsV6.ps1`.
 
-## Cloud layout
+V6 preserves the V5 resume design: it does not rehash the 36 GB corpus; it reuses and reconciles the completed manifest, creates the missing bucket when the probe returns 404, resumes with `gcloud storage rsync --recursive`, supports the current `gcloud storage ls --json` direct and metadata-wrapper object shapes, and performs exact final cloud reconciliation.
 
-The uploader uses one dedicated raw prefix, default:
-
-`gs://<bucket>/raw/gdelt-gkg-q2-2025/`
-
-Each raw object name is the unique GDELT archive filename from the PostgreSQL `object_key`. Bounded manifests/receipts are stored separately under:
-
-`gs://<bucket>/manifests/gdelt-gkg-q2-2025/<run_id>/`
-
-The raw prefix must contain exactly 7,163 live archive objects after reconciliation.
-
-## Integrity design
-
-1. PostgreSQL remains the source registry for expected `object_key`, local relative path, byte size and SHA-256.
-2. Before upload, every local archive is opened once and both SHA-256 and MD5 are computed in the same streaming pass.
-3. Local SHA-256 and size must match PostgreSQL exactly before any upload starts.
-4. GCS parallel composite uploads are disabled via process-scoped Cloud SDK environment properties. This preserves per-object MD5 metadata.
-5. `gcloud storage cp` performs its own transfer checksum validation.
-6. After upload, an exhaustive GCS object metadata listing is compared against the local manifest for exact object count/name/size/MD5.
-7. The local manifest retains the authoritative PostgreSQL SHA-256 and the independently observed MD5. Cloud MD5 is an additional transport/storage identity check, not a replacement for CFA SHA-256 lineage.
-
-## Safety
-
-- no local source deletion;
-- no PostgreSQL writes;
-- no BigQuery writes;
-- no overwriting cloud objects (`--no-clobber`);
-- no parallel composite objects;
-- no fake objects for provider-missing slots;
-- failures remain explicit and block `CFA-GCS-006`;
-- credentials are handled only by existing local `gcloud` authentication and PostgreSQL password process state; no secret is written to evidence.
+No archival script deletes the local GDELT source corpus.
