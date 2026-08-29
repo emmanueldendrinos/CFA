@@ -19,13 +19,16 @@ function Get-DocumentsPath {
 
 function Get-RootKind {
     param([string]$Path)
-    $s = $Path.ToLowerInvariant()
-    if ($s -match 'cfa-local') { return 'CFA_LOCAL' }
-    if ($s -match 'cfa-bulk|cfa-recovery') { return 'EXTERNAL_CFA' }
-    if ($s -match '(^|[\\/_ -])cfa($|[\\/_ -])') { return 'CFA_REPO' }
-    if ($s -match '(^|[\\/_ -])asrp($|[\\/_ -])') { return 'ASRP_LEGACY' }
-    if ($s -match '(^|[\\/_ -])srp($|[\\/_ -])') { return 'SRP_LEGACY' }
-    return 'OTHER'
+    $leaf = [System.IO.Path]::GetFileName($Path.TrimEnd('\')).ToLowerInvariant()
+    switch ($leaf) {
+        'cfa-local' { return 'CFA_LOCAL' }
+        'cfa-bulk' { return 'EXTERNAL_CFA' }
+        'cfa-recovery' { return 'EXTERNAL_CFA' }
+        'cfa' { return 'CFA_REPO' }
+        'asrp' { return 'ASRP_LEGACY' }
+        'srp' { return 'SRP_LEGACY' }
+        default { return 'OTHER' }
+    }
 }
 
 function Test-Bulk {
@@ -60,11 +63,11 @@ function Get-Action {
 }
 
 function Invoke-Git {
-    param([string]$Repo,[string[]]$Args)
+    param([string]$Repo,[string[]]$GitArgs)
     $old = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        $out = @(& git -C $Repo @Args 2>$null)
+        $out = @(& git -C $Repo @GitArgs 2>$null)
         $code = $LASTEXITCODE
         if ($code -ne 0) { return '' }
         return (($out | ForEach-Object { [string]$_ }) -join "`n").Trim()
@@ -198,11 +201,11 @@ function Invoke-Inventory {
         }
 
         if (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Container) {
-            $head = Invoke-Git -Repo $root -Args @('rev-parse','HEAD')
-            $branch = Invoke-Git -Repo $root -Args @('rev-parse','--abbrev-ref','HEAD')
-            $tags = Invoke-Git -Repo $root -Args @('tag','--list')
-            $branches = Invoke-Git -Repo $root -Args @('branch','-a','--no-color')
-            $status = Invoke-Git -Repo $root -Args @('status','--porcelain=v1')
+            $head = Invoke-Git -Repo $root -GitArgs @('rev-parse','HEAD')
+            $branch = Invoke-Git -Repo $root -GitArgs @('rev-parse','--abbrev-ref','HEAD')
+            $tags = Invoke-Git -Repo $root -GitArgs @('tag','--list')
+            $branches = Invoke-Git -Repo $root -GitArgs @('branch','-a','--no-color')
+            $status = Invoke-Git -Repo $root -GitArgs @('status','--porcelain=v1')
             $matchingTags = @($tags -split "`n" | Where-Object { $_ -match '(?i)(PLS|7[._-]?8[._-]?1|spike|factor|hype)' }) -join ' | '
             $matchingBranches = @($branches -split "`n" | Where-Object { $_ -match '(?i)(PLS|7[._-]?8[._-]?1|spike|factor|hype)' }) -join ' | '
             $dirtyCount = if ([string]::IsNullOrWhiteSpace($status)) { 0 } else { @($status -split "`n").Count }
@@ -216,7 +219,7 @@ function Invoke-Inventory {
                 matching_branches = $matchingBranches
             }
 
-            $history = Invoke-Git -Repo $root -Args @(
+            $history = Invoke-Git -Repo $root -GitArgs @(
                 'log','--all','--date=iso-strict',
                 '--pretty=format:%H%x09%ad%x09%D%x09%s',
                 '--regexp-ignore-case',
