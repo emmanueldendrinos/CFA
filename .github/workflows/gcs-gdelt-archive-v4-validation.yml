@@ -49,6 +49,7 @@ jobs:
           foreach($required in @('CLOUDSDK_CORE_PROJECT','storage'',''buckets'',''describe','--json','storage'',''rsync','CFA-GCS-R05')){
             if($text -notmatch [regex]::Escape($required)){throw "Required V4 marker missing: $required"}
           }
-          if($text -match "'--project='\+\$ProjectId"){throw 'V4 contains unsafe --project concatenation.'}
+          $unsafe="'--project='+" + '$ProjectId'
+          if($text.Contains($unsafe)){throw 'V4 contains unsafe --project concatenation.'}
           if($text -match "storage','ls'.*--format=json"){throw 'V4 uses unsupported gcloud storage ls --format=json.'}
           if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}
