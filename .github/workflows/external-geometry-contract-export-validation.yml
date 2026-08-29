@@ -1,0 +1,58 @@
+name: External Geometry Contract Export Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Export-CfaExternalGeometryContracts.ps1'
+      - '.github/workflows/external-geometry-contract-export-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Export-CfaExternalGeometryContracts.ps1'
+      - '.github/workflows/external-geometry-contract-export-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse exporter with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Export-CfaExternalGeometryContracts.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Exporter failed PowerShell 7 parsing.'}
+
+      - name: Parse exporter with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Export-CfaExternalGeometryContracts.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Exporter failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test exporter with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Export-CfaExternalGeometryContracts.ps1 -SelfTest
+
+      - name: Self-test exporter with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Export-CfaExternalGeometryContracts.ps1 -SelfTest
+
+      - name: Enforce predecessor scope
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Export-CfaExternalGeometryContracts.ps1' -Raw
+          foreach($required in @('srp','asrp','pls_trading','q2_analysis_contracts','q2_institutional_factor_taxonomy','definitions','scanner_setup_version')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required scope marker missing: $required"}
+          }
+          foreach($forbidden in @("Targets.Contains('cri_trading_terminal')","Targets.Contains('pls_trading_pre_v130')")){
+            if($text -notmatch [regex]::Escape($forbidden)){throw "Explicit out-of-scope self-test missing: $forbidden"}
+          }
+          if($text -notmatch 'default_transaction_read_only=on'){throw 'Read-only session enforcement missing.'}
+          if($text -match "'asrp_analysis.q2_feature_snapshots'" -or $text -match "'asrp_analysis.q2_execution_geometry'"){
+            throw 'Bounded exporter must not bulk-export large geometry tables.'
+          }
