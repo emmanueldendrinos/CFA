@@ -156,18 +156,16 @@ function New-PatchedArtifact {
     return $ast
 }
 
-function Import-PatchedFunctions {
-    param([System.Management.Automation.Language.ScriptBlockAst]$Ast,[string[]]$Names)
-    foreach($name in $Names){
+function Invoke-Regressions {
+    param([System.Management.Automation.Language.ScriptBlockAst]$Ast)
+
+    # Import the patched functions in this function scope so the regression
+    # calls below can resolve them for the full lifetime of this invocation.
+    foreach($name in @('Invoke-Gcloud','Get-PropertyValue','Convert-CloudJsonToMap')){
         $matches=@($Ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true))
         if($matches.Count-ne1){throw "Expected exactly one patched $name function; observed $($matches.Count)."}
         Invoke-Expression $matches[0].Extent.Text
     }
-}
-
-function Invoke-Regressions {
-    param([System.Management.Automation.Language.ScriptBlockAst]$Ast)
-    Import-PatchedFunctions -Ast $Ast -Names @('Invoke-Gcloud','Get-PropertyValue','Convert-CloudJsonToMap')
 
     $old=$ErrorActionPreference
     try{
