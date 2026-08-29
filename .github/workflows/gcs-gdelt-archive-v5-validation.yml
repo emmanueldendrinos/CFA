@@ -1,0 +1,53 @@
+name: GCS GDELT Archive V5 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV5.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v5-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV5.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v5-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V5 with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV5.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V5 failed PowerShell 7 parsing.'}
+
+      - name: Parse V5 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV5.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V5 failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test V5 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV5.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Self-test V5 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV5.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Enforce V5 command contract
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV5.ps1' -Raw
+          foreach($required in @('-AllowNonzero:$true','Convert-CloudJsonToMap','cloud_object','storage'',''rsync'',''--recursive','CLOUDSDK_CORE_PROJECT')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required V5 marker missing: $required"}
+          }
+          if($text.Contains('--public-access-prevention')){throw 'V5 contains unverified bucket-create flag.'}
+          if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}

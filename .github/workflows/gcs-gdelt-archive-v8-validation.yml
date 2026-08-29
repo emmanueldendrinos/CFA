@@ -1,0 +1,52 @@
+name: GCS GDELT Archive V8 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV8.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v8-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV8.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v8-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V8 with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV8.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V8 failed PowerShell 7 parsing.'}
+
+      - name: Parse V8 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV8.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V8 failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test V8 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV8.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Self-test V8 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV8.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Enforce prefix-safe contract
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV8.ps1' -Raw
+          foreach($required in @("`$type-ne'cloud_object'","`$objectName.EndsWith('/')",'Typed prefix entry leaked','Typeless directory entry leaked','1788008032631044')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required V8 marker missing: $required"}
+          }
+          if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}

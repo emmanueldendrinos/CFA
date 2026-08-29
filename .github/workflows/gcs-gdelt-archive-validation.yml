@@ -1,0 +1,72 @@
+name: GCS GDELT Archive Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcs.ps1'
+      - 'docs/evidence/gcs-gdelt-q2-archive-contract-20260829.md'
+      - '.github/workflows/gcs-gdelt-archive-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcs.ps1'
+      - 'docs/evidence/gcs-gdelt-q2-archive-contract-20260829.md'
+      - '.github/workflows/gcs-gdelt-archive-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse uploader with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcs.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'GCS uploader failed PowerShell 7 parsing.'}
+
+      - name: Parse uploader with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcs.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'GCS uploader failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test uploader with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcs.ps1 -SelfTest
+
+      - name: Self-test uploader with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcs.ps1 -SelfTest
+
+      - name: Enforce archival safety contract
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Archive-CfaGdeltQ2ToGcs.ps1' -Raw
+          foreach($required in @(
+            '11f3d81f61533efd0b1984c8f84da3e68128c05142923f4e7a62a76c8de9002e',
+            '7163','1573',
+            'CLOUDSDK_STORAGE_PARALLEL_COMPOSITE_UPLOAD_ENABLED',
+            '--no-clobber',
+            'md5_hash',
+            'default_transaction_read_only=on',
+            "'CFA-GCS-006'='BLOCKED'"
+          )){
+            if($text -notmatch [regex]::Escape($required)){throw "Required archival safety marker missing: $required"}
+          }
+          foreach($forbidden in @('Remove-Item -LiteralPath $ArchiveRoot','DROP TABLE','DELETE FROM source_news')){
+            if($text -match [regex]::Escape($forbidden)){throw "Forbidden destructive marker present: $forbidden"}
+          }
+
+      - name: Validate frozen contract task IDs
+        shell: powershell
+        run: |
+          $text=Get-Content '.\docs\evidence\gcs-gdelt-q2-archive-contract-20260829.md' -Raw
+          foreach($id in 1..6 | ForEach-Object {'CFA-GCS-{0:D3}' -f $_}){
+            if($text -notmatch [regex]::Escape($id)){throw "Missing frozen task ID: $id"}
+          }
