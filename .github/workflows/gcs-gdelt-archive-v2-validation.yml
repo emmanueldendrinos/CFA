@@ -1,0 +1,46 @@
+name: GCS GDELT Archive V2 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcsV2.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v2-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcsV2.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v2-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse V2 with PowerShell 7
+        shell: pwsh
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV2.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count-gt0){$e|ForEach-Object{Write-Host $_.Message};throw 'V2 parse failed.'}
+      - name: Parse V2 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV2.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count-gt0){$e|ForEach-Object{Write-Host $_.Message};throw 'V2 parse failed.'}
+      - name: Self-test V2 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcsV2.ps1 -SelfTest
+      - name: Self-test V2 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcsV2.ps1 -SelfTest
+      - name: Enforce exact patch boundary
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV2.ps1' -Raw
+          if($text -notmatch [regex]::Escape('Stderr=$stderr.Trim()')){throw 'Buggy source marker missing.'}
+          if($text -notmatch [regex]::Escape('Stderr=([string]$stderr).Trim()')){throw 'Null-safe replacement marker missing.'}
+          if($text -match 'Remove-Item.*gdelt-gkg-q2-2025'){throw 'Destructive local-delete behavior detected.'}
