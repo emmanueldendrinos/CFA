@@ -1,0 +1,53 @@
+name: External PostgreSQL Inventory Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Inventory-CfaExternalPostgres.ps1'
+      - '.github/workflows/external-postgres-inventory-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Inventory-CfaExternalPostgres.ps1'
+      - '.github/workflows/external-postgres-inventory-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse runner with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Inventory-CfaExternalPostgres.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'External PostgreSQL inventory runner failed PowerShell 7 parsing.'}
+
+      - name: Parse runner with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Inventory-CfaExternalPostgres.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'External PostgreSQL inventory runner failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test runner with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Inventory-CfaExternalPostgres.ps1 -SelfTest
+
+      - name: Self-test runner with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Inventory-CfaExternalPostgres.ps1 -SelfTest
+
+      - name: Validate installed psql path contract when available
+        shell: powershell
+        run: |
+          $default='C:\Program Files\PostgreSQL\18\bin\psql.exe'
+          if(Test-Path -LiteralPath $default -PathType Leaf){
+            .\scripts\windows\Inventory-CfaExternalPostgres.ps1 -ValidateOnly -PsqlPath $default
+          }else{
+            Write-Host 'PostgreSQL 18 psql is not installed on the hosted runner; local exact-path validation remains target-environment work.'
+          }
