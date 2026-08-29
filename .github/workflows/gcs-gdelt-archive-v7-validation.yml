@@ -1,0 +1,54 @@
+name: GCS GDELT Archive V7 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV7.ps1'
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV5.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v7-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV7.ps1'
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV5.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v7-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V7 with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV7.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V7 failed PowerShell 7 parsing.'}
+
+      - name: Parse V7 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV7.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V7 failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test V7 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV7.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Self-test V7 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV7.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Enforce generation-safe contract
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV7.ps1' -Raw
+          foreach($required in @('metadata.name is the logical object name','1788008032631044','URL-only generation fallback normalization failed','Native stderr + generation regression: PASS')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required V7 marker missing: $required"}
+          }
+          if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}
