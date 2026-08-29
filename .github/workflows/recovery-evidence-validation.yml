@@ -1,0 +1,100 @@
+name: CFA Recovery Evidence Validation
+
+on:
+  push:
+    branches:
+      - 'cfa/recovery-inventory-ci-20260829'
+    paths:
+      - 'scripts/windows/Collect-CfaRecoveryEvidence.ps1'
+      - '.github/workflows/recovery-evidence-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Collect-CfaRecoveryEvidence.ps1'
+      - '.github/workflows/recovery-evidence-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-recovery-evidence:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Collect-CfaRecoveryEvidence.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0){
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw 'Recovery evidence collector failed PowerShell 7 parsing.'
+          }
+
+      - name: Parse with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Collect-CfaRecoveryEvidence.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0){
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw 'Recovery evidence collector failed Windows PowerShell 5.1 parsing.'
+          }
+
+      - name: Build synthetic CFA-local evidence
+        shell: powershell
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'cfa-local-synthetic'
+          $external=Join-Path $env:RUNNER_TEMP 'external-root'
+          New-Item -ItemType Directory -Path $root,$external -Force | Out-Null
+
+          $pgRun=Join-Path $root 'external-postgres-inventory\20260829-010000-test'
+          foreach($db in @('pls_trading','pls_trading_pre_v130')){
+            $d=Join-Path $pgRun $db
+            New-Item -ItemType Directory -Path $d -Force | Out-Null
+            'schema_name`trelation_name' | Set-Content -LiteralPath (Join-Path $d 'relations.tsv') -Encoding UTF8
+            'schema_name`trelation_name`tcolumn_name' | Set-Content -LiteralPath (Join-Path $d 'columns.tsv') -Encoding UTF8
+            'database_name`tserver_version' | Set-Content -LiteralPath (Join-Path $d 'database_meta.tsv') -Encoding UTF8
+            'schema_name' | Set-Content -LiteralPath (Join-Path $d 'schemas.tsv') -Encoding UTF8
+            'routine_schema`troutine_name' | Set-Content -LiteralPath (Join-Path $d 'routines.tsv') -Encoding UTF8
+            'object_type`tobject_name' | Set-Content -LiteralPath (Join-Path $d 'candidate_objects.tsv') -Encoding UTF8
+          }
+
+          $disc=Join-Path $root 'db-discovery\20260829-010000-test'
+          New-Item -ItemType Directory -Path $disc -Force | Out-Null
+          'schema_name,relation_name' | Set-Content -LiteralPath (Join-Path $disc 'pls_trading-relations.csv') -Encoding UTF8
+          'schema_name,relation_name,column_name' | Set-Content -LiteralPath (Join-Path $disc 'pls_trading-columns.csv') -Encoding UTF8
+          'database_name,status' | Set-Content -LiteralPath (Join-Path $disc 'database-summary.csv') -Encoding UTF8
+          'database_name,schema_name,relation_name' | Set-Content -LiteralPath (Join-Path $disc 'name-triage.csv') -Encoding UTF8
+
+          foreach($runName in @('20260828-120000-runA','20260827-120000-runB')){
+            $s=Join-Path $root ('stage3-news-matching\'+$runName)
+            New-Item -ItemType Directory -Path $s -Force | Out-Null
+            '{"status":"PASS","matches":10}' | Set-Content -LiteralPath (Join-Path $s 'stage3-match-summary.json') -Encoding UTF8
+            '# PASS' | Set-Content -LiteralPath (Join-Path $s 'stage3-match-summary.md') -Encoding UTF8
+            'base_asset_id,record_id' | Set-Content -LiteralPath (Join-Path $s 'stage3-news-matches.csv') -Encoding UTF8
+            'base_asset_id,record_id' | Set-Content -LiteralPath (Join-Path $s 'stage3-context-rejects.csv') -Encoding UTF8
+            'base_asset_id,record_id' | Set-Content -LiteralPath (Join-Path $s 'stage3-match-samples.csv') -Encoding UTF8
+          }
+
+          "CFA_TEST_LOCAL=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CFA_TEST_EXTERNAL=$external" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run exact Windows PowerShell 5.1 collector
+        shell: powershell
+        run: |
+          & .\scripts\windows\Collect-CfaRecoveryEvidence.ps1 -CfaLocalRoot $env:CFA_TEST_LOCAL -ExternalDriveRoot $env:CFA_TEST_EXTERNAL
+          $bundle=Get-ChildItem -LiteralPath (Join-Path $env:CFA_TEST_EXTERNAL 'CFA-recovery\evidence') -Filter 'recovery-evidence-bundle.zip' -File -Recurse | Select-Object -First 1
+          if($null -eq $bundle){throw 'Recovery evidence bundle was not created.'}
+          $runDir=$bundle.Directory.FullName
+          foreach($required in @('summary.md','evidence-index.csv','source-selections.csv','stage3-run-manifest.csv','artifact-hashes.csv')){
+            if(-not(Test-Path -LiteralPath (Join-Path $runDir $required) -PathType Leaf)){throw "Missing output: $required"}
+          }
+          $index=@(Import-Csv -LiteralPath (Join-Path $runDir 'evidence-index.csv'))
+          if($index.Count -lt 10){throw "Expected at least 10 bounded evidence rows, got $($index.Count)."}
+          $manifest=@(Import-Csv -LiteralPath (Join-Path $runDir 'stage3-run-manifest.csv'))
+          if($manifest.Count -ne 10){throw "Expected 10 Stage 3 manifest rows, got $($manifest.Count)."}
+          $latest=Import-Csv -LiteralPath (Join-Path $runDir 'source-selections.csv') | Where-Object {$_.category -eq 'latest_stage3_news_matching'}
+          if($latest.selected_path -notmatch '20260828-120000-runA$'){throw 'Latest Stage 3 run selection is incorrect.'}
