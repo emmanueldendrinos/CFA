@@ -1,0 +1,54 @@
+name: GCS GDELT Archive V4 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV4.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v4-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Resume-CfaGdeltQ2ToGcsV4.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v4-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V4 with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV4.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V4 failed PowerShell 7 parsing.'}
+
+      - name: Parse V4 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV4.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V4 failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test V4 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV4.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Self-test V4 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Resume-CfaGdeltQ2ToGcsV4.ps1 -ResumeRunRoot . -SelfTest
+
+      - name: Enforce corrected gcloud contract
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Resume-CfaGdeltQ2ToGcsV4.ps1' -Raw
+          foreach($required in @('CLOUDSDK_CORE_PROJECT','storage'',''buckets'',''describe','--json','storage'',''rsync','CFA-GCS-R05')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required V4 marker missing: $required"}
+          }
+          if($text -match "'--project='\+\$ProjectId"){throw 'V4 contains unsafe --project concatenation.'}
+          if($text -match "storage','ls'.*--format=json"){throw 'V4 uses unsupported gcloud storage ls --format=json.'}
+          if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}
