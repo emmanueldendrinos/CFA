@@ -38,7 +38,7 @@ function Add-EvidenceFile {
         [Parameter(Mandatory)][System.IO.FileInfo]$File,
         [Parameter(Mandatory)][string]$Role,
         [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][System.Collections.ArrayList]$Index
+        [AllowEmptyCollection()][Parameter(Mandatory)][System.Collections.ArrayList]$Index
     )
 
     $hash = Get-Sha256Maybe -File $File -LimitBytes $MaxHashBytes
