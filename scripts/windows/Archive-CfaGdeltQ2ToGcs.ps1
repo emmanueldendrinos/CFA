@@ -41,6 +41,24 @@ function Find-Application {
     throw ('Required application not found: '+($Names -join ', '))
 }
 
+function Find-GcloudApplication {
+    $fallbacks = @(
+        (Join-Path $env:LOCALAPPDATA 'Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd'),
+        'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd',
+        'C:\Program Files\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd'
+    )
+    foreach($name in @('gcloud.cmd','gcloud.exe')){
+        $cmd = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if($null-ne$cmd){ return $cmd.Source }
+    }
+    foreach($fallback in $fallbacks){
+        if(Test-Path -LiteralPath $fallback -PathType Leaf){
+            return (Resolve-Path -LiteralPath $fallback).ProviderPath
+        }
+    }
+    throw 'Required Google Cloud CLI application not found. Expected gcloud.cmd/gcloud.exe; the PowerShell gcloud.ps1 wrapper is intentionally not used.'
+}
+
 function Write-Utf8NoBom {
     param([string]$Path,[string]$Content)
     $parent=Split-Path -Parent $Path
@@ -173,7 +191,7 @@ try{
     New-Item -ItemType Directory -Path $runRoot -Force|Out-Null
 
     $psql=Find-Application @('psql.exe') 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
-    $gcloud=Find-Application @('gcloud.cmd','gcloud.exe','gcloud')
+    $gcloud=Find-GcloudApplication
 
     $active=(Invoke-Gcloud $gcloud @('auth','list','--filter=status:ACTIVE','--format=value(account)') ).Stdout
     if([string]::IsNullOrWhiteSpace($active)){
@@ -206,6 +224,7 @@ try{
     $env:CLOUDSDK_STORAGE_THREAD_COUNT=[string]$ThreadCount
 
     Write-Host ('Evidence directory : '+$runRoot)
+    Write-Host ('GCloud application  : '+$gcloud)
     Write-Host ('GCloud account      : '+$active)
     Write-Host ('GCloud project      : '+$ProjectId)
     Write-Host ('GCS bucket          : gs://'+$BucketName)
@@ -222,174 +241,178 @@ SELECT count(*)::bigint AS exact_slots,
 FROM source_news.source_slots
 WHERE contract_sha256='$ExpectedContractSha'
 "@
-    $sourceCsv=Invoke-PsqlCsv $psql $DatabaseName @"
+    $sumRows=@($summaryCsv|ConvertFrom-Csv)
+    if($sumRows.Count-ne1){throw 'Source registry summary did not return exactly one row.'}
+    $s=$sumRows[0]
+    if([long]$s.exact_slots-ne$ExpectedSlots -or [long]$s.downloaded_slots-ne$ExpectedDownloaded -or [long]$s.provider_missing_slots-ne$ExpectedProviderMissing -or [long]$s.unresolved_slots-ne$ExpectedUnresolved){
+        throw ('Source registry accounting mismatch: slots='+$s.exact_slots+' downloaded='+$s.downloaded_slots+' provider_missing='+$s.provider_missing_slots+' unresolved='+$s.unresolved_slots)
+    }
+
+    $downloadCsv=Invoke-PsqlCsv $psql $DatabaseName @"
 SELECT object_key,local_relative_path,observed_size_bytes,payload_sha256
 FROM source_news.source_slots
 WHERE contract_sha256='$ExpectedContractSha' AND status='downloaded'
-ORDER BY archive_timestamp_utc
+ORDER BY archive_timestamp_utc,object_key
 "@
-    $s=@($summaryCsv|ConvertFrom-Csv)
-    $rows=@($sourceCsv|ConvertFrom-Csv)
-    if($s.Count-ne1){throw 'Source slot summary cardinality differs.'}
-    $slot=$s[0]
-    if([long]$slot.exact_slots-ne$ExpectedSlots){throw "Expected $ExpectedSlots source slots; observed $($slot.exact_slots)."}
-    if([long]$slot.downloaded_slots-ne$ExpectedDownloaded){throw "Expected $ExpectedDownloaded downloaded slots; observed $($slot.downloaded_slots)."}
-    if([long]$slot.provider_missing_slots-ne$ExpectedProviderMissing){throw "Expected $ExpectedProviderMissing provider-missing slots; observed $($slot.provider_missing_slots)."}
-    if([long]$slot.unresolved_slots-ne$ExpectedUnresolved){throw "Expected zero unresolved slots; observed $($slot.unresolved_slots)."}
-    if($rows.Count-ne$ExpectedDownloaded){throw "Downloaded source registry rows differ: $($rows.Count)."}
-
-    $cloudNames=@{}
-    $manifest=New-Object 'System.Collections.Generic.List[object]'
-    $index=0
-    foreach($r in $rows){
-        $index++
-        $relative=[string]$r.local_relative_path
-        if([string]::IsNullOrWhiteSpace($relative)){throw "Blank local_relative_path for $($r.object_key)."}
-        $local=Join-Path $ArchiveRoot ($relative.Replace('/','\'))
-        if(-not(Test-Path -LiteralPath $local -PathType Leaf)){throw "Missing local source file: $local"}
-        $name=[System.IO.Path]::GetFileName(([string]$r.object_key).Replace('/','\'))
-        if([string]::IsNullOrWhiteSpace($name)-or$name-notmatch'^\d{14}\.gkg\.csv\.zip$'){throw "Unexpected GDELT object key: $($r.object_key)"}
-        if($cloudNames.ContainsKey($name)){throw "Duplicate cloud object basename: $name"}
-        $cloudNames[$name]=$true
-        $item=Get-Item -LiteralPath $local
-        if([long]$item.Length-ne[long]$r.observed_size_bytes){throw "Local size mismatch before hashing: $relative"}
-        $h=Get-FileDualHash $local
-        if($h.Sha256Hex-ne([string]$r.payload_sha256).ToLowerInvariant()){throw "Local SHA-256 mismatch: $relative"}
-        $manifest.Add([pscustomobject]@{
-            object_key=[string]$r.object_key
-            local_relative_path=$relative.Replace('\\','/')
-            cloud_object_name=$Prefix+'/'+$name
-            size_bytes=[long]$item.Length
-            sha256=$h.Sha256Hex
-            md5_base64=$h.Md5Base64
-        })
-        if(($index%100)-eq0-or$index-eq$rows.Count){Write-Host ('Local integrity: '+$index+'/'+$rows.Count)}
-    }
+    $sourceRows=@($downloadCsv|ConvertFrom-Csv)
+    if($sourceRows.Count-ne$ExpectedDownloaded){throw "Downloaded source row count mismatch: $($sourceRows.Count)"}
 
     $manifestPath=Join-Path $runRoot 'source-object-manifest.csv'
-    $manifest|Export-Csv -LiteralPath $manifestPath -NoTypeInformation -Encoding UTF8
-    $uploadList=Join-Path $runRoot 'upload-paths.txt'
-    [System.IO.File]::WriteAllLines($uploadList,@($manifest|ForEach-Object{Join-Path $ArchiveRoot (($_.local_relative_path).Replace('/','\'))}),$Utf8NoBom)
+    $mw=New-Object System.IO.StreamWriter -ArgumentList $manifestPath,$false,$Utf8NoBom
+    try{
+        $mw.WriteLine('object_key,local_relative_path,size_bytes,sha256_hex,md5_hex,md5_base64,gcs_object_name')
+        $validated=0
+        foreach($row in $sourceRows){
+            $relative=[string]$row.local_relative_path
+            if([string]::IsNullOrWhiteSpace($relative)){throw "Blank local path for $($row.object_key)"}
+            $path=Join-Path $ArchiveRoot ($relative.Replace('/','\'))
+            if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Missing local source file: $path"}
+            $size=[long](Get-Item -LiteralPath $path).Length
+            if($size-ne[long]$row.observed_size_bytes){throw "Local size mismatch: $relative"}
+            $h=Get-FileDualHash $path
+            if($h.Sha256Hex-ne([string]$row.payload_sha256).ToLowerInvariant()){throw "Local SHA-256 mismatch: $relative"}
+            $objectName=$Prefix+'/'+($relative.Replace('\\','/').TrimStart('/'))
+            $mw.WriteLine((@($row.object_key,$relative,$size,$h.Sha256Hex,$h.Md5Hex,$h.Md5Base64,$objectName)|ForEach-Object{Csv $_})-join',')
+            $validated++
+            if($validated-eq1 -or $validated%250-eq0){Write-Host ('Local source validation: '+$validated+'/'+$ExpectedDownloaded)}
+        }
+    }finally{$mw.Dispose()}
 
     if($ValidateOnly){
         Write-Host 'CFA GDELT GCS ARCHIVE INPUT VALIDATION: PASS'
-        Write-Host ('Validated source rows: '+$manifest.Count)
+        Write-Host ('Manifest: '+$manifestPath)
         exit 0
     }
 
     $bucketUri='gs://'+$BucketName
-    $bucketDescribe=Invoke-Gcloud $gcloud @('storage','buckets','describe',$bucketUri,'--project='+$ProjectId,'--format=value(name)','--quiet') -AllowNonzero
+    $bucketDescribe=Invoke-Gcloud $gcloud @('storage','buckets','describe',$bucketUri,'--project='+$ProjectId,'--format=json') -AllowNonzero
     if($bucketDescribe.ExitCode-ne0){
-        if(-not$CreateBucketIfMissing){throw "GCS bucket does not exist or is inaccessible: $bucketUri"}
-        Write-Host ('Creating bucket '+$bucketUri+' ...')
-        Invoke-Gcloud $gcloud @('storage','buckets','create',$bucketUri,'--project='+$ProjectId,'--location='+$BucketLocation,'--default-storage-class='+$StorageClass,'--uniform-bucket-level-access','--public-access-prevention','--soft-delete-duration=7d','--quiet')|Out-Null
-    }else{Write-Host ('Using existing bucket '+$bucketUri)}
+        if(-not$CreateBucketIfMissing){throw "GCS bucket does not exist or is unavailable: $bucketUri"}
+        Write-Host ('Creating GCS bucket: '+$bucketUri)
+        Invoke-Gcloud $gcloud @('storage','buckets','create',$bucketUri,'--project='+$ProjectId,'--location='+$BucketLocation,'--default-storage-class='+$StorageClass,'--uniform-bucket-level-access','--public-access-prevention')|Out-Null
+    }else{
+        $bucketInfo=$bucketDescribe.Stdout|ConvertFrom-Json
+        $remoteLocation=[string](Get-ObjectPropertyValue $bucketInfo @('location','locationType'))
+        $remoteStorageClass=[string](Get-ObjectPropertyValue $bucketInfo @('storageClass','storage_class'))
+        if(-not[string]::IsNullOrWhiteSpace($remoteLocation) -and $remoteLocation.ToUpperInvariant()-ne$BucketLocation.ToUpperInvariant()){
+            throw "Existing bucket location differs: observed=$remoteLocation expected=$BucketLocation"
+        }
+        if(-not[string]::IsNullOrWhiteSpace($remoteStorageClass) -and $remoteStorageClass.ToUpperInvariant()-ne$StorageClass.ToUpperInvariant()){
+            Write-Host "Existing bucket storage class differs from requested default: observed=$remoteStorageClass requested=$StorageClass; preserving existing bucket."
+        }
+    }
 
     $rawUri=$bucketUri+'/'+$Prefix+'/'
-    $transferManifest=Join-Path $runRoot 'gcloud-transfer-manifest.csv'
-    Write-Host ('Uploading/reconciling '+$manifest.Count+' archives to '+$rawUri)
-    $cpErr=[System.IO.Path]::GetTempFileName()
-    try{
-        Get-Content -LiteralPath $uploadList | & $gcloud storage cp -I $rawUri --no-clobber --manifest-path=$transferManifest --project=$ProjectId 2>$cpErr
-        $cpCode=$LASTEXITCODE
-        $cpStderr=if(Test-Path -LiteralPath $cpErr){Get-Content -LiteralPath $cpErr -Raw -ErrorAction SilentlyContinue}else{''}
-        if($cpCode-ne0){throw "gcloud storage cp failed with exit code $cpCode.`n$cpStderr"}
-    }finally{Remove-Item -LiteralPath $cpErr -Force -ErrorAction SilentlyContinue}
+    Write-Host ('Uploading verified raw corpus to '+$rawUri)
+    Invoke-Gcloud $gcloud @('storage','cp','--recursive','--no-clobber',$ArchiveRoot+'\*',$rawUri,'--project='+$ProjectId)|Out-Null
 
-    Write-Host 'Reading remote object metadata for post-upload reconciliation...'
-    $remoteResult=Invoke-Gcloud $gcloud @('storage','ls','--json',$bucketUri+'/'+$Prefix+'/**','--project='+$ProjectId)
-    if([string]::IsNullOrWhiteSpace($remoteResult.Stdout)){throw 'Remote GCS listing is blank.'}
-    $remoteParsed=@($remoteResult.Stdout|ConvertFrom-Json)
-    $remoteByName=@{}
-    foreach($o in $remoteParsed){
-        $name=[string](Get-ObjectPropertyValue $o @('name','object_name'))
-        if([string]::IsNullOrWhiteSpace($name)){continue}
-        $name=$name.TrimStart('/')
-        if($name.StartsWith($Prefix+'/',[System.StringComparison]::Ordinal)){
-            if($remoteByName.ContainsKey($name)){throw "Duplicate live GCS object in listing: $name"}
-            $remoteByName[$name]=$o
-        }
+    Write-Host 'Listing cloud raw objects for independent reconciliation...'
+    $list=(Invoke-Gcloud $gcloud @('storage','ls','--recursive',$rawUri,'--project='+$ProjectId,'--format=json')).Stdout
+    $cloudObjects=@()
+    if(-not[string]::IsNullOrWhiteSpace($list)){
+        $parsed=$list|ConvertFrom-Json
+        if($parsed -is [System.Array]){$cloudObjects=@($parsed)}else{$cloudObjects=@($parsed)}
     }
-    if($remoteByName.Count-ne$ExpectedDownloaded){throw "Remote raw-prefix object count mismatch: expected $ExpectedDownloaded observed $($remoteByName.Count)."}
 
-    $recon=New-Object 'System.Collections.Generic.List[object]'
-    $fail=0
-    foreach($m in $manifest){
-        $remote=$remoteByName[[string]$m.cloud_object_name]
-        if($null-eq$remote){
-            $fail++
-            $recon.Add([pscustomobject]@{cloud_object_name=$m.cloud_object_name;status='FAIL_MISSING';expected_size=$m.size_bytes;remote_size='';expected_md5=$m.md5_base64;remote_md5=''})
-            continue
-        }
-        $sizeValue=Get-ObjectPropertyValue $remote @('size','size_bytes')
-        $md5Value=Get-ObjectPropertyValue $remote @('md5_hash','md5Hash','md5')
-        $sizeOk=([long]$sizeValue-eq[long]$m.size_bytes)
-        $md5Ok=(-not[string]::IsNullOrWhiteSpace([string]$md5Value))-and([string]$md5Value-eq[string]$m.md5_base64)
-        $status=if($sizeOk-and$md5Ok){'PASS'}elseif(-not$sizeOk-and-not$md5Ok){'FAIL_SIZE_MD5'}elseif(-not$sizeOk){'FAIL_SIZE'}else{'FAIL_MD5'}
-        if($status-ne'PASS'){$fail++}
-        $recon.Add([pscustomobject]@{cloud_object_name=$m.cloud_object_name;status=$status;expected_size=$m.size_bytes;remote_size=$sizeValue;expected_md5=$m.md5_base64;remote_md5=$md5Value})
+    $cloudByName=@{}
+    foreach($o in $cloudObjects){
+        $url=[string](Get-ObjectPropertyValue $o @('url','name'))
+        if([string]::IsNullOrWhiteSpace($url)){continue}
+        $prefixUri=$bucketUri+'/'
+        $name=if($url.StartsWith($prefixUri,[StringComparison]::Ordinal)){$url.Substring($prefixUri.Length)}else{$url.TrimStart('/')}
+        if($cloudByName.ContainsKey($name)){throw "Duplicate cloud object listing: $name"}
+        $cloudByName[$name]=$o
     }
+
+    $sourceManifest=@(Import-Csv -LiteralPath $manifestPath -Encoding UTF8)
     $reconPath=Join-Path $runRoot 'cloud-reconciliation.csv'
-    $recon|Export-Csv -LiteralPath $reconPath -NoTypeInformation -Encoding UTF8
-    if($fail-ne0){throw "Cloud reconciliation failed for $fail object(s)."}
+    $rw=New-Object System.IO.StreamWriter -ArgumentList $reconPath,$false,$Utf8NoBom
+    $mismatches=0
+    try{
+        $rw.WriteLine('gcs_object_name,expected_size_bytes,observed_size_bytes,expected_md5_base64,observed_md5_base64,status')
+        foreach($row in $sourceManifest){
+            $name=[string]$row.gcs_object_name
+            $status='PASS';$obsSize='';$obsMd5=''
+            if(-not$cloudByName.ContainsKey($name)){$status='MISSING'}else{
+                $o=$cloudByName[$name]
+                $obsSize=[string](Get-ObjectPropertyValue $o @('size','sizeBytes'))
+                $obsMd5=[string](Get-ObjectPropertyValue $o @('md5Hash','md5_hash'))
+                if([string]::IsNullOrWhiteSpace($obsSize)-or[long]$obsSize-ne[long]$row.size_bytes){$status='SIZE_MISMATCH'}
+                elseif([string]::IsNullOrWhiteSpace($obsMd5)-or$obsMd5-ne[string]$row.md5_base64){$status='MD5_MISMATCH'}
+            }
+            if($status-ne'PASS'){$mismatches++}
+            $rw.WriteLine((@($name,$row.size_bytes,$obsSize,$row.md5_base64,$obsMd5,$status)|ForEach-Object{Csv $_})-join',' )
+        }
+    }finally{$rw.Dispose()}
 
+    $extra=@($cloudByName.Keys|Where-Object{-not(@($sourceManifest.gcs_object_name)-contains$_)})
+    $rawObjectCount=$cloudByName.Count
+    $objectCountPass=$rawObjectCount-eq$ExpectedDownloaded
+    $extraPass=$extra.Count-eq0
+    $reconPass=$mismatches-eq0
+
+    $manifestPrefix='manifests/gdelt-gkg-q2-2025/'+$runId
+    $summaryPath=Join-Path $runRoot 'gcs-archive-summary.json'
     $summary=[ordered]@{
         run_id=$runId
-        run_status='PASS'
-        task_status=[ordered]@{
-            'CFA-GCS-001'='PASS'
-            'CFA-GCS-002'='PASS'
-            'CFA-GCS-003'='PASS'
-            'CFA-GCS-004'='PASS'
-            'CFA-GCS-005'='UNVERIFIED'
-            'CFA-GCS-006'='BLOCKED'
-        }
-        source_contract_sha256=$ExpectedContractSha
-        exact_slots=$ExpectedSlots
-        downloaded_slots=$ExpectedDownloaded
-        provider_missing_slots=$ExpectedProviderMissing
-        gcloud_account=$active
-        gcloud_project=$ProjectId
+        project_id=$ProjectId
+        account=$active
         bucket=$BucketName
         bucket_location=$BucketLocation
-        storage_class=$StorageClass
+        storage_class_requested=$StorageClass
         raw_prefix=$Prefix
-        remote_object_count=$remoteByName.Count
-        remote_reconciliation_failures=$fail
-        local_source_deleted=$false
-        deletion_safe_candidate=$false
+        raw_object_count=$rawObjectCount
+        expected_downloaded_objects=$ExpectedDownloaded
+        provider_missing_slots=$ExpectedProviderMissing
+        local_archive_root=$ArchiveRoot
+        source_manifest_sha256=(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        source_manifest_rows=$sourceManifest.Count
+        cloud_reconciliation_sha256=(Get-FileHash -LiteralPath $reconPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        cloud_reconciliation_rows=$sourceManifest.Count
+        cloud_mismatches=$mismatches
+        extra_cloud_objects=$extra.Count
+        checks=[ordered]@{
+            'CFA-GCS-001'='PASS'
+            'CFA-GCS-002'='PASS'
+            'CFA-GCS-003'=if($objectCountPass){'PASS'}else{'FAIL'}
+            'CFA-GCS-004'=if($reconPass){'PASS'}else{'FAIL'}
+            'CFA-GCS-005'=if($extraPass){'PASS'}else{'FAIL'}
+            'CFA-GCS-006'='BLOCKED'
+        }
+        local_deletion_authorized=$false
     }
-    $summaryPath=Join-Path $runRoot 'gcs-archive-summary.json'
     Write-Utf8NoBom $summaryPath (($summary|ConvertTo-Json -Depth 8)+[Environment]::NewLine)
 
-    $manifestCloudUri=$bucketUri+'/manifests/gdelt-gkg-q2-2025/'+$runId+'/'
-    Invoke-Gcloud $gcloud @('storage','cp',$manifestPath,$reconPath,$summaryPath,$manifestCloudUri,'--project='+$ProjectId,'--no-clobber')|Out-Null
-    $summary.task_status['CFA-GCS-005']='PASS'
-    $summary.deletion_safe_candidate=$true
-    Write-Utf8NoBom $summaryPath (($summary|ConvertTo-Json -Depth 8)+[Environment]::NewLine)
-    # Replace only the small summary in the manifest location so its final gate state is also in cloud.
-    Invoke-Gcloud $gcloud @('storage','cp',$summaryPath,$manifestCloudUri,'--project='+$ProjectId)|Out-Null
+    $manifestUri=$bucketUri+'/'+$manifestPrefix+'/'
+    Invoke-Gcloud $gcloud @('storage','cp',$manifestPath,$reconPath,$summaryPath,$manifestUri,'--project='+$ProjectId)|Out-Null
 
+    $failed=@($summary.checks.GetEnumerator()|Where-Object{$_.Key-ne'CFA-GCS-006' -and $_.Value-ne'PASS'})
     Write-Host ''
-    Write-Host 'CFA GDELT GCS ARCHIVE: PASS'
-    Write-Host ('Raw cloud objects      : '+$remoteByName.Count)
-    Write-Host ('Remote mismatches      : '+$fail)
-    Write-Host ('Source manifest         : '+$manifestPath)
-    Write-Host ('Cloud reconciliation    : '+$reconPath)
-    Write-Host ('Summary                 : '+$summaryPath)
-    Write-Host ('Cloud manifest prefix   : '+$manifestCloudUri)
-    Write-Host 'LOCAL SOURCE DELETION: BLOCKED pending direct review of this PASS receipt.'
-    exit 0
+    if($failed.Count-eq0){
+        Write-Host 'CFA GDELT GCS ARCHIVE: PASS'
+        Write-Host ('Raw cloud objects      : '+$rawObjectCount)
+        Write-Host ('Remote mismatches      : '+$mismatches)
+        Write-Host ('Source manifest         : '+$manifestPath)
+        Write-Host ('Cloud reconciliation    : '+$reconPath)
+        Write-Host ('Summary                 : '+$summaryPath)
+        Write-Host ('Cloud manifest prefix   : '+$manifestUri)
+        Write-Host 'LOCAL SOURCE DELETION: BLOCKED pending direct review of this PASS receipt.'
+        exit 0
+    }
+    Write-Host 'CFA GDELT GCS ARCHIVE: FAIL'
+    $failed|ForEach-Object{Write-Host ($_.Key+'='+$_.Value)}
+    Write-Host ('Summary: '+$summaryPath)
+    exit 1
 }catch{
     Write-Host 'CFA GDELT GCS ARCHIVE: FAIL'
     Write-Host $_.Exception.Message
     if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace}
     exit 1
 }finally{
+    if($bstr-ne[IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)}
     $env:PGPASSWORD=$oldPgPassword
     $env:PGOPTIONS=$oldPgOptions
     $env:CLOUDSDK_STORAGE_PARALLEL_COMPOSITE_UPLOAD_ENABLED=$oldPcu
     $env:CLOUDSDK_STORAGE_PROCESS_COUNT=$oldProcesses
     $env:CLOUDSDK_STORAGE_THREAD_COUNT=$oldThreads
-    if($bstr-ne[IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)}
 }
