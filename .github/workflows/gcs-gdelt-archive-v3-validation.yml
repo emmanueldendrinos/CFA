@@ -1,0 +1,52 @@
+name: GCS GDELT Archive V3 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcsV3.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v3-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Archive-CfaGdeltQ2ToGcsV3.ps1'
+      - '.github/workflows/gcs-gdelt-archive-v3-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V3 with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV3.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V3 failed PowerShell 7 parsing.'}
+
+      - name: Parse V3 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV3.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'V3 failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Self-test V3 with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcsV3.ps1 -SelfTest
+
+      - name: Self-test V3 with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Archive-CfaGdeltQ2ToGcsV3.ps1 -SelfTest
+
+      - name: Enforce robust wrapper replacement
+        shell: powershell
+        run: |
+          $text=Get-Content '.\scripts\windows\Archive-CfaGdeltQ2ToGcsV3.ps1' -Raw
+          foreach($required in @('$stdoutText=[string]','$stderrText=if($null-eq$rawStderr)','Invoke-PatchedFunctionRegression','exit','0')){
+            if($text -notmatch [regex]::Escape($required)){throw "Required V3 marker missing: $required"}
+          }
+          if($text -match 'Remove-Item.+gdelt-gkg-q2-2025'){throw 'Unexpected source deletion logic found.'}
