@@ -1,0 +1,88 @@
+name: CFA Stage 4 Response Source Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
+      - 'docs/evidence/stage4-response-contract.md'
+      - '.github/workflows/stage4-response-source-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
+      - 'docs/evidence/stage4-response-contract.md'
+      - '.github/workflows/stage4-response-source-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 4 inspector with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){
+            $errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
+            throw 'PowerShell 7 parse failed.'
+          }
+
+      - name: Parse Stage 4 inspector with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){
+            $errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
+            throw 'Windows PowerShell 5.1 parse failed.'
+          }
+
+      - name: Run exact Windows PowerShell 5.1 inspector self-test
+        shell: powershell
+        run: .\scripts\windows\Inspect-CfaStage4ResponseSource.ps1 -SelfTest
+
+      - name: Enforce Stage 4 fail-closed response contract
+        shell: powershell
+        run: |
+          $script=Get-Content '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
+          foreach($marker in @(
+            'RET_USD_1D_LOG',
+            'CFA-S4-001',
+            'CFA-S4-002',
+            'CFA-S4-003',
+            'CFA-S4-004',
+            'CFA-S4-005',
+            'CFA-S4-006',
+            'SOURCE_SCHEMA_UNVERIFIED',
+            'RESPONSE_FREEZE_BLOCKED',
+            'No imputation is permitted',
+            'No cross-rate conversion'
+          )){
+            if($contract -notmatch [regex]::Escape($marker)){throw "Stage 4 contract marker missing: $marker"}
+          }
+          foreach($marker in @(
+            'default_transaction_read_only=on',
+            'asrp.q2_market_1m_observations',
+            '569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f',
+            'stage4-market-columns.csv',
+            'stage4-market-sample.csv',
+            'stage4-usd-pair-candidates.csv',
+            'stage4-usd-market-coverage.csv',
+            'CFA-S4-002',
+            'UNVERIFIED',
+            'CFA-S4-006',
+            'BLOCKED'
+          )){
+            if($script -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
+          }
+          if($script -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
+            throw 'Stage 4 source inspector contains a forbidden write/DDL marker.'
+          }
