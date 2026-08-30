@@ -1,0 +1,87 @@
+name: CFA Stage 3 V6 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV5.ps1'
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV6.ps1'
+      - 'scripts/windows/Prepare-CfaStage3V6SampleReview.ps1'
+      - 'scripts/windows/Run-CfaStage3V6Finalization.ps1'
+      - '.github/workflows/stage3-v6-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV5.ps1'
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV6.ps1'
+      - 'scripts/windows/Prepare-CfaStage3V6SampleReview.ps1'
+      - 'scripts/windows/Run-CfaStage3V6Finalization.ps1'
+      - '.github/workflows/stage3-v6-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V6 scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          $files=@(
+            '.\scripts\windows\Apply-CfaStage3NewsMatchingV6.ps1',
+            '.\scripts\windows\Prepare-CfaStage3V6SampleReview.ps1',
+            '.\scripts\windows\Run-CfaStage3V6Finalization.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "PowerShell 7 parse failed: $file"}
+          }
+
+      - name: Parse V6 scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $files=@(
+            '.\scripts\windows\Apply-CfaStage3NewsMatchingV6.ps1',
+            '.\scripts\windows\Prepare-CfaStage3V6SampleReview.ps1',
+            '.\scripts\windows\Run-CfaStage3V6Finalization.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "Windows PowerShell 5.1 parse failed: $file"}
+          }
+
+      - name: Preserve V5 component regression
+        shell: powershell
+        run: .\scripts\windows\Apply-CfaStage3NewsMatchingV5.ps1 -Stage3V2RunRoot . -ImpactRunRoot . -OutputRoot . -SelfTest
+
+      - name: Run V6 local-market self-test
+        shell: powershell
+        run: .\scripts\windows\Apply-CfaStage3NewsMatchingV6.ps1 -Stage3V5RunRoot . -OutputRoot . -SelfTest
+
+      - name: Run V6 review self-test
+        shell: powershell
+        run: .\scripts\windows\Prepare-CfaStage3V6SampleReview.ps1 -Stage3V6RunRoot . -OutputRoot . -SelfTest
+
+      - name: Run V6 controller self-test
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3V6Finalization.ps1 -Stage3V5RunRoot . -SelfTest
+
+      - name: Enforce V6 fail-closed correction contract
+        shell: powershell
+        run: |
+          $v6=Get-Content '.\scripts\windows\Apply-CfaStage3NewsMatchingV6.ps1' -Raw
+          $review=Get-Content '.\scripts\windows\Prepare-CfaStage3V6SampleReview.ps1' -Raw
+          $controller=Get-Content '.\scripts\windows\Run-CfaStage3V6Finalization.ps1' -Raw
+          foreach($marker in @('CANDIDATE_V6','IP Exchange','OM rally','TITLE_LOCAL_MARKET_SHORT_SYMBOL','SHORT_DEFAULT_REQUIRES_LOCAL_MARKET_OR_HIGH_SPECIFICITY','PAREN_TICKER_MARKET','STRUCTURED_EXACT_SHORT_SYMBOL','CFA-S3F-021','CFA-S3F-022')){
+            if($v6 -notmatch [regex]::Escape($marker)){throw "V6 correction marker missing: $marker"}
+          }
+          foreach($marker in @('IP Exchange reject','OM rally retain','OP_RETURN reject','IP infrastructure reject','Arweave ticker retain','Story ticker retain','CFA_S3F_023')){
+            if($review -notmatch [regex]::Escape($marker)){throw "V6 review marker missing: $marker"}
+          }
+          foreach($marker in @('VALIDATION_CANDIDATE','CFA-S3F-019 historical V5 semantic review: FAIL','CFA-S3F-021','CFA-S3F-022','CFA-S3F-023','CFA-S3-006','BLOCKED')){
+            if($controller -notmatch [regex]::Escape($marker)){throw "V6 controller marker missing: $marker"}
+          }
