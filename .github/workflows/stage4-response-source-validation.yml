@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
+      - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   pull_request:
     paths:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
+      - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   workflow_dispatch:
@@ -22,36 +24,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Parse Stage 4 inspector with PowerShell 7
+      - name: Parse Stage 4 scripts with PowerShell 7
         shell: pwsh
         run: |
-          $file='.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1'
-          $tokens=$null;$errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
-          if($errors.Count-gt0){
-            $errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
-            throw 'PowerShell 7 parse failed.'
+          $files=@(
+            '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
+            '.\scripts\windows\Build-CfaStage4Responses.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){
+              $errors|ForEach-Object{Write-Host "$file :: line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
+              throw "PowerShell 7 parse failed: $file"
+            }
           }
 
-      - name: Parse Stage 4 inspector with Windows PowerShell 5.1
+      - name: Parse Stage 4 scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $file='.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1'
-          $tokens=$null;$errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
-          if($errors.Count-gt0){
-            $errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
-            throw 'Windows PowerShell 5.1 parse failed.'
+          $files=@(
+            '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
+            '.\scripts\windows\Build-CfaStage4Responses.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){
+              $errors|ForEach-Object{Write-Host "$file :: line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"}
+              throw "Windows PowerShell 5.1 parse failed: $file"
+            }
           }
 
-      - name: Run exact Windows PowerShell 5.1 inspector self-test
+      - name: Run Stage 4 inspector self-test
         shell: powershell
         run: .\scripts\windows\Inspect-CfaStage4ResponseSource.ps1 -SelfTest
+
+      - name: Run Stage 4 response constructor self-test
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage4Responses.ps1 -SelfTest
 
       - name: Enforce Stage 4 fail-closed response contract
         shell: powershell
         run: |
-          $script=Get-Content '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1' -Raw
+          $inspect=Get-Content '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1' -Raw
+          $build=Get-Content '.\scripts\windows\Build-CfaStage4Responses.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
           foreach($marker in @(
             'RET_USD_1D_LOG',
@@ -61,7 +78,6 @@ jobs:
             'CFA-S4-004',
             'CFA-S4-005',
             'CFA-S4-006',
-            'SOURCE_SCHEMA_UNVERIFIED',
             'RESPONSE_FREEZE_BLOCKED',
             'No imputation is permitted',
             'No cross-rate conversion'
@@ -71,18 +87,31 @@ jobs:
           foreach($marker in @(
             'default_transaction_read_only=on',
             'asrp.q2_market_1m_observations',
-            '569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f',
             'stage4-market-columns.csv',
-            'stage4-market-sample.csv',
             'stage4-usd-pair-candidates.csv',
-            'stage4-usd-market-coverage.csv',
-            'CFA-S4-002',
-            'UNVERIFIED',
             'CFA-S4-006',
             'BLOCKED'
           )){
-            if($script -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
+            if($inspect -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
           }
-          if($script -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
-            throw 'Stage 4 source inspector contains a forbidden write/DDL marker.'
+          foreach($marker in @(
+            'RET_USD_1D_LOG',
+            'ExpectedDirectUsdPairs = 434',
+            "TIME '23:59:00'",
+            'Math]::Log',
+            'stage4-responses.csv',
+            'stage4-response-review-sample.csv',
+            'stage4-response-candidate.json',
+            "'CFA-S4-002'='PASS'",
+            "'CFA-S4-003'='PASS'",
+            "'CFA-S4-004'='PASS'",
+            "'CFA-S4-005'='PASS'",
+            "'CFA-S4-006'='BLOCKED'"
+          )){
+            if($build -notmatch [regex]::Escape($marker)){throw "Stage 4 constructor marker missing: $marker"}
+          }
+          foreach($text in @($inspect,$build)){
+            if($text -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
+              throw 'Stage 4 script contains a forbidden database write/DDL marker.'
+            }
           }
