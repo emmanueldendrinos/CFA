@@ -6,16 +6,20 @@ on:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV2.ps1'
+      - 'scripts/windows/Build-CfaStage4ResponsesV3.ps1'
       - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
+      - 'docs/evidence/stage4-v2-bounded-response-review-20260830.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   pull_request:
     paths:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV2.ps1'
+      - 'scripts/windows/Build-CfaStage4ResponsesV3.ps1'
       - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
+      - 'docs/evidence/stage4-v2-bounded-response-review-20260830.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   workflow_dispatch:
 
@@ -35,6 +39,7 @@ jobs:
             '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
             '.\scripts\windows\Build-CfaStage4Responses.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1',
+            '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1',
             '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
@@ -53,6 +58,7 @@ jobs:
             '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
             '.\scripts\windows\Build-CfaStage4Responses.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1',
+            '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1',
             '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
@@ -64,7 +70,7 @@ jobs:
             }
           }
 
-      - name: Run Stage 4 inspector self-test
+      - name: Run Stage 4 source inspector self-test
         shell: powershell
         run: .\scripts\windows\Inspect-CfaStage4ResponseSource.ps1 -SelfTest
 
@@ -76,9 +82,13 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1 -SelfTest
 
-      - name: Run corrected last-observed constructor self-test
+      - name: Run historical V2 last-observed constructor self-test
         shell: powershell
         run: .\scripts\windows\Build-CfaStage4ResponsesV2.ps1 -SelfTest
+
+      - name: Run V3 cutoff-safe constructor self-test
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage4ResponsesV3.ps1 -SelfTest
 
       - name: Enforce current Stage 4 fail-closed contract
         shell: powershell
@@ -87,25 +97,36 @@ jobs:
           $historical=Get-Content '.\scripts\windows\Build-CfaStage4Responses.ps1' -Raw
           $diag=Get-Content '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1' -Raw
           $v2=Get-Content '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1' -Raw
+          $v3=Get-Content '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
+          $review=Get-Content '.\docs\evidence\stage4-v2-bounded-response-review-20260830.md' -Raw
+
           foreach($marker in @(
-            'SOURCE_SCHEMA_PASS',
-            'DIRECT_USD_POPULATION_PASS',
-            'EXACT_2359_CANDIDATE_FAILED',
-            'DAY_END_DIAGNOSTIC_PASS',
-            'LAST_OBSERVED_RULE_FROZEN_FOR_VALIDATION',
-            'CFA-S4-007',
+            'EXACT_2359_FAILED',
+            'LAST_OBSERVED_V2_REVIEW_FAILED',
+            'UTC_DAY_OBS_RULE_FROZEN_FOR_VALIDATION',
+            'RET_USD_UTC_DAY_OBS_LOG',
             'CFA-S4-008',
+            'FAIL',
             'CFA-S4-009',
-            'CFA-S4-010',
-            'RET_USD_1D_LOG_LAST_OBS',
+            'CFA-S4-011',
+            'CFA-S4-012',
+            'PASS',
+            'CFA-S4-013',
+            'UNVERIFIED',
+            'CFA-S4-014',
+            'BLOCKED',
+            'CFA-S4-015',
             '37,058',
-            '36,505',
-            'No imputation is permitted',
-            'No response bridges an inactive/missing UTC day'
+            'No imputation'
           )){
             if($contract -notmatch [regex]::Escape($marker)){throw "Stage 4 contract marker missing: $marker"}
           }
+
+          foreach($marker in @('37 / 40','89 to 2,779','SDN','CFA-S4-011','FAIL')){
+            if($review -notmatch [regex]::Escape($marker)){throw "Stage 4 V2 review marker missing: $marker"}
+          }
+
           foreach($marker in @('default_transaction_read_only=on','asrp.q2_market_1m_observations','stage4-market-columns.csv','stage4-usd-pair-candidates.csv')){
             if($inspect -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
           }
@@ -115,21 +136,28 @@ jobs:
           foreach($marker in @('stage4-day-end-global-summary.csv','consecutive_day_last_observed_candidates','CFA-S4-007')){
             if($diag -notmatch [regex]::Escape($marker)){throw "Stage 4 diagnostic marker missing: $marker"}
           }
-          foreach($marker in @(
-            'RET_USD_1D_LOG_LAST_OBS',
-            'ExpectedActiveUsdPairDays = 37058',
-            'ExpectedResponses = 36505',
-            'DISTINCT ON',
-            'Math]::Log',
-            'stage4-responses.csv',
-            'stage4-response-review-sample.csv',
-            'stage4-response-candidate.json',
-            "'CFA-S4-009'='PASS'",
-            "'CFA-S4-010'='BLOCKED'"
-          )){
-            if($v2 -notmatch [regex]::Escape($marker)){throw "Corrected Stage 4 constructor marker missing: $marker"}
+          foreach($marker in @('RET_USD_1D_LOG_LAST_OBS','ExpectedResponses = 36505','Math]::Log')){
+            if($v2 -notmatch [regex]::Escape($marker)){throw "Historical V2 marker missing: $marker"}
           }
-          foreach($text in @($inspect,$historical,$diag,$v2)){
+          foreach($marker in @(
+            'RET_USD_UTC_DAY_OBS_LOG',
+            'ExpectedActiveUsdPairDays = 37058',
+            'first_rows',
+            'last_rows',
+            'first_open_price',
+            'last_close_price',
+            'Math]::Log',
+            'stage4-responses-v3.csv',
+            'stage4-response-v3-review-sample.csv',
+            'stage4-response-v3-candidate.json',
+            "'CFA-S4-013'='PASS'",
+            "'CFA-S4-014'='UNVERIFIED'",
+            "'CFA-S4-015'='BLOCKED'"
+          )){
+            if($v3 -notmatch [regex]::Escape($marker)){throw "Stage 4 V3 constructor marker missing: $marker"}
+          }
+
+          foreach($text in @($inspect,$historical,$diag,$v2,$v3)){
             if($text -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
               throw 'Stage 4 script contains a forbidden database write/DDL marker.'
             }
