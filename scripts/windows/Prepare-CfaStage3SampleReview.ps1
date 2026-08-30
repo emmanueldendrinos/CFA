@@ -175,17 +175,19 @@ function Invoke-SelfTest {
     try {
         $run = Join-Path $root 'run'; $out = Join-Path $root 'out'; New-Item -ItemType Directory -Path $run -Force | Out-Null
         $rows = New-Object System.Collections.ArrayList
-        for ($i=1; $i -le 30; $i++) {
+        $surfaces = @('ALLNAMES','PAGE_TITLE','V2PERSONS','V2ORGANIZATIONS','ALLNAMES|PAGE_TITLE','V2PERSONS|PAGE_TITLE')
+        for ($i=1; $i -le 36; $i++) {
             $kind = $i % 3
             if ($kind -eq 0) { $status='REJECT_CONTEXT';$req='True';$econ='False';$title='False';$reason='NONE' }
             elseif ($kind -eq 1) { $status='MATCH';$req='True';$econ='True';$title='False';$reason='ECON_BITCOIN' }
             else { $status='MATCH';$req='False';$econ='False';$title='False';$reason='NOT_REQUIRED' }
-            [void]$rows.Add([pscustomobject][ordered]@{match_status=$status;base_asset_id=('A'+$i);alias_text=('Alias '+$i);requires_crypto_context=$req;record_id=('R'+$i);gdelt_date_utc='20250401000000';source_common_name='example';document_identifier=('https://example.test/'+$i);page_title=('Title '+$i);matched_surfaces=if($i%2-eq0){'ALLNAMES'}else{'PAGE_TITLE'};econ_bitcoin_theme=$econ;title_crypto_anchor=$title;context_reason=$reason})
+            $surface=$surfaces[$i%$surfaces.Count]
+            [void]$rows.Add([pscustomobject][ordered]@{match_status=$status;base_asset_id=('A'+$i);alias_text=('Alias '+$i);requires_crypto_context=$req;record_id=('R'+$i);gdelt_date_utc='20250401000000';source_common_name='example';document_identifier=('https://example.test/'+$i);page_title=('Title '+$i);matched_surfaces=$surface;econ_bitcoin_theme=$econ;title_crypto_anchor=$title;context_reason=$reason})
         }
         @($rows.ToArray()) | Export-Csv -LiteralPath (Join-Path $run 'stage3-match-samples.csv') -NoTypeInformation -Encoding UTF8
         [void](Invoke-PrepareReview -RunRoot $run -OutRoot $out -TakePerStratum 2 -Maximum 180)
         $logic = Assert-SampleLogic -Rows @($rows.ToArray()); if($logic.status-ne'PASS'){throw 'Valid synthetic rows should pass.'}
-        $rows[0].context_reason='NONE';$bad=Assert-SampleLogic -Rows @($rows.ToArray());if($bad.status-ne'FAIL'){throw 'Corrupted sample logic should fail.'}
+        $rows[0].context_reason='NOT_REQUIRED';$bad=Assert-SampleLogic -Rows @($rows.ToArray());if($bad.status-ne'FAIL'){throw 'Corrupted sample logic should fail.'}
         Write-Host 'SELF-TEST: PASS'
     }
     finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
