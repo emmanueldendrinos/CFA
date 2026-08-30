@@ -1,6 +1,6 @@
-# CFA Stage 3 news matching V3 corrective contract — 2026-08-30
+# CFA Stage 3 news matching corrective contract — 2026-08-30
 
-Status: **FROZEN_V3_SEMANTIC_RULE / LOCAL_ENCODING_GATE_FAIL / UTF8_ELIGIBILITY_CORRECTION_REQUIRED / STAGE3_FREEZE_BLOCKED**
+Status: **FROZEN_V3_SEMANTIC_RULE / UTF8_EXCLUSION_POLICY_APPROVED / V4_CODE_CI_PASS / LOCAL_V4_EXECUTION_UNVERIFIED / STAGE3_FREEZE_BLOCKED**
 
 ## Authority and preserved upstream state
 
@@ -45,16 +45,18 @@ Observed audit result:
 - issue archives scanned: **139**;
 - strict UTF-8 invalid rows in issue set: **148**;
 - rows with invalid UTF-8 in one or more Stage 3-used fields: **126**;
+- all 126 Stage 3-critical occurrences are in field 26 zero-based / field 27 one-based (`extras`, the page-title source); 
+- non-Stage-3 fields 19 and 21 zero-based also contain 7 and 15 invalid occurrences respectively;
 - known malformed 27-field rows: **5**;
 - evidence directory: `D:\CFA-bulk\analysis\stage3-news-matching\20260830-134344-v3-finalization-6c24b962\encoding\20260830-134417-9e880050`.
 
-Therefore `CFA-S3F-008` is **FAIL**. This is a source-eligibility failure, not a controller failure. The V2/V3 outputs were produced with lenient decoding and cannot be frozen while those 126 raw rows remain eligible without an explicit, reproducible policy.
+Therefore `CFA-S3F-008` is **FAIL**. This failed observation is preserved permanently in lineage and is not relabeled PASS.
 
-The five malformed rows remain excluded under the already frozen source-shape rule. They are not reinterpreted.
+## Approved UTF-8 eligibility policy
 
-## Required UTF-8 eligibility correction
+Project policy is now frozen as follows: **exclude every raw GDELT row with invalid UTF-8 in a Stage 3-used field from the Stage 3 news-matching eligible population. Do not spend further project effort re-encoding or semantically repairing those rows.**
 
-The corrective direction is fail-closed: **do not reinterpret malformed UTF-8 bytes**. Every raw GDELT row with invalid UTF-8 in any Stage 3-used field must be excluded from the Stage 3 news-matching eligible population.
+The exclusion is deliberately small and lineage-preserving. It removes only the exact 126 raw rows identified by the strict audit, subject to exact local reconciliation of any overlap with the five already-excluded malformed rows. No whole archive and no wider corpus is re-encoded or discarded.
 
 The exclusion identity is raw-lineage based, not text based:
 
@@ -63,27 +65,21 @@ The exclusion identity is raw-lineage based, not text based:
 - `raw_line_sha256`;
 - exact invalid field indexes.
 
-Because V2 match and context-reject outputs preserve `archive_file` and `row_ordinal`, the impact of the 126-row exclusion set can be reconciled exactly against the hash-verified parent outputs without rescanning all 9,183,757 rows.
+Because V2 match and context-reject outputs preserve `archive_file` and `row_ordinal`, the impact of the exclusion set can be reconciled exactly against the hash-verified parent outputs without rescanning all 9,183,757 rows.
 
-`scripts/windows/Diagnose-CfaStage3CriticalUtf8Impact.ps1` is the candidate diagnostic for this correction. It is designed to:
+## Corrected V4 pipeline
 
-1. require the exact reproduced Stage 2 archive-scan SHA-256;
-2. scan only the frozen 139 issue archives;
-3. require exactly 126 Stage 3-critical UTF-8-invalid rows and exactly 5 malformed rows;
-4. emit the complete 126-row exclusion manifest with raw-line hashes;
-5. reconcile exact overlap with V2 matches and context rejects using `(archive_file, row_ordinal)`;
-6. record any V2 bounded-sample overlap separately;
-7. leave the matching/freeze gates blocked until a corrected candidate excludes the manifest rows before applying the frozen V3 short-symbol rule.
+The corrected V4 candidate performs, in order:
 
-No Stage 3 final candidate may silently replace `CFA-S3F-008=FAIL` with PASS. A later corrected-candidate gate must explicitly preserve this failed observation and prove that the failed rows are excluded from eligibility.
+1. `Diagnose-CfaStage3CriticalUtf8Impact.ps1`: enumerate the exact critical-UTF8 exclusion manifest and reconcile it against the hash-verified V2 outputs.
+2. `Apply-CfaStage3NewsMatchingV3.ps1`: apply the frozen short-default-symbol semantic correction to the verified V2 parent.
+3. `Apply-CfaStage3NewsMatchingV4.ps1`: exclude every manifest row from V3 matches, V3 short-symbol rejects, V2 context rejects, and sample lineage, and freeze the corrected eligible-row count from the exact manifest/malformed-row overlap.
+4. `Prepare-CfaStage3V4SampleReview.ps1`: produce a new deterministic bounded semantic-review set from the corrected candidate.
+5. `Summarize-CfaStage3NewsByAsset.ps1`: produce per-asset counts from the corrected candidate.
 
-## Controller correction discovered during local validation
+`Run-CfaStage3V4Finalization.ps1` orchestrates the complete pipeline and emits `stage3-v4-finalization-candidate.json`.
 
-An earlier local V3 finalization attempt exposed a controller-only argument-forwarding defect: `Run-CfaStage3V3Finalization.ps1` built arrays containing textual parameter names and splatted those arrays into child PowerShell scripts. PowerShell array splatting is positional, so the Stage 2 archive-scan path was bound to the integer `MaxDetailRowsPerArchive` parameter in `Diagnose-CfaStage3FieldEncoding.ps1` before the encoding audit could run.
-
-The controller was corrected at executable commit `01ab8970a9cb74d9d62aded6ebc8d51aa94a724f` to use named-parameter hashtable splatting for every child script. Its self-test now creates a mandatory named-parameter probe script and verifies forwarding directly. GitHub Actions run `33314524596` completed successfully against that commit.
-
-This controller correction did not alter the V3 semantic matching rule, V2 parent outputs, alias registry, source shape, encoding gate definition, or bounded-review definition.
+The complete V4 implementation, including PowerShell 7 parsing, Windows PowerShell 5.1 parsing, the critical-UTF8 impact diagnostic, V4 eligibility correction, V4 bounded-review helper, V4 controller, all preserved V1/V2/V3 regressions, and fail-closed contract checks, passed GitHub Actions run `33315496183` at executable commit `7fea6d5cc6c35e6674e26be39ef75a74d27ccc4a`.
 
 ## Frozen task/gate IDs and current evidence status
 
@@ -92,21 +88,33 @@ This controller correction did not alter the V3 semantic matching rule, V2 paren
 | `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS | Repository authority and Stage 2 evidence re-established. |
 | `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 parent lineage | PASS | Correction remains non-destructive and response-independent. |
 | `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 source shape and source reconciliation | PASS | Reproduced Stage 2 archive scan matches the frozen SHA-256 exactly. |
-| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 regression passed; semantic code unchanged. |
-| `CFA-S3F-005` | Verify exact local parent V2 hashes and emit non-destructive V3 outputs/reject lineage | UNVERIFIED | Local finalization stopped at the encoding gate before the V3 post-filter ran. |
+| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 regression passed; semantic rule frozen. |
+| `CFA-S3F-005` | Verify exact local parent V2 hashes and emit non-destructive V3 outputs/reject lineage | UNVERIFIED | Will be resolved by exact local V4 controller execution. |
 | `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | PASS | V3 post-filter regression passed in CI. |
 | `CFA-S3F-007` | Validate deterministic V3 review selection and automatic rule consistency | PASS | V3 bounded-review helper self-test passed in CI. |
-| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | FAIL | Direct local audit found 126 rows with invalid UTF-8 in matcher-used fields. |
-| `CFA-S3F-009` | Parse and self-test V3 implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | GitHub Actions run `33314524596` passed at executable commit `01ab8970a9cb74d9d62aded6ebc8d51aa94a724f`. |
+| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | FAIL | Direct local audit found 126 rows with invalid UTF-8 in matcher-used field 26. |
+| `CFA-S3F-009` | Parse and self-test implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | V4 workflow run `33315496183` passed at executable commit `7fea6d5cc6c35e6674e26be39ef75a74d27ccc4a`. |
 | `CFA-S3F-010` | Historical V3 freeze gate | BLOCKED | Invalidated by `CFA-S3F-008=FAIL`; V3 cannot freeze. |
-| `CFA-S3F-011` | Enumerate the exact Stage 3-critical UTF-8 exclusion manifest at `(archive_file,row_ordinal,raw_line_sha256)` grain | UNVERIFIED | Candidate diagnostic implemented; requires exact local execution. |
-| `CFA-S3F-012` | Reconcile the exclusion manifest against exact hash-verified V2 match/reject outputs | UNVERIFIED | Requires exact local execution of the impact diagnostic. |
-| `CFA-S3F-013` | Define and apply corrected candidate: exclude all manifest rows before the frozen V3 short-symbol rule | BLOCKED | Depends on `CFA-S3F-011` and `CFA-S3F-012`. |
-| `CFA-S3F-014` | Produce and directly inspect deterministic bounded review for corrected candidate | BLOCKED | Depends on `CFA-S3F-013`. |
-| `CFA-S3F-015` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on all corrected-candidate gates passing. |
-| `CFA-S3-005` | Direct bounded accepted/rejected semantic review | BLOCKED | V3 review is invalid downstream of the encoding failure; must be regenerated for the corrected candidate. |
+| `CFA-S3F-011` | Enumerate exact Stage 3-critical UTF-8 exclusion manifest at `(archive_file,row_ordinal,raw_line_sha256)` grain | UNVERIFIED | Code CI PASS; requires exact local execution. |
+| `CFA-S3F-012` | Reconcile exclusion manifest against exact hash-verified V2 match/reject outputs | UNVERIFIED | Code CI PASS; requires exact local execution. |
+| `CFA-S3F-013` | Apply corrected candidate: exclude all manifest rows and preserve frozen V3 short-symbol rule | UNVERIFIED | Code CI PASS; requires exact local execution. |
+| `CFA-S3F-014` | Produce and directly inspect deterministic bounded review for corrected candidate | BLOCKED | Review preparation requires exact local V4 candidate; direct inspection follows. |
+| `CFA-S3F-015` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on all corrected-candidate gates and direct semantic review passing. |
+| `CFA-S3-005` | Direct bounded accepted/rejected semantic review | BLOCKED | Must be regenerated and directly reviewed on corrected V4 candidate. |
 | `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze while any required corrected-candidate gate is unresolved. |
+
+## Required V4 outputs
+
+A valid local corrected candidate must contain:
+
+- `stage3-v4-finalization-candidate.json`;
+- critical-UTF8 impact summary and exact exclusion manifest with hashes;
+- hash-verified `CANDIDATE_V3` semantic-correction outputs;
+- `CANDIDATE_V4` `stage3-match-summary.json`;
+- corrected V4 match, reject, sample, and UTF-8 exclusion lineage with SHA-256 values;
+- deterministic V4 bounded-review CSV and SHA-256;
+- per-asset V4 news counts and SHA-256.
 
 ## Current completion boundary
 
-Stage 3 is **not complete**. The only valid next operation is the exact local critical-UTF8 impact diagnostic. No response definition, candidate factor, leakage test, model-ready freeze, or PLS work may begin while `CFA-S3-006` remains BLOCKED.
+Stage 3 is **not complete**. The next valid operation is the exact local V4 finalization controller. If its mechanical gates pass, the only remaining Stage 3 operation is direct inspection of every deterministic V4 bounded-review row. No response definition, candidate factor, leakage test, model-ready freeze, or PLS work may begin while `CFA-S3-006` remains BLOCKED.
