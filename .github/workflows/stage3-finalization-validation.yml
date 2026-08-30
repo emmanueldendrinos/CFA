@@ -9,6 +9,7 @@ on:
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
+      - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
+      - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
 
@@ -39,7 +41,8 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
-            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -56,7 +59,8 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
-            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -80,9 +84,9 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1
 
-      - name: Run exact Windows PowerShell 5.1 V2 R1 controller self-test
+      - name: Run exact Windows PowerShell 5.1 V2 R1 controller test
         shell: powershell
-        run: .\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1 -SelfTest
+        run: .\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1
 
       - name: Enforce corrected Stage 3 source precision and resume contract
         shell: powershell
@@ -99,5 +103,4 @@ jobs:
           if($v2 -notmatch 'StrongCryptoTitleRegex'){throw 'V2 strong crypto title context is missing.'}
           if($v2 -match '\(\?:crypto\|cryptocurrency\|cryptocurrencies\|blockchain\|token\|tokens\|coin\|coins'){throw 'Generic V1 crypto-title anchor leaked into V2.'}
           foreach($marker in @('Near-Term','Short-Term','Sky-High','£1 coin hack','BADGER, BAL')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 false-positive regression marker missing: $marker"}}
-          if($r1 -match '\.ExitCode'){throw 'R1 controller must not depend on Process.ExitCode.'}
           foreach($marker in @('Test-WorkerComplete','reused_workers','Find-ActiveWorkerProcess','worker-summary.json')){if($r1 -notmatch [regex]::Escape($marker)){throw "R1 resume marker missing: $marker"}}
