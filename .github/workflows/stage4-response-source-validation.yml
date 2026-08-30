@@ -7,9 +7,12 @@ on:
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV2.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV3.ps1'
+      - 'scripts/windows/Finalize-CfaStage4ResponsesV3.ps1'
       - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - 'docs/evidence/stage4-v2-bounded-response-review-20260830.md'
+      - 'docs/evidence/stage4-v3-bounded-response-review-20260831.md'
+      - 'docs/evidence/stage4-v3-review-adjudication-20260831.json'
       - '.github/workflows/stage4-response-source-validation.yml'
   pull_request:
     paths:
@@ -17,9 +20,12 @@ on:
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV2.ps1'
       - 'scripts/windows/Build-CfaStage4ResponsesV3.ps1'
+      - 'scripts/windows/Finalize-CfaStage4ResponsesV3.ps1'
       - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - 'docs/evidence/stage4-v2-bounded-response-review-20260830.md'
+      - 'docs/evidence/stage4-v3-bounded-response-review-20260831.md'
+      - 'docs/evidence/stage4-v3-review-adjudication-20260831.json'
       - '.github/workflows/stage4-response-source-validation.yml'
   workflow_dispatch:
 
@@ -40,6 +46,7 @@ jobs:
             '.\scripts\windows\Build-CfaStage4Responses.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1',
+            '.\scripts\windows\Finalize-CfaStage4ResponsesV3.ps1',
             '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
@@ -59,6 +66,7 @@ jobs:
             '.\scripts\windows\Build-CfaStage4Responses.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1',
             '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1',
+            '.\scripts\windows\Finalize-CfaStage4ResponsesV3.ps1',
             '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
@@ -90,6 +98,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Build-CfaStage4ResponsesV3.ps1 -SelfTest
 
+      - name: Run V3 freeze finalizer self-test
+        shell: powershell
+        run: .\scripts\windows\Finalize-CfaStage4ResponsesV3.ps1 -SelfTest
+
       - name: Enforce current Stage 4 fail-closed contract
         shell: powershell
         run: |
@@ -98,34 +110,37 @@ jobs:
           $diag=Get-Content '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1' -Raw
           $v2=Get-Content '.\scripts\windows\Build-CfaStage4ResponsesV2.ps1' -Raw
           $v3=Get-Content '.\scripts\windows\Build-CfaStage4ResponsesV3.ps1' -Raw
+          $finalizer=Get-Content '.\scripts\windows\Finalize-CfaStage4ResponsesV3.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
-          $review=Get-Content '.\docs\evidence\stage4-v2-bounded-response-review-20260830.md' -Raw
+          $reviewV2=Get-Content '.\docs\evidence\stage4-v2-bounded-response-review-20260830.md' -Raw
+          $reviewV3=Get-Content '.\docs\evidence\stage4-v3-bounded-response-review-20260831.md' -Raw
+          $adjudication=Get-Content '.\docs\evidence\stage4-v3-review-adjudication-20260831.json' -Raw | ConvertFrom-Json
 
           foreach($marker in @(
-            'EXACT_2359_FAILED',
-            'LAST_OBSERVED_V2_REVIEW_FAILED',
-            'UTC_DAY_OBS_RULE_FROZEN_FOR_VALIDATION',
+            'STAGE4_V3_VALIDATED',
             'RET_USD_UTC_DAY_OBS_LOG',
-            'CFA-S4-008',
-            'FAIL',
-            'CFA-S4-009',
-            'CFA-S4-011',
-            'CFA-S4-012',
-            'PASS',
-            'CFA-S4-013',
-            'UNVERIFIED',
-            'CFA-S4-014',
-            'BLOCKED',
+            'CFA-S4-008 = FAIL',
+            'CFA-S4-009 = FAIL',
+            'CFA-S4-011 = FAIL',
+            'CFA-S4-012 = PASS',
+            'CFA-S4-013 = PASS',
+            'CFA-S4-014 = PASS',
             'CFA-S4-015',
+            'BLOCKED',
             '37,058',
+            '434',
             'No imputation'
           )){
             if($contract -notmatch [regex]::Escape($marker)){throw "Stage 4 contract marker missing: $marker"}
           }
 
           foreach($marker in @('37 / 40','89 to 2,779','SDN','CFA-S4-011','FAIL')){
-            if($review -notmatch [regex]::Escape($marker)){throw "Stage 4 V2 review marker missing: $marker"}
+            if($reviewV2 -notmatch [regex]::Escape($marker)){throw "Stage 4 V2 review marker missing: $marker"}
           }
+          foreach($marker in @('V3_DIRECT_REVIEW_PASS','49','mechanical failures: **0**','CFA-S4-014','PASS','zero-span')){
+            if($reviewV3 -notmatch [regex]::Escape($marker)){throw "Stage 4 V3 review marker missing: $marker"}
+          }
+          if([string]$adjudication.review_conclusion -cne 'PASS' -or [int]$adjudication.review_rows -ne 49 -or [int]$adjudication.decision_summary.PASS -ne 49 -or [int]$adjudication.decision_summary.FAIL -ne 0){throw 'V3 adjudication is not all-PASS.'}
 
           foreach($marker in @('default_transaction_read_only=on','asrp.q2_market_1m_observations','stage4-market-columns.csv','stage4-usd-pair-candidates.csv')){
             if($inspect -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
@@ -139,25 +154,14 @@ jobs:
           foreach($marker in @('RET_USD_1D_LOG_LAST_OBS','ExpectedResponses = 36505','Math]::Log')){
             if($v2 -notmatch [regex]::Escape($marker)){throw "Historical V2 marker missing: $marker"}
           }
-          foreach($marker in @(
-            'RET_USD_UTC_DAY_OBS_LOG',
-            'ExpectedActiveUsdPairDays = 37058',
-            'first_rows',
-            'last_rows',
-            'first_open_price',
-            'last_close_price',
-            'Math]::Log',
-            'stage4-responses-v3.csv',
-            'stage4-response-v3-review-sample.csv',
-            'stage4-response-v3-candidate.json',
-            "'CFA-S4-013'='PASS'",
-            "'CFA-S4-014'='UNVERIFIED'",
-            "'CFA-S4-015'='BLOCKED'"
-          )){
+          foreach($marker in @('RET_USD_UTC_DAY_OBS_LOG','ExpectedActiveUsdPairDays = 37058','first_rows','last_rows','first_open_price','last_close_price','Math]::Log','stage4-responses-v3.csv','stage4-response-v3-review-sample.csv','stage4-response-v3-candidate.json',"'CFA-S4-013'='PASS'", "'CFA-S4-014'='UNVERIFIED'", "'CFA-S4-015'='BLOCKED'")){
             if($v3 -notmatch [regex]::Escape($marker)){throw "Stage 4 V3 constructor marker missing: $marker"}
           }
+          foreach($marker in @('ExpectedCandidateSha256','ExpectedReviewSha256','ExpectedResponsesSha256','ExpectedDaySummarySha256','ExpectedResponseRows = 37058','ExpectedDistinctBases = 434','ExpectedReviewRows = 49','Assert-ResponseRow','V3_DIRECT_REVIEW_PASS','stage4-v3-freeze-receipt.json','CFA-S4-014','CFA-S4-015','PASS')){
+            if($finalizer -notmatch [regex]::Escape($marker)){throw "Stage 4 V3 finalizer marker missing: $marker"}
+          }
 
-          foreach($text in @($inspect,$historical,$diag,$v2,$v3)){
+          foreach($text in @($inspect,$historical,$diag,$v2,$v3,$finalizer)){
             if($text -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
               throw 'Stage 4 script contains a forbidden database write/DDL marker.'
             }
