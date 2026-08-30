@@ -23,7 +23,7 @@ function Write-Utf8NoBom {
 }
 function Get-Sha { param([string]$Path); return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Invoke-ChildScript {
-    param([string]$Path,[object[]]$Arguments)
+    param([string]$Path,[hashtable]$Arguments)
     $global:LASTEXITCODE = $null
     & $Path @Arguments
     $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
@@ -90,6 +90,20 @@ function Invoke-SelfTest {
     foreach ($name in @('Apply-CfaStage3NewsMatchingV3.ps1','Prepare-CfaStage3V3SampleReview.ps1','Diagnose-CfaStage3FieldEncoding.ps1','Summarize-CfaStage3NewsByAsset.ps1')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name) -PathType Leaf)) { throw "Required finalization component missing: $name" }
     }
+    $probe = Join-Path ([IO.Path]::GetTempPath()) ('cfa-s3-v3-arg-forward-' + [guid]::NewGuid().ToString('N') + '.ps1')
+    try {
+        Write-Utf8NoBom $probe @'
+param(
+    [Parameter(Mandatory=$true)][string]$Alpha,
+    [Parameter(Mandatory=$true)][int]$Beta
+)
+if ($Alpha -ne 'named-value' -or $Beta -ne 17) { throw 'named argument forwarding failed' }
+'@
+        Invoke-ChildScript $probe @{ Alpha='named-value'; Beta=17 }
+    }
+    finally {
+        if (Test-Path -LiteralPath $probe -PathType Leaf) { Remove-Item -LiteralPath $probe -Force }
+    }
     Write-Host 'SELF-TEST: PASS'
 }
 if ($SelfTest) { try { Invoke-SelfTest; exit 0 } catch { Write-Host 'SELF-TEST: FAIL'; Write-Host $_.Exception.Message; exit 1 } }
@@ -122,27 +136,27 @@ try {
     New-Item -ItemType Directory -Path $encodingRoot,$reviewRoot -Force | Out-Null
 
     $encodingScript = Join-Path $PSScriptRoot 'Diagnose-CfaStage3FieldEncoding.ps1'
-    Invoke-ChildScript $encodingScript @('-ArchiveRoot',$ArchiveRoot,'-ArchiveScanCsv',$ArchiveScanCsv,'-OutputRoot',$encodingRoot)
+    Invoke-ChildScript $encodingScript @{ ArchiveRoot=$ArchiveRoot; ArchiveScanCsv=$ArchiveScanCsv; OutputRoot=$encodingRoot }
     $encodingSummary = @(Get-ChildItem -LiteralPath $encodingRoot -Recurse -File -Filter 'stage3-encoding-summary.json' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
     if ($encodingSummary.Count -ne 1) { throw 'Stage 3 encoding summary not found after audit.' }
     $enc = Get-Content -LiteralPath $encodingSummary[0].FullName -Raw | ConvertFrom-Json
     if ([string]$enc.status -ne 'PASS') { throw 'Stage 3 encoding hard gate did not PASS.' }
 
     $applyScript = Join-Path $PSScriptRoot 'Apply-CfaStage3NewsMatchingV3.ps1'
-    Invoke-ChildScript $applyScript @('-Stage3V2RunRoot',$Stage3V2RunRoot,'-RepoRoot',$RepoRoot,'-OutputRoot',$v3Root)
+    Invoke-ChildScript $applyScript @{ Stage3V2RunRoot=$Stage3V2RunRoot; RepoRoot=$RepoRoot; OutputRoot=$v3Root }
     $v3SummaryPath = Join-Path $v3Root 'stage3-match-summary.json'
     $v3 = Get-Content -LiteralPath $v3SummaryPath -Raw | ConvertFrom-Json
     if ([string]$v3.run_status -ne 'PASS' -or [string]$v3.matching_contract -ne 'CANDIDATE_V3') { throw 'V3 post-filter hard gate did not PASS.' }
 
     $reviewScript = Join-Path $PSScriptRoot 'Prepare-CfaStage3V3SampleReview.ps1'
-    Invoke-ChildScript $reviewScript @('-Stage3V3RunRoot',$v3Root,'-OutputRoot',$reviewRoot)
+    Invoke-ChildScript $reviewScript @{ Stage3V3RunRoot=$v3Root; OutputRoot=$reviewRoot }
     $reviewSummary = @(Get-ChildItem -LiteralPath $reviewRoot -Recurse -File -Filter 'stage3-v3-bounded-sample-review-summary.json' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
     if ($reviewSummary.Count -ne 1) { throw 'V3 bounded review summary not found.' }
     $review = Get-Content -LiteralPath $reviewSummary[0].FullName -Raw | ConvertFrom-Json
     if ([string]$review.status -ne 'PASS') { throw 'V3 bounded review preparation hard gate did not PASS.' }
 
     $countScript = Join-Path $PSScriptRoot 'Summarize-CfaStage3NewsByAsset.ps1'
-    Invoke-ChildScript $countScript @('-Stage3RunRoot',$v3Root)
+    Invoke-ChildScript $countScript @{ Stage3RunRoot=$v3Root }
     $countsPath = Join-Path $v3Root 'stage3-news-counts-by-asset.csv'
     if (-not (Test-Path -LiteralPath $countsPath -PathType Leaf)) { throw 'V3 per-asset news count output missing.' }
     $reviewCsv = [string]$review.output_review_csv
