@@ -14,6 +14,7 @@ on:
       - 'scripts/windows/Apply-CfaStage3NewsMatchingV3.ps1'
       - 'scripts/windows/Prepare-CfaStage3V3SampleReview.ps1'
       - 'scripts/windows/Diagnose-CfaStage3FieldEncoding.ps1'
+      - 'scripts/windows/Diagnose-CfaStage3CriticalUtf8Impact.ps1'
       - 'scripts/windows/Run-CfaStage3V3Finalization.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
@@ -29,6 +30,7 @@ on:
       - 'scripts/windows/Apply-CfaStage3NewsMatchingV3.ps1'
       - 'scripts/windows/Prepare-CfaStage3V3SampleReview.ps1'
       - 'scripts/windows/Diagnose-CfaStage3FieldEncoding.ps1'
+      - 'scripts/windows/Diagnose-CfaStage3CriticalUtf8Impact.ps1'
       - 'scripts/windows/Run-CfaStage3V3Finalization.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
@@ -57,6 +59,7 @@ jobs:
             '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1',
             '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1',
             '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1',
+            '.\scripts\windows\Diagnose-CfaStage3CriticalUtf8Impact.ps1',
             '.\scripts\windows\Run-CfaStage3V3Finalization.ps1'
           )
           foreach($file in $files){
@@ -80,6 +83,7 @@ jobs:
             '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1',
             '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1',
             '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1',
+            '.\scripts\windows\Diagnose-CfaStage3CriticalUtf8Impact.ps1',
             '.\scripts\windows\Run-CfaStage3V3Finalization.ps1'
           )
           foreach($file in $files){
@@ -124,6 +128,10 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1 -ArchiveScanCsv . -OutputRoot . -SelfTest
 
+      - name: Run exact Windows PowerShell 5.1 Stage 3 critical UTF8 impact self-test
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage3CriticalUtf8Impact.ps1 -ArchiveScanCsv . -Stage3V2RunRoot . -OutputRoot . -SelfTest
+
       - name: Run exact Windows PowerShell 5.1 V3 finalization controller self-test
         shell: powershell
         run: .\scripts\windows\Run-CfaStage3V3Finalization.ps1 -SelfTest
@@ -138,8 +146,9 @@ jobs:
           $v3=Get-Content '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1' -Raw
           $review=Get-Content '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1' -Raw
           $encoding=Get-Content '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1' -Raw
+          $impact=Get-Content '.\scripts\windows\Diagnose-CfaStage3CriticalUtf8Impact.ps1' -Raw
           $controller=Get-Content '.\scripts\windows\Run-CfaStage3V3Finalization.ps1' -Raw
-          foreach($text in @($v1,$v2,$r1,$adjudicate,$v3,$controller)){
+          foreach($text in @($v1,$v2,$r1,$adjudicate,$v3,$controller,$impact)){
             if($text -notmatch '9183757L'){throw 'Corrected 9,183,757 Stage 3 row expectation is missing.'}
             if($text -match '9091236L'){throw 'Stale 9,091,236 Stage 3 row expectation leaked into finalization code.'}
           }
@@ -151,4 +160,5 @@ jobs:
           foreach($marker in @('SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO','APPROVED_NONDEFAULT_SAME_RECORD','IP Infrastructure','TITLE_CRYPTO','CANDIDATE_V3')){if($v3 -notmatch [regex]::Escape($marker)){throw "V3 corrective marker missing: $marker"}}
           foreach($marker in @('REJECT_V3_SHORT_SYMBOL_TITLE_CONTEXT','IP','OM','direct_semantic_review')){if($review -notmatch [regex]::Escape($marker)){throw "V3 semantic review marker missing: $marker"}}
           foreach($marker in @('0,1,3,4,8,12,14,23,26','CriticalIndexes0Based','CFA_S3F_008')){if($encoding -notmatch [regex]::Escape($marker)){throw "Stage 3 encoding gate marker missing: $marker"}}
+          foreach($marker in @('ExpectedCriticalInvalidRows = 126L','raw_line_sha256','archive_file','row_ordinal','CFA-S3F-011','CFA-S3F-012')){if($impact -notmatch [regex]::Escape($marker)){throw "Stage 3 critical UTF8 impact marker missing: $marker"}}
           foreach($marker in @('VALIDATION_CANDIDATE','CFA-S3-005','UNVERIFIED','CFA-S3-006','BLOCKED')){if($controller -notmatch [regex]::Escape($marker)){throw "Stage 3 fail-closed finalization marker missing: $marker"}}
