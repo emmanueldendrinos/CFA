@@ -77,8 +77,8 @@ function Get-Sha {
 function Parse-BoolStrict {
     param([object]$Value,[string]$Label)
     $text = ([string]$Value).Trim().ToLowerInvariant()
-    if ($text -eq 'true') { return $true }
-    if ($text -eq 'false') { return $false }
+    if ($text -eq 'true' -or $text -eq 't') { return $true }
+    if ($text -eq 'false' -or $text -eq 'f') { return $false }
     throw "Malformed boolean for ${Label}: '$Value'"
 }
 
@@ -173,6 +173,10 @@ function Build-ResponseRows {
 }
 
 function Invoke-SelfTest {
+    if (-not (Parse-BoolStrict 'True' 'selftest true')) { throw 'Self-test failed: True was not parsed as true.' }
+    if (-not (Parse-BoolStrict 't' 'selftest PostgreSQL t')) { throw 'Self-test failed: PostgreSQL t was not parsed as true.' }
+    if (Parse-BoolStrict 'False' 'selftest false') { throw 'Self-test failed: False was not parsed as false.' }
+    if (Parse-BoolStrict 'f' 'selftest PostgreSQL f') { throw 'Self-test failed: PostgreSQL f was not parsed as false.' }
     $fake = @(
         [pscustomobject]@{base_asset_id='A';pair_token_opaque='AUSD';source_member_ordinal='1';utc_day=[datetime]'2025-04-01';candle_start_utc_value=[datetime]'2025-04-01T18:00:00Z';close_price_text='100';close_price_value=100.0;minutes_before_midnight=359;physical_record_number='1';raw_record_sha256=('a'*64)},
         [pscustomobject]@{base_asset_id='A';pair_token_opaque='AUSD';source_member_ordinal='1';utc_day=[datetime]'2025-04-02';candle_start_utc_value=[datetime]'2025-04-02T12:00:00Z';close_price_text='110';close_price_value=110.0;minutes_before_midnight=719;physical_record_number='2';raw_record_sha256=('b'*64)},
