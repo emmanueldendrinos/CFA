@@ -181,7 +181,8 @@ function Invoke-SelfTest {
             if ($kind -eq 0) { $status='REJECT_CONTEXT';$req='True';$econ='False';$title='False';$reason='NONE' }
             elseif ($kind -eq 1) { $status='MATCH';$req='True';$econ='True';$title='False';$reason='ECON_BITCOIN' }
             else { $status='MATCH';$req='False';$econ='False';$title='False';$reason='NOT_REQUIRED' }
-            $surface=$surfaces[$i%$surfaces.Count]
+            $surfaceIndex=[int]([Math]::Floor(($i-1)/3)%$surfaces.Count)
+            $surface=$surfaces[$surfaceIndex]
             [void]$rows.Add([pscustomobject][ordered]@{match_status=$status;base_asset_id=('A'+$i);alias_text=('Alias '+$i);requires_crypto_context=$req;record_id=('R'+$i);gdelt_date_utc='20250401000000';source_common_name='example';document_identifier=('https://example.test/'+$i);page_title=('Title '+$i);matched_surfaces=$surface;econ_bitcoin_theme=$econ;title_crypto_anchor=$title;context_reason=$reason})
         }
         @($rows.ToArray()) | Export-Csv -LiteralPath (Join-Path $run 'stage3-match-samples.csv') -NoTypeInformation -Encoding UTF8
