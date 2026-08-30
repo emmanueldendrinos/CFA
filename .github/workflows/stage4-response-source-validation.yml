@@ -5,12 +5,14 @@ on:
     paths:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
+      - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   pull_request:
     paths:
       - 'scripts/windows/Inspect-CfaStage4ResponseSource.ps1'
       - 'scripts/windows/Build-CfaStage4Responses.ps1'
+      - 'scripts/windows/Diagnose-CfaStage4DayEndCoverage.ps1'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage4-response-source-validation.yml'
   workflow_dispatch:
@@ -29,7 +31,8 @@ jobs:
         run: |
           $files=@(
             '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
-            '.\scripts\windows\Build-CfaStage4Responses.ps1'
+            '.\scripts\windows\Build-CfaStage4Responses.ps1',
+            '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -45,7 +48,8 @@ jobs:
         run: |
           $files=@(
             '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1',
-            '.\scripts\windows\Build-CfaStage4Responses.ps1'
+            '.\scripts\windows\Build-CfaStage4Responses.ps1',
+            '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -60,57 +64,51 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Inspect-CfaStage4ResponseSource.ps1 -SelfTest
 
-      - name: Run Stage 4 response constructor self-test
+      - name: Run historical exact-2359 constructor self-test
         shell: powershell
         run: .\scripts\windows\Build-CfaStage4Responses.ps1 -SelfTest
 
-      - name: Enforce Stage 4 fail-closed response contract
+      - name: Run day-end diagnostic self-test
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1 -SelfTest
+
+      - name: Enforce current Stage 4 fail-closed contract
         shell: powershell
         run: |
           $inspect=Get-Content '.\scripts\windows\Inspect-CfaStage4ResponseSource.ps1' -Raw
           $build=Get-Content '.\scripts\windows\Build-CfaStage4Responses.ps1' -Raw
+          $diag=Get-Content '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
           foreach($marker in @(
-            'RET_USD_1D_LOG',
-            'CFA-S4-001',
+            'SOURCE_SCHEMA_PASS',
+            'DIRECT_USD_POPULATION_PASS',
+            'EXACT_2359_CANDIDATE_FAILED',
             'CFA-S4-002',
+            'PASS',
             'CFA-S4-003',
             'CFA-S4-004',
+            'FAIL',
             'CFA-S4-005',
-            'CFA-S4-006',
-            'RESPONSE_FREEZE_BLOCKED',
-            'No imputation is permitted',
-            'No cross-rate conversion'
+            'CFA-S4-007',
+            'UNVERIFIED',
+            'CFA-S4-008',
+            'BLOCKED',
+            'CFA-S4-010',
+            'no imputation',
+            'no cross-rate conversion'
           )){
             if($contract -notmatch [regex]::Escape($marker)){throw "Stage 4 contract marker missing: $marker"}
           }
-          foreach($marker in @(
-            'default_transaction_read_only=on',
-            'asrp.q2_market_1m_observations',
-            'stage4-market-columns.csv',
-            'stage4-usd-pair-candidates.csv',
-            'CFA-S4-006',
-            'BLOCKED'
-          )){
+          foreach($marker in @('default_transaction_read_only=on','asrp.q2_market_1m_observations','stage4-market-columns.csv','stage4-usd-pair-candidates.csv')){
             if($inspect -notmatch [regex]::Escape($marker)){throw "Stage 4 inspector marker missing: $marker"}
           }
-          foreach($marker in @(
-            'RET_USD_1D_LOG',
-            'ExpectedDirectUsdPairs = 434',
-            "TIME '23:59:00'",
-            'Math]::Log',
-            'stage4-responses.csv',
-            'stage4-response-review-sample.csv',
-            'stage4-response-candidate.json',
-            "'CFA-S4-002'='PASS'",
-            "'CFA-S4-003'='PASS'",
-            "'CFA-S4-004'='PASS'",
-            "'CFA-S4-005'='PASS'",
-            "'CFA-S4-006'='BLOCKED'"
-          )){
-            if($build -notmatch [regex]::Escape($marker)){throw "Stage 4 constructor marker missing: $marker"}
+          foreach($marker in @('RET_USD_1D_LOG','ExpectedDirectUsdPairs = 434',"TIME '23:59:00'",'Math]::Log','stage4-response-candidate.json')){
+            if($build -notmatch [regex]::Escape($marker)){throw "Historical Stage 4 constructor marker missing: $marker"}
           }
-          foreach($text in @($inspect,$build)){
+          foreach($marker in @('stage4-day-end-global-summary.csv','consecutive_day_last_observed_candidates','CFA-S4-007','CFA-S4-008')){
+            if($diag -notmatch [regex]::Escape($marker)){throw "Stage 4 diagnostic marker missing: $marker"}
+          }
+          foreach($text in @($inspect,$build,$diag)){
             if($text -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
               throw 'Stage 4 script contains a forbidden database write/DDL marker.'
             }
