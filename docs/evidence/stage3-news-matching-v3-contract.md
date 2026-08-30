@@ -1,6 +1,6 @@
 # CFA Stage 3 news matching V3 corrective contract — 2026-08-30
 
-Status: **FROZEN_CORRECTIVE_CONTRACT / LOCAL_EXECUTION_UNVERIFIED / STAGE3_FREEZE_BLOCKED**
+Status: **FROZEN_CORRECTIVE_CONTRACT / CODE_CI_PASS / LOCAL_EXECUTION_UNVERIFIED / STAGE3_FREEZE_BLOCKED**
 
 ## Authority and preserved upstream state
 
@@ -48,22 +48,24 @@ V2 reads GDELT fields 0, 1, 3, 4, 8, 12, 14, 23, and 26. Because the parent matc
 
 The five known malformed rows remain excluded under the already frozen source-shape rule; V3 does not reinterpret them.
 
-## Frozen task/gate IDs
+## Frozen task/gate IDs and current evidence status
 
-| ID | Requirement | Current repository status |
-|---|---|---|
-| `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS |
-| `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 parent lineage | PASS |
-| `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 source shape and source reconciliation | PASS |
-| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | CANDIDATE |
-| `CFA-S3F-005` | Verify parent V2 hashes and emit non-destructive V3 outputs/reject lineage | CANDIDATE |
-| `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | CANDIDATE |
-| `CFA-S3F-007` | Prepare deterministic V3 bounded semantic review with automatic rule validation | CANDIDATE |
-| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | UNVERIFIED_LOCAL |
-| `CFA-S3F-009` | Parse and self-test V3 implementation on Windows PowerShell 5.1 and PowerShell 7 | UNVERIFIED_CI |
-| `CFA-S3F-010` | Freeze Stage 3 only after local V3 execution, encoding PASS, and direct semantic review PASS | BLOCKED |
-| `CFA-S3-005` | Direct bounded accepted/rejected semantic review | UNVERIFIED |
-| `CFA-S3-006` | Freeze news matching | BLOCKED |
+| ID | Requirement | Status | Evidence boundary |
+|---|---|---|---|
+| `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS | Repository authority and Stage 2 evidence re-established. |
+| `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 parent lineage | PASS | V3 contract and implementation are explicitly non-destructive. |
+| `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 source shape and source reconciliation | PASS | Frozen corrected Stage 3 source reconciliation preserved in implementation constants. |
+| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 component regression self-test passed in GitHub Actions run 33306784526 at code commit `2def7a6693e4c6a51241dbf84e5b30c67749bde9`. |
+| `CFA-S3F-005` | Verify exact local parent V2 hashes and emit non-destructive V3 outputs/reject lineage | UNVERIFIED | Requires execution against the exact local V2 evidence artifacts. |
+| `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | PASS | V3 post-filter self-test passed in GitHub Actions run 33306784526. |
+| `CFA-S3F-007` | Validate deterministic V3 review selection and automatic rule consistency | PASS | V3 bounded-review helper self-test passed in GitHub Actions run 33306784526. |
+| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | UNVERIFIED | Scanner self-test passed, but exact local raw issue archives have not been executed in this environment. |
+| `CFA-S3F-009` | Parse and self-test V3 implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | GitHub Actions run 33306784526 completed successfully; all parse, component, regression, encoding-scanner, controller, and fail-closed contract checks passed. |
+| `CFA-S3F-010` | Freeze Stage 3 only after local V3 execution, encoding PASS, and direct semantic review PASS | BLOCKED | Depends on `CFA-S3F-005`, `CFA-S3F-008`, and `CFA-S3-005`. |
+| `CFA-S3-005` | Direct bounded accepted/rejected semantic review | UNVERIFIED | Requires direct inspection of the deterministic V3 review CSV produced from the exact local corpus. |
+| `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze until all upstream Stage 3 hard gates pass. |
+
+The evidence-only status reconciliation above does not alter executable code and therefore does not invalidate GitHub Actions run 33306784526. The exact executable blobs validated in that run remain unchanged.
 
 ## Required outputs
 
