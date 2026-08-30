@@ -6,12 +6,14 @@ on:
       - 'scripts/windows/Adjudicate-CfaStage3ExistingRun.ps1'
       - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
     paths:
       - 'scripts/windows/Adjudicate-CfaStage3ExistingRun.ps1'
       - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
 
@@ -30,7 +32,8 @@ jobs:
           $files=@(
             '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
             '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
-            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1'
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -44,7 +47,8 @@ jobs:
           $files=@(
             '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
             '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
-            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1'
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -60,18 +64,25 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Prepare-CfaStage3SampleReview.ps1 -SelfTest
 
-      - name: Run exact Windows PowerShell 5.1 parallel matcher self-test
+      - name: Run exact Windows PowerShell 5.1 parallel matcher V1 self-test
         shell: powershell
         run: .\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1 -SelfTest
 
-      - name: Enforce corrected Stage 3 source contract
+      - name: Run exact Windows PowerShell 5.1 parallel matcher V2 self-test
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1 -SelfTest
+
+      - name: Enforce corrected Stage 3 source and precision contract
         shell: powershell
         run: |
-          $parallel=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1' -Raw
+          $v1=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1' -Raw
+          $v2=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1' -Raw
           $adjudicate=Get-Content '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1' -Raw
-          foreach($text in @($parallel,$adjudicate)){
+          foreach($text in @($v1,$v2,$adjudicate)){
             if($text -notmatch '9183757L'){throw 'Corrected 9,183,757 Stage 3 row expectation is missing.'}
             if($text -match '9091236L'){throw 'Stale 9,091,236 Stage 3 row expectation leaked into finalization code.'}
           }
-          if($parallel -notmatch 'WorkerMode'){throw 'Parallel matcher worker mode is missing.'}
-          if($parallel -notmatch 'ExpectedMatchesSha256'){throw 'Parallel matcher deterministic equivalence gate is missing.'}
+          if($v2 -notmatch 'default_symbol_only'){throw 'V2 default-symbol precision rule is missing.'}
+          if($v2 -notmatch 'StrongCryptoTitleRegex'){throw 'V2 strong crypto title context is missing.'}
+          if($v2 -match '\(\?:crypto\|cryptocurrency\|cryptocurrencies\|blockchain\|token\|tokens\|coin\|coins'){throw 'Generic V1 crypto-title anchor leaked into V2.'}
+          foreach($marker in @('Near-Term','Short-Term','Sky-High','£1 coin hack','BADGER, BAL')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 false-positive regression marker missing: $marker"}}
