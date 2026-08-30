@@ -11,6 +11,10 @@ on:
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Summarize-CfaStage3NewsByAsset.ps1'
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV3.ps1'
+      - 'scripts/windows/Prepare-CfaStage3V3SampleReview.ps1'
+      - 'scripts/windows/Diagnose-CfaStage3FieldEncoding.ps1'
+      - 'scripts/windows/Run-CfaStage3V3Finalization.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
     paths:
@@ -22,6 +26,10 @@ on:
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Summarize-CfaStage3NewsByAsset.ps1'
+      - 'scripts/windows/Apply-CfaStage3NewsMatchingV3.ps1'
+      - 'scripts/windows/Prepare-CfaStage3V3SampleReview.ps1'
+      - 'scripts/windows/Diagnose-CfaStage3FieldEncoding.ps1'
+      - 'scripts/windows/Run-CfaStage3V3Finalization.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
 
@@ -45,7 +53,11 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1',
-            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1'
+            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1',
+            '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1',
+            '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1',
+            '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1',
+            '.\scripts\windows\Run-CfaStage3V3Finalization.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -64,7 +76,11 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1',
-            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1'
+            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1',
+            '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1',
+            '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1',
+            '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1',
+            '.\scripts\windows\Run-CfaStage3V3Finalization.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -96,14 +112,34 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1 -Stage3RunRoot . -SelfTest
 
-      - name: Enforce corrected Stage 3 source precision and resume contract
+      - name: Run exact Windows PowerShell 5.1 V3 post-filter self-test
+        shell: powershell
+        run: .\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1 -Stage3V2RunRoot . -OutputRoot . -SelfTest
+
+      - name: Run exact Windows PowerShell 5.1 V3 review self-test
+        shell: powershell
+        run: .\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1 -Stage3V3RunRoot . -OutputRoot . -SelfTest
+
+      - name: Run exact Windows PowerShell 5.1 Stage 3 encoding self-test
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1 -ArchiveScanCsv . -OutputRoot . -SelfTest
+
+      - name: Run exact Windows PowerShell 5.1 V3 finalization controller self-test
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3V3Finalization.ps1 -SelfTest
+
+      - name: Enforce corrected Stage 3 source precision, V3 rule, encoding and freeze contract
         shell: powershell
         run: |
           $v1=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1' -Raw
           $v2=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1' -Raw
           $r1=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1' -Raw
           $adjudicate=Get-Content '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1' -Raw
-          foreach($text in @($v1,$v2,$r1,$adjudicate)){
+          $v3=Get-Content '.\scripts\windows\Apply-CfaStage3NewsMatchingV3.ps1' -Raw
+          $review=Get-Content '.\scripts\windows\Prepare-CfaStage3V3SampleReview.ps1' -Raw
+          $encoding=Get-Content '.\scripts\windows\Diagnose-CfaStage3FieldEncoding.ps1' -Raw
+          $controller=Get-Content '.\scripts\windows\Run-CfaStage3V3Finalization.ps1' -Raw
+          foreach($text in @($v1,$v2,$r1,$adjudicate,$v3,$controller)){
             if($text -notmatch '9183757L'){throw 'Corrected 9,183,757 Stage 3 row expectation is missing.'}
             if($text -match '9091236L'){throw 'Stale 9,091,236 Stage 3 row expectation leaked into finalization code.'}
           }
@@ -112,3 +148,7 @@ jobs:
           if($v2 -match '\(\?:crypto\|cryptocurrency\|cryptocurrencies\|blockchain\|token\|tokens\|coin\|coins'){throw 'Generic V1 crypto-title anchor leaked into V2.'}
           foreach($marker in @('Near-Term','Short-Term','Sky-High','£1 coin hack','BADGER, BAL')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 false-positive regression marker missing: $marker"}}
           foreach($marker in @('Test-WorkerComplete','reused_workers','Find-ActiveWorkerProcess','worker-summary.json')){if($r1 -notmatch [regex]::Escape($marker)){throw "R1 resume marker missing: $marker"}}
+          foreach($marker in @('SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO','APPROVED_NONDEFAULT_SAME_RECORD','IP Infrastructure','TITLE_CRYPTO','CANDIDATE_V3')){if($v3 -notmatch [regex]::Escape($marker)){throw "V3 corrective marker missing: $marker"}}
+          foreach($marker in @('REJECT_V3_SHORT_SYMBOL_TITLE_CONTEXT','IP','OM','direct_semantic_review')){if($review -notmatch [regex]::Escape($marker)){throw "V3 semantic review marker missing: $marker"}}
+          foreach($marker in @('0,1,3,4,8,12,14,23,26','CriticalIndexes0Based','CFA_S3F_008')){if($encoding -notmatch [regex]::Escape($marker)){throw "Stage 3 encoding gate marker missing: $marker"}}
+          foreach($marker in @('VALIDATION_CANDIDATE','CFA-S3-005','UNVERIFIED','CFA-S3-006','BLOCKED')){if($controller -notmatch [regex]::Escape($marker)){throw "Stage 3 fail-closed finalization marker missing: $marker"}}
