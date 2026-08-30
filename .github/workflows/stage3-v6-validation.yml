@@ -37,7 +37,10 @@ jobs:
           foreach($file in $files){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
-            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "PowerShell 7 parse failed: $file"}
+            if($errors.Count-gt0){
+              $errors|ForEach-Object{Write-Host "$file :: line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: extent=<$($_.Extent.Text)> :: $($_.Message)"}
+              throw "PowerShell 7 parse failed: $file"
+            }
           }
 
       - name: Parse V6 scripts with Windows PowerShell 5.1
@@ -51,7 +54,10 @@ jobs:
           foreach($file in $files){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
-            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "Windows PowerShell 5.1 parse failed: $file"}
+            if($errors.Count-gt0){
+              $errors|ForEach-Object{Write-Host "$file :: line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: extent=<$($_.Extent.Text)> :: $($_.Message)"}
+              throw "Windows PowerShell 5.1 parse failed: $file"
+            }
           }
 
       - name: Preserve V5 component regression
