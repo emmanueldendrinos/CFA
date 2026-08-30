@@ -7,6 +7,7 @@ on:
       - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
+      - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2.ps1'
+      - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
 
@@ -33,7 +35,8 @@ jobs:
             '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
             '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
-            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1'
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -48,7 +51,8 @@ jobs:
             '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
             '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1',
-            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1'
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -68,9 +72,9 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1 -SelfTest
 
-      - name: Run exact Windows PowerShell 5.1 parallel matcher V2 self-test
+      - name: Run exact Windows PowerShell 5.1 V2 rule regression test
         shell: powershell
-        run: .\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1 -SelfTest
+        run: .\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1
 
       - name: Enforce corrected Stage 3 source and precision contract
         shell: powershell
