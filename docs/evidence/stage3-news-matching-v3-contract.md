@@ -1,112 +1,120 @@
 # CFA Stage 3 news matching corrective contract — 2026-08-30
 
-Status: **UTF8_EXCLUSION_FROZEN / V4_SEMANTIC_REVIEW_FAIL / V5_SHORT_SYMBOL_REFINEMENT_FROZEN / STAGE3_FREEZE_BLOCKED**
+Status: **UTF8_EXCLUSION_FROZEN / V4_REVIEW_FAIL / V5_REVIEW_FAIL / V6_CODE_CI_PASS / LOCAL_V6_EXECUTION_UNVERIFIED / STAGE3_FREEZE_BLOCKED**
 
 ## Authority and preserved upstream state
 
-This contract remains subordinate to the CFA Source of Truth and preserves Stage 1 source reconciliation, Stage 2 identity/alias decisions, the 431-asset news population, the 470-row Stage 3 alias registry, response-independent record grain, and `(base_asset_id, record_id)` deduplication.
+This contract is subordinate to the CFA Source of Truth and preserves the approved upstream source reconciliation, Stage 2 identities/aliases, the 431-asset news population, the 470-row Stage 3 alias registry, response-independent record grain, and `(base_asset_id, record_id)` deduplication.
 
-The exact V2 parent is valid only when its hashes verify and it records 7,163 archives, 9,183,757 raw rows, 5 malformed 27-field rows, 0 missing critical rows, 0 duplicate asset/record matches, and alias-registry SHA-256 `11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9`.
+The exact V2 parent remains:
 
-The regenerated Stage 2 `archive-scan.csv` reproduced the frozen SHA-256 exactly: `1760a371e6ff43e5a1c3da0d2d72df99e8ca02efe1830e1dd2d5404e04e2d5ba`.
+`D:\CFA-bulk\analysis\stage3-news-matching\20260830-062457-parallel-v2`
 
-## Historical V2/V3 semantic correction
+It is valid only when its hashes verify and it records 7,163 raw archives, 9,183,757 raw rows, 5 malformed 27-field rows, 0 missing critical rows, 0 duplicate asset/record matches, and alias-registry SHA-256 `11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9`.
 
-V2 admitted an obvious false positive for default two-letter symbol `IP` in the title `North Korean Hackers Use Russian IP Infrastructure` because `ECON_BITCOIN=True` was sufficient even though the title was non-crypto.
+The regenerated Stage 2 `archive-scan.csv` reproduced the frozen SHA-256 exactly:
 
-V3 therefore froze this rule for default Kraken symbol-only aliases of length one or two characters:
+`1760a371e6ff43e5a1c3da0d2d72df99e8ca02efe1830e1dd2d5404e04e2d5ba`.
 
-1. `ECON_BITCOIN` alone is insufficient.
-2. retain when `TITLE_CRYPTO` is present;
-3. retain when an independently approved non-default alias for the same asset matched the same record;
-4. otherwise reject with `SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO`.
+## Historical V3 short-symbol correction
 
-All other aliases remain unchanged by that historical V3 rule.
+V2 admitted a false positive for default two-letter symbol `IP` in `North Korean Hackers Use Russian IP Infrastructure` because `ECON_BITCOIN=True` was sufficient despite non-crypto title meaning.
 
-## UTF-8 source-eligibility result and frozen policy
+V3 therefore required a default Kraken symbol-only alias of length one or two characters to have `TITLE_CRYPTO` or independently approved non-default same-record support; otherwise the match is rejected with `SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO`.
 
-The strict raw-byte audit of the exact 139 issue archives found:
+## Frozen UTF-8 eligibility policy
 
-- 148 rows with any strict UTF-8 failure in the issue set;
-- 126 rows with invalid UTF-8 in a Stage 3-used field;
-- all 126 Stage 3-critical occurrences in field 26 zero-based / field 27 one-based (`extras`, page-title source);
-- 5 malformed 27-field rows.
+The strict raw-byte audit of the exact 139 issue archives found 148 rows with any strict UTF-8 failure, including 126 rows with invalid UTF-8 in a Stage 3-used field. All 126 Stage 3-critical occurrences were field 26 zero-based / field 27 one-based (`extras`, page-title source). Five malformed 27-field rows were also observed.
 
-`CFA-S3F-008` is therefore permanently **FAIL** as an observed historical gate.
+`CFA-S3F-008` remains permanently **FAIL** as the historical observation. Project policy is frozen to exclude the exact 126 affected raw rows, keyed by `archive_file`, `row_ordinal`, `raw_line_sha256`, and invalid field indexes. No corpus-wide re-encoding or semantic repair is performed.
 
-Project policy is frozen to **exclude the exact 126 affected raw rows from Stage 3 eligibility**, keyed by `archive_file`, `row_ordinal`, `raw_line_sha256`, and invalid field indexes. No corpus-wide re-encoding or semantic repair is performed.
+The exact local impact diagnostic proved zero overlap of those 126 rows with V2 matches, V2 context rejects, V2 bounded samples, or ambiguous sample identities. The corrected eligible source population is therefore **9,183,626 rows**.
 
-The exact V4 local impact diagnostic proved that those 126 rows have:
+## V4 execution and semantic review
 
-- V2 match overlap: **0**;
-- V2 context-reject overlap: **0**;
-- V2 bounded-sample overlap: **0**;
-- ambiguous sample-identity overlap: **0**.
-
-The corrected eligible source population is therefore **9,183,626 rows**. The UTF-8 exclusion does not change the V2/V3 match population because none of the excluded rows entered matches or rejects.
-
-## V4 local execution result
-
-Exact local V4 finalization completed as a validation candidate under:
+Exact local V4 finalization root:
 
 `D:\CFA-bulk\analysis\stage3-news-matching\20260830-140246-v4-finalization-5f46d2db`
 
-Mechanical results:
+V4 mechanical results:
 
-- `CFA-S3F-011`: PASS — exact 126-row exclusion manifest produced;
-- `CFA-S3F-012`: PASS — exact V2 impact reconciliation produced zero overlap;
-- `CFA-S3F-013`: PASS — corrected V4 eligibility candidate produced;
-- V3 retained matches: 22,563;
-- V4 retained matches: 22,563;
-- matched assets: 283 of 431;
-- deterministic V4 review rows: 26;
+- `CFA-S3F-011`: PASS — exact 126-row exclusion manifest;
+- `CFA-S3F-012`: PASS — exact V2 impact reconciliation, zero overlap;
+- `CFA-S3F-013`: PASS — corrected eligibility candidate;
+- retained matches: 22,563;
+- matched assets: 283;
+- deterministic review rows: 26;
 - review CSV SHA-256: `293e1c2a613d115736469a1746014d4bc9b8e5eed48dddec0f61c146c5950095`.
 
-The uploaded review CSV hash was independently verified against the candidate receipt before direct review.
+Direct review of all 26 rows failed on three observations, recorded in `docs/evidence/stage3-v4-bounded-sample-review-20260830.md`:
 
-## V4 direct semantic review — FAIL
+1. `OP` falsely matched inside Bitcoin token `OP_RETURN`.
+2. explicit `Arweave (AR)` market headline was falsely rejected.
+3. explicit `Story (IP)` price headline was falsely rejected.
 
-All 26 deterministic V4 review rows were directly inspected. Evidence is recorded in `docs/evidence/stage3-v4-bounded-sample-review-20260830.md`.
+Therefore `CFA-S3F-014=FAIL` and historical V4 freeze `CFA-S3F-015=BLOCKED`.
 
-Three blocking errors were found:
+## V5 rule and local execution
 
-1. `S3V4R-022` — **false positive**: default symbol `OP` matched inside Bitcoin technical token `OP_RETURN`. `TITLE_CRYPTO` was present, so the V3 rule incorrectly retained it as Optimism.
-2. `S3V4R-025` — **false negative**: explicit market headline `Arweave (AR) ... Market Capitalization ...` was rejected because the title lacked the generic V3 `TITLE_CRYPTO` vocabulary.
-3. `S3V4R-026` — **false negative**: explicit price headline `Story (IP) Price Down ...` was rejected for the same reason.
+V5 froze two narrow corrections:
 
-The other 23 review rows had no obvious blocking false positive or false negative.
+1. underscore is part of a title token, so `OP` cannot match inside `OP_RETURN`;
+2. exact parenthetical ticker `(SYMBOL)` plus market/asset wording is high-specificity evidence, restoring cases such as `Arweave (AR)` and `Story (IP)`.
 
-Therefore the V4 semantic gate fails and V4 cannot freeze Stage 3.
+V5 code passed the complete Stage 3 validation workflow in GitHub Actions run `33316432364`.
 
-## Frozen V5 short-symbol refinement
+Exact local V5 finalization root:
 
-The V5 correction is intentionally narrow and leaves all upstream identities, aliases, non-short aliases, UTF-8 eligibility, and V2 lineage unchanged.
+`D:\CFA-bulk\analysis\stage3-news-matching\20260830-142808-v5-finalization-693f81e6`
 
-For each default Kraken symbol-only alias of length one or two characters:
+Local V5 results:
 
-### 1. Tight title-token boundary
+- `CFA-S3F-016`: PASS — underscore-aware short-symbol boundary;
+- `CFA-S3F-017`: PASS — parenthetical market-ticker retention;
+- `CFA-S3F-018`: PASS — exact local `CANDIDATE_V5`;
+- asset/news pairs: **22,585**;
+- distinct GDELT records: **18,948**;
+- matched assets: **284**;
+- V5 summary SHA-256: `4d3749f1bc082a1e9eb5df97eadbdb3c766c3a67d5a0bade702db0665767178c`;
+- V5 review CSV SHA-256: `b9a46da36fa567d20caba9bf4a6eb25a0cd2d285c51d42e5d967caf82c74c5a1`;
+- per-asset count CSV SHA-256: `69b12c1d4c6926535c498a20b91aa554a562bf74e3c1dddd85264b8efbe70348`.
 
-A page-title symbol occurrence is valid only when the symbol is not adjacent to a Unicode letter, digit, or underscore. Underscore is treated as part of the surrounding token.
+## V5 direct semantic review — FAIL
 
-This makes `OP` in `OP_RETURN` **not** a valid Optimism title occurrence.
+All **31** deterministic V5 review rows were directly inspected. Evidence is recorded in `docs/evidence/stage3-v5-bounded-sample-review-20260830.md`.
 
-### 2. Existing high-context retention
+Thirty rows had no obvious blocking semantic error. One row failed:
 
-A short symbol remains eligible when an independently approved non-default alias for the same asset matched the same record.
+- `S3V5R-024`: base asset `IP` was retained from title phrase `IP Exchange`. Direct source inspection showed the article identifies the project as **IP Exchange ($IPX)** and says it is built on the Story blockchain. `IP` in the title was therefore not Story's ticker `IP`; this is an obvious false positive.
 
-A short symbol also remains eligible under `TITLE_CRYPTO` only when the short symbol itself has a valid tightened title occurrence or an exact structured occurrence in `ALLNAMES`, `V2PERSONS`, or `V2ORGANIZATIONS`.
+The earlier V5 fixes remain valid: `OP_RETURN` is rejected and explicit `Arweave (AR)` / `Story (IP)` market headlines are retained.
 
-### 3. Parenthetical market-ticker retention
+Therefore `CFA-S3F-019=FAIL`, historical V5 freeze `CFA-S3F-020=BLOCKED`, `CFA-S3-005=FAIL`, and `CFA-S3-006=BLOCKED`.
 
-A short symbol may be retained without generic `TITLE_CRYPTO` when the page title contains the exact parenthetical ticker form `(SYMBOL)` and the title contains a market/asset anchor such as price, market cap/capitalization, volume, trading/trade, exchange, token, coin, crypto, or cryptocurrency.
+## Frozen V6 local-market refinement
 
-This is designed to retain high-specificity observations such as `Arweave (AR) ... Market Capitalization ...` and `Story (IP) Price Down ...` while not reopening generic short-symbol matching.
+V6 is a lineage-preserving post-filter over the exact hash-verified V5 output. It does not change upstream aliases, asset identities, UTF-8 exclusions, non-short-symbol matches, or the V5 parenthetical-ticker rule.
 
-### 4. Otherwise reject
+For a V5-retained default Kraken symbol-only alias of length one or two characters, V6 retains the asset/news match only when at least one of these high-specificity conditions holds:
 
-If none of the conditions above is satisfied, reject the short-symbol-supported asset/news match.
+1. an independently approved non-default alias for the same asset matched the same record;
+2. the exact short symbol occurs in a structured Stage 3 matching field (`ALLNAMES`, `V2PERSONS`, or `V2ORGANIZATIONS`);
+3. the title contains exact parenthetical `(SYMBOL)` plus the frozen market/asset anchor rule;
+4. the title contains the standalone short symbol and, within a bounded local title window, a strong market-action signal such as price, rally, surge, gain, rise, jump, drop, fall, up/down, volume, market cap/capitalization, or trading/trade.
 
-V5 must inspect the exact raw page title and structured fields for every affected V2 short-symbol record using preserved `(archive_file,row_ordinal)` lineage. It may scan only those targeted rows/archives; a full 9.18M-row rematch is not required.
+Generic words such as `crypto`, `cryptocurrency`, `coin`, `token`, `exchange`, `listing`, or `release` do **not** by themselves satisfy V6 local-market evidence. Thus `IP Exchange` is rejected, while `OM rally` remains retained.
+
+If none of the V6 conditions holds, the match is rejected with `SHORT_DEFAULT_REQUIRES_LOCAL_MARKET_OR_HIGH_SPECIFICITY`.
+
+V6 re-reads only the raw rows supporting V5-retained short-symbol matches using preserved `(archive_file,row_ordinal)` lineage. A full 9.18-million-row rematch is not required.
+
+The V6 implementation consists of:
+
+- `scripts/windows/Apply-CfaStage3NewsMatchingV6.ps1`;
+- `scripts/windows/Prepare-CfaStage3V6SampleReview.ps1`;
+- `scripts/windows/Run-CfaStage3V6Finalization.ps1`.
+
+Dedicated GitHub Actions run `33318090018` completed **successfully** at executable commit `422e2674dcc0dc2c174dc5a8ce852d2845f3bdb3`. It passed PowerShell 7 parsing, Windows PowerShell 5.1 parsing, preserved V5 regression, the V6 `IP Exchange`/`OM rally` correction self-test, V6 review-helper self-test, V6 controller named-argument test, and fail-closed contract checks.
 
 ## Frozen task/gate IDs and current status
 
@@ -114,27 +122,31 @@ V5 must inspect the exact raw page title and structured fields for every affecte
 |---|---|---|---|
 | `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS | Repository authority and Stage 2 evidence re-established. |
 | `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 lineage | PASS | All corrections remain lineage-preserving. |
-| `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 raw source shape | PASS | Reproduced Stage 2 scan matched frozen hash exactly. |
-| `CFA-S3F-004` | Historical V3 short-default-symbol rule | PASS | Implemented and regression-tested; later semantic review showed it is insufficient, not incorrectly implemented. |
-| `CFA-S3F-005` | Verify exact local parent V2 hashes and V3 lineage | PASS | Exact local V4 controller successfully executed the hash-verified V3 post-filter. |
-| `CFA-S3F-006` | V3 IP/OM/non-default regression tests | PASS | CI regression evidence preserved. |
-| `CFA-S3F-007` | V3 deterministic review helper | PASS | CI evidence preserved. |
+| `CFA-S3F-003` | Preserve 7,163 / 9,183,757 raw source shape | PASS | Regenerated archive scan matched frozen hash exactly. |
+| `CFA-S3F-004` | Historical V3 short-default rule | PASS | Implemented and regression-tested. |
+| `CFA-S3F-005` | Verify exact local parent V2 hashes and V3 lineage | PASS | Exact V4/V5 local executions verified parent lineage. |
+| `CFA-S3F-006` | Historical V3 IP/OM/non-default regressions | PASS | CI evidence preserved. |
+| `CFA-S3F-007` | Historical V3 deterministic review helper | PASS | CI evidence preserved. |
 | `CFA-S3F-008` | Historical strict UTF-8 hard gate | FAIL | 126 Stage 3-used-field failures observed. |
-| `CFA-S3F-009` | PowerShell 5.1 / 7 implementation validation | PASS | V4 workflow run `33315496183` passed. |
-| `CFA-S3F-010` | Historical V3 freeze gate | BLOCKED | Superseded by downstream corrections. |
-| `CFA-S3F-011` | Enumerate exact UTF-8 exclusion manifest | PASS | Exact local V4 run produced 126-row manifest. |
-| `CFA-S3F-012` | Reconcile exclusion set against exact V2 outputs | PASS | Zero match/reject/sample overlap. |
-| `CFA-S3F-013` | Apply UTF-8 corrected V4 eligibility candidate | PASS | Local V4 candidate produced 9,183,626 eligible rows and 22,563 matches. |
-| `CFA-S3F-014` | Direct deterministic V4 semantic review | FAIL | 3 blocking rows among 26 reviewed. |
-| `CFA-S3F-015` | Historical V4 freeze gate | BLOCKED | V4 semantic review failed. |
-| `CFA-S3F-016` | Implement tightened short-symbol title token boundary including underscore | UNVERIFIED | V5 implementation required. |
-| `CFA-S3F-017` | Implement parenthetical market-ticker retention and exact short-symbol evidence rule | UNVERIFIED | V5 implementation required. |
-| `CFA-S3F-018` | Produce exact local V5 candidate from V2 lineage plus frozen UTF-8 exclusions | BLOCKED | Depends on `CFA-S3F-016` and `CFA-S3F-017`. |
-| `CFA-S3F-019` | Direct deterministic V5 bounded semantic review | BLOCKED | Depends on exact local V5 candidate. |
-| `CFA-S3F-020` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on all V5 gates passing. |
-| `CFA-S3-005` | Stage 3 direct bounded semantic review | FAIL | Latest completed candidate review (V4) failed; may be resolved only by a corrected V5 review. |
-| `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze while V5 requirements remain unresolved. |
+| `CFA-S3F-009` | Windows PowerShell 5.1 / PowerShell 7 code validation | PASS | V5 and V6 validation workflows passed. |
+| `CFA-S3F-010` | Historical V3 freeze | BLOCKED | Superseded by later corrections. |
+| `CFA-S3F-011` | Enumerate exact UTF-8 exclusion manifest | PASS | 126-row manifest produced locally. |
+| `CFA-S3F-012` | Reconcile exclusion set against V2 outputs | PASS | Zero match/reject/sample overlap. |
+| `CFA-S3F-013` | Apply UTF-8 corrected V4 eligibility | PASS | 9,183,626 eligible rows. |
+| `CFA-S3F-014` | Direct V4 semantic review | FAIL | 3 blocking rows among 26. |
+| `CFA-S3F-015` | Historical V4 freeze | BLOCKED | V4 review failed. |
+| `CFA-S3F-016` | Tight underscore-aware title boundary | PASS | Exact local V5 execution. |
+| `CFA-S3F-017` | Parenthetical market-ticker retention | PASS | Exact local V5 execution. |
+| `CFA-S3F-018` | Exact local V5 candidate | PASS | 22,585 pairs / 284 assets. |
+| `CFA-S3F-019` | Direct V5 semantic review | FAIL | 1 blocking false positive among 31 rows. |
+| `CFA-S3F-020` | Historical V5 freeze | BLOCKED | V5 review failed. |
+| `CFA-S3F-021` | Implement V6 local-market/high-specificity short-symbol rule | PASS | GitHub Actions run `33318090018`. |
+| `CFA-S3F-022` | Produce exact local V6 candidate from hash-verified V5 lineage | UNVERIFIED | Requires local V6 controller execution against exact V5 root. |
+| `CFA-S3F-023` | Direct deterministic V6 bounded semantic review | BLOCKED | Depends on exact local V6 candidate. |
+| `CFA-S3F-024` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on V6 local candidate and semantic review PASS. |
+| `CFA-S3-005` | Stage 3 direct bounded semantic review | FAIL | Latest completed candidate review (V5) failed. |
+| `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze until V6 hard gates pass. |
 
 ## Completion boundary
 
-Stage 3 remains **BLOCKED**. The next valid operation is implementation and exact local execution of the frozen V5 short-symbol refinement. Response definition, factor construction, leakage testing, model-ready freeze, and PLS remain downstream and must not begin until `CFA-S3-006` passes.
+Stage 3 is **not complete**. The only valid next operation is exact local execution of `Run-CfaStage3V6Finalization.ps1` against the frozen V5 run, followed by direct inspection of every generated V6 review row. Response definition, factor construction, leakage testing, model-ready freeze, and PLS remain downstream until `CFA-S3-006=PASS`.
