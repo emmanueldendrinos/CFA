@@ -10,6 +10,7 @@ on:
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
+      - 'scripts/windows/Summarize-CfaStage3NewsByAsset.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - 'scripts/windows/Run-CfaStage3NewsMatchingParallelV2R1.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2Rules.ps1'
       - 'scripts/windows/Test-CfaStage3NewsMatchingParallelV2R1.ps1'
+      - 'scripts/windows/Summarize-CfaStage3NewsByAsset.ps1'
       - '.github/workflows/stage3-finalization-validation.yml'
   workflow_dispatch:
 
@@ -42,7 +44,8 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
-            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1'
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1',
+            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -60,7 +63,8 @@ jobs:
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2.ps1',
             '.\scripts\windows\Run-CfaStage3NewsMatchingParallelV2R1.ps1',
             '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2Rules.ps1',
-            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1'
+            '.\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1',
+            '.\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1'
           )
           foreach($file in $files){
             $tokens=$null;$errors=$null
@@ -87,6 +91,10 @@ jobs:
       - name: Run exact Windows PowerShell 5.1 V2 R1 controller test
         shell: powershell
         run: .\scripts\windows\Test-CfaStage3NewsMatchingParallelV2R1.ps1
+
+      - name: Run exact Windows PowerShell 5.1 per-asset news count self-test
+        shell: powershell
+        run: .\scripts\windows\Summarize-CfaStage3NewsByAsset.ps1 -Stage3RunRoot . -SelfTest
 
       - name: Enforce corrected Stage 3 source precision and resume contract
         shell: powershell
