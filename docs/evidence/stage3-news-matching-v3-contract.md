@@ -48,6 +48,14 @@ V2 reads GDELT fields 0, 1, 3, 4, 8, 12, 14, 23, and 26. Because the parent matc
 
 The five known malformed rows remain excluded under the already frozen source-shape rule; V3 does not reinterpret them.
 
+## Controller correction discovered during local validation
+
+The first exact local V3 finalization attempt exposed a controller-only argument-forwarding defect: `Run-CfaStage3V3Finalization.ps1` built arrays containing textual parameter names and splatted those arrays into child PowerShell scripts. PowerShell array splatting is positional, so the Stage 2 archive-scan path was bound to the integer `MaxDetailRowsPerArchive` parameter in `Diagnose-CfaStage3FieldEncoding.ps1` before the encoding audit could run.
+
+The controller was corrected at executable commit `01ab8970a9cb74d9d62aded6ebc8d51aa94a724f` to use named-parameter hashtable splatting for every child script. Its self-test now creates a mandatory named-parameter probe script and verifies forwarding directly. GitHub Actions run `33314524596` completed successfully against that commit, including PowerShell 7 parsing, Windows PowerShell 5.1 parsing, all pre-existing Stage 3 component regressions, the Stage 3 encoding scanner self-test, the strengthened V3 finalization controller self-test, and fail-closed contract checks.
+
+This controller correction does not alter the V3 semantic matching rule, V2 parent outputs, alias registry, source shape, encoding gate definition, or bounded-review definition. It invalidated the earlier controller test evidence only; run `33314524596` supersedes that evidence.
+
 ## Frozen task/gate IDs and current evidence status
 
 | ID | Requirement | Status | Evidence boundary |
@@ -55,17 +63,17 @@ The five known malformed rows remain excluded under the already frozen source-sh
 | `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS | Repository authority and Stage 2 evidence re-established. |
 | `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 parent lineage | PASS | V3 contract and implementation are explicitly non-destructive. |
 | `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 source shape and source reconciliation | PASS | Frozen corrected Stage 3 source reconciliation preserved in implementation constants. |
-| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 component regression self-test passed in GitHub Actions run 33306784526 at code commit `2def7a6693e4c6a51241dbf84e5b30c67749bde9`. |
+| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 component regression self-test passed in GitHub Actions run 33306784526 at code commit `2def7a6693e4c6a51241dbf84e5b30c67749bde9`; unchanged semantic implementation was re-tested successfully in run 33314524596. |
 | `CFA-S3F-005` | Verify exact local parent V2 hashes and emit non-destructive V3 outputs/reject lineage | UNVERIFIED | Requires execution against the exact local V2 evidence artifacts. |
-| `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | PASS | V3 post-filter self-test passed in GitHub Actions run 33306784526. |
-| `CFA-S3F-007` | Validate deterministic V3 review selection and automatic rule consistency | PASS | V3 bounded-review helper self-test passed in GitHub Actions run 33306784526. |
-| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | UNVERIFIED | Scanner self-test passed, but exact local raw issue archives have not been executed in this environment. |
-| `CFA-S3F-009` | Parse and self-test V3 implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | GitHub Actions run 33306784526 completed successfully; all parse, component, regression, encoding-scanner, controller, and fail-closed contract checks passed. |
+| `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | PASS | V3 post-filter regression passed in GitHub Actions runs 33306784526 and 33314524596. |
+| `CFA-S3F-007` | Validate deterministic V3 review selection and automatic rule consistency | PASS | V3 bounded-review helper self-test passed in GitHub Actions runs 33306784526 and 33314524596. |
+| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | UNVERIFIED | Scanner self-test passed, but exact local raw issue archives have not yet produced a completed V3 encoding audit receipt. |
+| `CFA-S3F-009` | Parse and self-test V3 implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | GitHub Actions run 33314524596 completed successfully at executable commit `01ab8970a9cb74d9d62aded6ebc8d51aa94a724f`; all parse, component, regression, encoding-scanner, strengthened controller, and fail-closed contract checks passed. |
 | `CFA-S3F-010` | Freeze Stage 3 only after local V3 execution, encoding PASS, and direct semantic review PASS | BLOCKED | Depends on `CFA-S3F-005`, `CFA-S3F-008`, and `CFA-S3-005`. |
 | `CFA-S3-005` | Direct bounded accepted/rejected semantic review | UNVERIFIED | Requires direct inspection of the deterministic V3 review CSV produced from the exact local corpus. |
 | `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze until all upstream Stage 3 hard gates pass. |
 
-The evidence-only status reconciliation above does not alter executable code and therefore does not invalidate GitHub Actions run 33306784526. The exact executable blobs validated in that run remain unchanged.
+The evidence-only status reconciliation above does not alter executable code. The exact controller executable validated in GitHub Actions run 33314524596 is commit `01ab8970a9cb74d9d62aded6ebc8d51aa94a724f`.
 
 ## Required outputs
 
