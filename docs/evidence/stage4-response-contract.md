@@ -1,34 +1,32 @@
-# CFA Stage 4 response contract — V3 candidate — 2026-08-30
+# CFA Stage 4 response contract — V3 freeze candidate — 2026-08-31
 
-Status: **STAGE4_RESPONSE_CANDIDATE / SOURCE_SCHEMA_PASS / DIRECT_USD_POPULATION_PASS / EXACT_2359_FAILED / LAST_OBSERVED_V2_REVIEW_FAILED / UTC_DAY_OBS_RULE_FROZEN_FOR_VALIDATION / RESPONSE_FREEZE_BLOCKED**
+Status: **STAGE4_V3_VALIDATED / SOURCE_SCHEMA_PASS / DIRECT_USD_POPULATION_PASS / HISTORICAL_2359_FAIL / HISTORICAL_V2_FAIL / V3_CONSTRUCTION_PASS / V3_DIRECT_REVIEW_PASS / FINAL_FREEZE_EXECUTION_REQUIRED**
 
-## Authority and frozen source facts
+## Authority and upstream entry
 
-This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT defines no response variable, so Stage 4 derives responses afresh from verified source data.
+This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT defines no response variable, so Stage 4 derives responses afresh from verified market source data.
 
-Upstream Stage 3 is frozen on `CANDIDATE_V6` with `CFA-S3-006 = PASS`.
+Stage 3 is frozen on `CANDIDATE_V6` with `CFA-S3-006 = PASS`.
 
-Verified market source:
+## Frozen market-source facts
 
-- relation: `asrp.q2_market_1m_observations`;
-- exact rows: **14,055,089**;
+Verified relation: `asrp.q2_market_1m_observations`.
+
+Frozen Stage 1 / Stage 4 source facts:
+
+- exact market rows: **14,055,089**;
 - interval: `2025-04-01 00:00:00+00` through `2025-06-30 23:59:00+00`;
 - data-bearing pairs: **1,058**;
-- zero source-window, minute-alignment, quality-flag, or duplicate-class failures;
-- raw-to-typed reconciliation: PASS;
-- Kraken archive SHA-256: `36a1aa3a04f4ac3d700e13788372fcc1dfb7c506a2e47b0b05e8250ccd1a8e3c`.
-
-AF-001 SHA-256: `569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f`.
-
-Direct Stage 4 inspection established:
-
 - market relation columns: **19**;
-- required OHLC fields include `open_price`, `high_price`, `low_price`, `close_price`;
+- required OHLC fields: `open_price`, `high_price`, `low_price`, `close_price`;
+- zero source-window, minute-alignment, quality-flag, duplicate-class, or direct-USD OHLC integrity failures;
+- raw-to-typed reconciliation: PASS;
+- Kraken archive SHA-256: `36a1aa3a04f4ac3d700e13788372fcc1dfb7c506a2e47b0b05e8250ccd1a8e3c`;
+- AF-001 SHA-256: `569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f`;
 - research-eligible direct-USD pairs: **434**;
 - distinct direct-USD bases: **434**;
 - duplicate direct-USD base identities: **0**;
 - direct-USD pairs with zero market rows: **0**;
-- direct-USD OHLC/integrity failures: **0**;
 - eligible base without direct USD: `ZUSD`.
 
 Therefore `CFA-S4-002 = PASS` and `CFA-S4-003 = PASS`.
@@ -62,115 +60,123 @@ Observed across the 434 direct-USD pairs:
 
 `CFA-S4-007 = PASS`.
 
-## Historical last-observed close-to-close V2 — FAIL after direct review
+## Historical V2 last-observed close-to-close — FAIL
 
 V2 candidate:
 
-`RET_USD_1D_LOG_LAST_OBS(a,d) = ln(L(a,d) / L(a,d-1))`
+`RET_USD_1D_LOG_LAST_OBS(a,d) = ln(L(a,d) / L(a,d-1))`.
 
-where `L(a,d)` was the last observed valid direct-USD close during UTC day `d`.
+Its 40-row deterministic review found zero mechanical arithmetic/lineage defects but a blocking forward-boundary defect:
 
-Exact V2 candidate receipt reported 36,505 rows across 433 bases. The 40-row deterministic review CSV SHA-256 was:
+- prior close earlier than declared predictor cutoff: **37 / 40** rows;
+- close-to-close interval not equal to 1,440 minutes: **37 / 40** rows;
+- sampled elapsed interval range: **89 to 2,779 minutes**.
 
-`bf2036849db80f55f52e9c25bc99fe5fbd98b8829902fa385bf9c75c998a6e48`.
-
-The review found zero arithmetic, serialization, key, price, hash-format, or lineage errors, but found a blocking forward-boundary defect:
-
-- **37 / 40** sampled prior closes occurred before the declared `d 00:00 UTC` predictor cutoff;
-- **37 / 40** sampled close-to-close intervals were not 1,440 minutes;
-- sampled intervals ranged from **89 to 2,779 minutes**.
-
-Example: `SDN`, response day `2025-05-03`, used a prior close at `2025-05-02T19:56:00Z` and current close at `2025-05-03T00:03:00Z`, so the response included substantial pre-cutoff price movement.
-
-This violates the required predictor/response information boundary. V2 cannot freeze.
-
-- `CFA-S4-008 = FAIL` — V2 rule fails direct forward-boundary review;
-- `CFA-S4-009 = FAIL` — V2 constructed artifact fails timing/leakage suitability;
-- `CFA-S4-010 = BLOCKED` — V2 freeze blocked;
-- `CFA-S4-011 = FAIL` — direct deterministic V2 bounded review.
+Example: `SDN`, response day `2025-05-03`, used prior close `2025-05-02T19:56:00Z` and current close `2025-05-03T00:03:00Z`, so the label included pre-cutoff movement.
 
 Detailed evidence: `docs/evidence/stage4-v2-bounded-response-review-20260830.md`.
 
-## V3 cutoff-safe response rule — frozen for validation
+Historical V2 statuses:
+
+- `CFA-S4-008 = FAIL`;
+- `CFA-S4-009 = FAIL`;
+- `CFA-S4-010 = BLOCKED`;
+- `CFA-S4-011 = FAIL`.
+
+## V3 cutoff-safe response — approved design
 
 Response ID: **`RET_USD_UTC_DAY_OBS_LOG`**.
 
-### Population
+Population: only the 434 research-eligible Kraken direct-USD pairs from AF-001. No stablecoin substitution, other quote, or cross-rate conversion is permitted.
 
-Use only the same 434 research-eligible Kraken pairs whose AF-001 `quote_exchange_symbol` is exactly `USD`.
-
-No USDT/USDC, other quote, stablecoin substitution, or cross-rate conversion is permitted.
-
-### Grain
-
-One response per `(base_asset_id, response_day_utc)` for each active UTC pair-day having at least one valid direct-USD observation.
-
-### Predictor cutoff and response window
+Grain: one response per `(base_asset_id,response_day_utc)` for every active UTC pair-day with at least one valid direct-USD observation.
 
 For UTC day `d`:
 
 - predictor cutoff: `d 00:00:00+00`;
-- response window: `[d 00:00:00+00, d+1 00:00:00+00)`;
+- response window: `[d 00:00:00+00,d+1 00:00:00+00)`;
 - response availability: `d+1 00:00:00+00`.
 
-Every price observation used by the response must have its candle start inside this response window. No price observation from before the predictor cutoff is permitted.
+Definitions:
 
-### First-open and last-close definitions
+- `O_first(a,d)` = `open_price` from the valid direct-USD row with minimum `candle_start_utc` in day `d`; timestamp ties use lowest `physical_record_number`;
+- `C_last(a,d)` = `close_price` from the valid direct-USD row with maximum `candle_start_utc` in day `d`; timestamp ties use highest `physical_record_number`.
 
-For asset `a` and active UTC day `d`:
-
-- `O_first(a,d)` = `open_price` from the valid direct-USD row with minimum `candle_start_utc` in day `d`; if timestamps tie, choose the lowest `physical_record_number`;
-- `C_last(a,d)` = `close_price` from the valid direct-USD row with maximum `candle_start_utc` in day `d`; if timestamps tie, choose the highest `physical_record_number`.
-
-Both selected rows must be canonical-eligible, in-source-window, minute-aligned, quality-flag-free, duplicate-class-free, finite, non-NULL, and strictly positive.
-
-### Formula
+Formula:
 
 `RET_USD_UTC_DAY_OBS_LOG(a,d) = ln(C_last(a,d) / O_first(a,d))`.
 
-This is an **observed within-UTC-day log return**, not a fixed-duration 24-hour return. For sparse pairs the first and last observations may cover materially less than a full day. The exact observed span must remain explicit in lineage.
+Semantics: **observed within-UTC-day log return; not a fixed-duration 24-hour return**.
 
-A one-candle active day is permitted: the response is that candle's own open-to-close log return.
+A one-candle active day is valid and uses that candle's own open-to-close return. If an asset has no valid direct-USD observation during day `d`, no response exists. No imputation, carry-forward, carry-backward, interpolation, quote substitution, or cross-rate conversion is permitted.
 
-### Missing-data policy
+Required lineage per response includes response ID, base/pair/member identity, day, cutoff, response availability, first/last candle timestamps, first/last day-position metrics, observed span, first open, last close, first/last physical-record numbers, first/last raw-record SHA-256, and response value.
 
-If an asset has no valid direct-USD observation during UTC day `d`, no response row exists for that asset/day.
+`CFA-S4-012 = PASS`.
 
-No imputation, carry-forward, carry-backward, interpolation, quote substitution, or cross-rate conversion is permitted.
+## Exact local V3 construction — PASS
 
-### Required lineage
+Exact local run root:
 
-Each response row must retain at minimum:
+`C:\Users\Emmanuel\Documents\CFA-local\stage4-responses-v3\20260830-210449-42a1dd2ba1904e778c11deede2cfe314`
 
-- response ID;
-- base asset, pair token, source member ordinal;
-- response day;
-- predictor cutoff and response availability;
-- first and last candle start timestamps;
-- first minutes after midnight;
-- last minutes before midnight;
-- observed span minutes between first and last candle starts;
-- first `open_price` and last `close_price`;
-- first and last physical record numbers;
-- first and last raw-record SHA-256 values;
-- natural-log return.
+Candidate receipt:
 
-### V3 hard requirements
+`stage4-response-v3-candidate.json`
 
-The V3 constructor must fail closed unless:
+Exact observed candidate:
 
-1. AF-001 and the 434-pair / 434-base direct-USD population reconcile exactly;
-2. frozen market cardinality/schema/integrity checks remain PASS;
-3. direct-USD OHLC validity remains PASS;
-4. the daily first/last selection produces exactly **37,058** active pair-day rows, reconciling to the direct day-end diagnostic;
-5. all response keys are unique;
-6. first and last selected timestamps lie within their exact UTC response day and `first <= last`;
-7. every response uses only observations at or after its predictor cutoff and before response availability;
-8. every response independently recomputes as `ln(last_close/first_open)` within `1e-12`;
-9. no invalid price or lineage value is accepted;
-10. a bounded deterministic review sample and machine-readable receipt are emitted.
+- response contract: `CANDIDATE_UTC_DAY_OBSERVED_V3`;
+- response rows: **37,058**;
+- distinct response bases: **434**;
+- response days: `2025-04-01` through `2025-06-30`;
+- review rows: **49**;
+- response CSV SHA-256: `8e0cc38607be227339c71cb5daecbbb48af1e05c064472a019f0ffe9be11a004`;
+- review CSV SHA-256: `07458d4f73546e3e380b322c728623d8f72663f0909a4493d60ea23ca83a351c`;
+- day-summary SHA-256: `7402e19fb05014de59e90b0a2c7173eab40615dca6d2a831b454850d964267a6`;
+- candidate receipt SHA-256: `d76659f58d2d0ca7bc8dba9af3bc7782968dfb36ba98c3f7ad2cbf5a0b7e1ad2`.
 
-`CFA-S4-012 = PASS` — V3 response definition is frozen for exact validation.
+The constructor reconciled the full 37,058-row population, unique keys, cutoff/window timing, first/last selected rows, positive finite prices, formula within `1e-12`, and raw-record lineage.
+
+`CFA-S4-013 = PASS`.
+
+## Direct deterministic V3 review — PASS
+
+All **49** deterministic review rows were directly inspected. The uploaded review CSV SHA-256 matched the candidate receipt exactly.
+
+Observed review result:
+
+- mechanical failures: **0**;
+- pre-cutoff selected observations: **0**;
+- out-of-window selected observations: **0**;
+- formula failures: **0**;
+- timing-field reconciliation failures: **0**;
+- duplicate response keys: **0**;
+- invalid/non-positive sampled prices: **0**;
+- malformed sampled raw-record SHA-256 lineage: **0**.
+
+Stress coverage included earliest/latest dates, largest absolute returns, latest first observations, earliest last observations, and shortest observed spans. Sampled first observations ranged from minute **0 to 1,439** after midnight; sampled last-candle lags ranged from **0 to 1,436** minutes before midnight; observed spans ranged from **0 to 1,439** minutes. There were **26** zero-span sampled rows, all valid one-candle observed open-to-close responses under V3 semantics.
+
+Detailed evidence:
+
+- `docs/evidence/stage4-v3-bounded-response-review-20260831.md`;
+- `docs/evidence/stage4-v3-review-adjudication-20260831.json`.
+
+`CFA-S4-014 = PASS`.
+
+## Freeze finalization requirement
+
+Authorized finalizer:
+
+`scripts/windows/Finalize-CfaStage4ResponsesV3.ps1`
+
+The finalizer must fail closed unless it verifies the exact candidate receipt, 49-row review CSV, checked-in all-PASS adjudication, full 37,058-row response CSV, 91-day summary, exact artifact hashes, full response formula/timing/cutoff checks, unique keys, 434 response bases, and lineage fields.
+
+Only a local finalizer result of:
+
+`CFA STAGE 4 V3 RESPONSE FREEZE: PASS`
+
+may set `CFA-S4-015 = PASS`.
 
 ## Stage 4 gates
 
@@ -188,10 +194,10 @@ The V3 constructor must fail closed unless:
 | `CFA-S4-010` | Historical V2 freeze | BLOCKED |
 | `CFA-S4-011` | Direct V2 bounded timing/leakage review | FAIL |
 | `CFA-S4-012` | Define cutoff-safe V3 within-day observed return | PASS |
-| `CFA-S4-013` | Construct and validate V3 response candidate | UNVERIFIED |
-| `CFA-S4-014` | Direct deterministic V3 bounded review | BLOCKED |
+| `CFA-S4-013` | Construct and validate exact V3 response candidate | PASS |
+| `CFA-S4-014` | Direct deterministic V3 bounded review | PASS |
 | `CFA-S4-015` | Freeze Stage 4 responses | BLOCKED |
 
 ## Current completion boundary
 
-Stage 4 remains **not complete**. The next authorized operation is exact local construction of `RET_USD_UTC_DAY_OBS_LOG`. Stage 5 factor definition remains blocked until `CFA-S4-015 = PASS`.
+Stage 4 is **not yet frozen**. Only exact local execution of `Finalize-CfaStage4ResponsesV3.ps1` against the reviewed V3 candidate may close `CFA-S4-015`. Stage 5 candidate-factor definition remains blocked until that finalizer returns PASS.
