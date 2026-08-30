@@ -23,7 +23,7 @@ function Parse-Bool {
     $x = ([string]$Value).Trim().ToLowerInvariant()
     if ($x -eq 'true') { return $true }
     if ($x -eq 'false') { return $false }
-    throw "Malformed boolean in $Label: '$Value'"
+    throw "Malformed boolean in ${Label}: '$Value'"
 }
 
 function Get-StableSha256 {
@@ -63,7 +63,7 @@ function Assert-SampleLogic {
                 if ($reason -ne $expected) { throw "MATCH context reason '$reason' != '$expected'" }
             }
         }
-        catch { [void]$errors.Add("row $ordinal: $($_.Exception.Message)") }
+        catch { [void]$errors.Add("row ${ordinal}: $($_.Exception.Message)") }
     }
     return [pscustomobject]@{status=if($errors.Count-eq0){'PASS'}else{'FAIL'};error_count=$errors.Count;errors=@($errors.ToArray())}
 }
