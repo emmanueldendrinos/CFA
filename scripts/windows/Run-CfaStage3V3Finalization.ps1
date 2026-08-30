@@ -28,7 +28,7 @@ function Invoke-ChildScript {
     & $Path @Arguments
     $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
     $global:LASTEXITCODE = 0
-    if ($code -ne 0) { throw "Child script failed with exit $code: $Path" }
+    if ($code -ne 0) { throw "Child script failed with exit ${code}: $Path" }
 }
 function Test-V2Candidate {
     param([string]$SummaryPath)
