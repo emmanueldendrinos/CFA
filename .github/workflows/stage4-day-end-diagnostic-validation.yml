@@ -48,17 +48,16 @@ jobs:
           $script=Get-Content '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
           foreach($marker in @(
-            'EXACT_2359_FAILED',
-            'LAST_OBSERVED_V2_REVIEW_FAILED',
-            'CFA-S4-004',
-            'FAIL',
-            'CFA-S4-007',
-            'PASS',
+            'HISTORICAL_2359_FAIL',
+            'HISTORICAL_V2_FAIL',
+            'CFA-S4-004 = FAIL',
+            'CFA-S4-007 = PASS',
             '37,058',
             '5,134',
             '36,505',
-            'CFA-S4-012',
+            'CFA-S4-012 = PASS',
             'RET_USD_UTC_DAY_OBS_LOG',
+            'CFA-S4-014 = PASS',
             'CFA-S4-015',
             'BLOCKED'
           )){
