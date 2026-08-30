@@ -1,120 +1,140 @@
 # CFA Stage 3 news matching corrective contract — 2026-08-30
 
-Status: **FROZEN_V3_SEMANTIC_RULE / UTF8_EXCLUSION_POLICY_APPROVED / V4_CODE_CI_PASS / LOCAL_V4_EXECUTION_UNVERIFIED / STAGE3_FREEZE_BLOCKED**
+Status: **UTF8_EXCLUSION_FROZEN / V4_SEMANTIC_REVIEW_FAIL / V5_SHORT_SYMBOL_REFINEMENT_FROZEN / STAGE3_FREEZE_BLOCKED**
 
 ## Authority and preserved upstream state
 
-This contract is a narrow correction to the CFA Stage 3 V2 candidate. It does not replace or reinterpret the CFA Source of Truth, Stage 1 source reconciliation, Stage 2 identity/alias decisions, the 431-asset news population, the 470-row Stage 3 alias registry, the allowed GDELT surfaces, V2 title matching, the response-independent record grain, or the `(base_asset_id, record_id)` deduplication rule.
+This contract remains subordinate to the CFA Source of Truth and preserves Stage 1 source reconciliation, Stage 2 identity/alias decisions, the 431-asset news population, the 470-row Stage 3 alias registry, response-independent record grain, and `(base_asset_id, record_id)` deduplication.
 
-The V2 full source scan remains parent evidence only when its summary and output hashes verify exactly and it records:
+The exact V2 parent is valid only when its hashes verify and it records 7,163 archives, 9,183,757 raw rows, 5 malformed 27-field rows, 0 missing critical rows, 0 duplicate asset/record matches, and alias-registry SHA-256 `11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9`.
 
-- 7,163 source archives;
-- 9,183,757 source rows;
-- 5 malformed 27-field rows;
-- 0 missing critical rows;
-- 0 duplicate `(base_asset_id, record_id)` matches;
-- alias-registry SHA-256 `11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9`.
+The regenerated Stage 2 `archive-scan.csv` reproduced the frozen SHA-256 exactly: `1760a371e6ff43e5a1c3da0d2d72df99e8ca02efe1830e1dd2d5404e04e2d5ba`.
 
-The previously missing Stage 2 `archive-scan.csv` was regenerated from `D:\CFA-bulk\source\gdelt-gkg-q2-2025` and reproduced the frozen SHA-256 exactly: `1760a371e6ff43e5a1c3da0d2d72df99e8ca02efe1830e1dd2d5404e04e2d5ba`. The reproduced scan has 7,163 unique archives, 135 UTF-8-failure archives, 5 malformed rows, 0 entry failures, and 139 bounded issue archives.
+## Historical V2/V3 semantic correction
 
-## Blocking V2 semantic observation
+V2 admitted an obvious false positive for default two-letter symbol `IP` in the title `North Korean Hackers Use Russian IP Infrastructure` because `ECON_BITCOIN=True` was sufficient even though the title was non-crypto.
 
-The deterministic V2 bounded review failed because the default two-letter Kraken symbol `IP` matched the title `North Korean Hackers Use Russian IP Infrastructure`. In that observation, `IP` meant Internet Protocol, `title_crypto_anchor=False`, and `ECON_BITCOIN=True`; V2 therefore admitted an obvious false positive.
+V3 therefore froze this rule for default Kraken symbol-only aliases of length one or two characters:
 
-V2 remains historical parent evidence and must not be frozen as Stage 3.
+1. `ECON_BITCOIN` alone is insufficient.
+2. retain when `TITLE_CRYPTO` is present;
+3. retain when an independently approved non-default alias for the same asset matched the same record;
+4. otherwise reject with `SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO`.
 
-## Frozen V3 short-symbol rule
+All other aliases remain unchanged by that historical V3 rule.
 
-For a **default Kraken symbol-only alias of length one or two characters**:
+## UTF-8 source-eligibility result and frozen policy
 
-1. `ECON_BITCOIN` alone is insufficient to retain the asset/news record match.
-2. The record is retained when `TITLE_CRYPTO` evidence is present.
-3. The record is also retained when an independently approved non-default alias for the same asset matched the same GDELT record.
-4. Otherwise the V2 asset/news record match is removed with reason `SHORT_DEFAULT_REQUIRES_TITLE_CRYPTO`.
+The strict raw-byte audit of the exact 139 issue archives found:
 
-All aliases other than default one- or two-character Kraken symbol-only aliases are unchanged by this rule.
+- 148 rows with any strict UTF-8 failure in the issue set;
+- 126 rows with invalid UTF-8 in a Stage 3-used field;
+- all 126 Stage 3-critical occurrences in field 26 zero-based / field 27 one-based (`extras`, page-title source);
+- 5 malformed 27-field rows.
 
-The short-symbol correction is lineage-preserving over a hash-verified V2 run. Parent V2 outputs are read-only and are never rewritten.
+`CFA-S3F-008` is therefore permanently **FAIL** as an observed historical gate.
 
-## Encoding hard-gate result
+Project policy is frozen to **exclude the exact 126 affected raw rows from Stage 3 eligibility**, keyed by `archive_file`, `row_ordinal`, `raw_line_sha256`, and invalid field indexes. No corpus-wide re-encoding or semantic repair is performed.
 
-V2 reads GDELT fields 0, 1, 3, 4, 8, 12, 14, 23, and 26 with lenient UTF-8 decoding. The strict raw-byte audit of the exact 139-archive issue set completed locally against the reproduced Stage 2 scan and current D-drive corpus.
+The exact V4 local impact diagnostic proved that those 126 rows have:
 
-Observed audit result:
+- V2 match overlap: **0**;
+- V2 context-reject overlap: **0**;
+- V2 bounded-sample overlap: **0**;
+- ambiguous sample-identity overlap: **0**.
 
-- issue archives scanned: **139**;
-- strict UTF-8 invalid rows in issue set: **148**;
-- rows with invalid UTF-8 in one or more Stage 3-used fields: **126**;
-- all 126 Stage 3-critical occurrences are in field 26 zero-based / field 27 one-based (`extras`, the page-title source); 
-- non-Stage-3 fields 19 and 21 zero-based also contain 7 and 15 invalid occurrences respectively;
-- known malformed 27-field rows: **5**;
-- evidence directory: `D:\CFA-bulk\analysis\stage3-news-matching\20260830-134344-v3-finalization-6c24b962\encoding\20260830-134417-9e880050`.
+The corrected eligible source population is therefore **9,183,626 rows**. The UTF-8 exclusion does not change the V2/V3 match population because none of the excluded rows entered matches or rejects.
 
-Therefore `CFA-S3F-008` is **FAIL**. This failed observation is preserved permanently in lineage and is not relabeled PASS.
+## V4 local execution result
 
-## Approved UTF-8 eligibility policy
+Exact local V4 finalization completed as a validation candidate under:
 
-Project policy is now frozen as follows: **exclude every raw GDELT row with invalid UTF-8 in a Stage 3-used field from the Stage 3 news-matching eligible population. Do not spend further project effort re-encoding or semantically repairing those rows.**
+`D:\CFA-bulk\analysis\stage3-news-matching\20260830-140246-v4-finalization-5f46d2db`
 
-The exclusion is deliberately small and lineage-preserving. It removes only the exact 126 raw rows identified by the strict audit, subject to exact local reconciliation of any overlap with the five already-excluded malformed rows. No whole archive and no wider corpus is re-encoded or discarded.
+Mechanical results:
 
-The exclusion identity is raw-lineage based, not text based:
+- `CFA-S3F-011`: PASS — exact 126-row exclusion manifest produced;
+- `CFA-S3F-012`: PASS — exact V2 impact reconciliation produced zero overlap;
+- `CFA-S3F-013`: PASS — corrected V4 eligibility candidate produced;
+- V3 retained matches: 22,563;
+- V4 retained matches: 22,563;
+- matched assets: 283 of 431;
+- deterministic V4 review rows: 26;
+- review CSV SHA-256: `293e1c2a613d115736469a1746014d4bc9b8e5eed48dddec0f61c146c5950095`.
 
-- `archive_file`;
-- `row_ordinal` within the archive entry;
-- `raw_line_sha256`;
-- exact invalid field indexes.
+The uploaded review CSV hash was independently verified against the candidate receipt before direct review.
 
-Because V2 match and context-reject outputs preserve `archive_file` and `row_ordinal`, the impact of the exclusion set can be reconciled exactly against the hash-verified parent outputs without rescanning all 9,183,757 rows.
+## V4 direct semantic review — FAIL
 
-## Corrected V4 pipeline
+All 26 deterministic V4 review rows were directly inspected. Evidence is recorded in `docs/evidence/stage3-v4-bounded-sample-review-20260830.md`.
 
-The corrected V4 candidate performs, in order:
+Three blocking errors were found:
 
-1. `Diagnose-CfaStage3CriticalUtf8Impact.ps1`: enumerate the exact critical-UTF8 exclusion manifest and reconcile it against the hash-verified V2 outputs.
-2. `Apply-CfaStage3NewsMatchingV3.ps1`: apply the frozen short-default-symbol semantic correction to the verified V2 parent.
-3. `Apply-CfaStage3NewsMatchingV4.ps1`: exclude every manifest row from V3 matches, V3 short-symbol rejects, V2 context rejects, and sample lineage, and freeze the corrected eligible-row count from the exact manifest/malformed-row overlap.
-4. `Prepare-CfaStage3V4SampleReview.ps1`: produce a new deterministic bounded semantic-review set from the corrected candidate.
-5. `Summarize-CfaStage3NewsByAsset.ps1`: produce per-asset counts from the corrected candidate.
+1. `S3V4R-022` — **false positive**: default symbol `OP` matched inside Bitcoin technical token `OP_RETURN`. `TITLE_CRYPTO` was present, so the V3 rule incorrectly retained it as Optimism.
+2. `S3V4R-025` — **false negative**: explicit market headline `Arweave (AR) ... Market Capitalization ...` was rejected because the title lacked the generic V3 `TITLE_CRYPTO` vocabulary.
+3. `S3V4R-026` — **false negative**: explicit price headline `Story (IP) Price Down ...` was rejected for the same reason.
 
-`Run-CfaStage3V4Finalization.ps1` orchestrates the complete pipeline and emits `stage3-v4-finalization-candidate.json`.
+The other 23 review rows had no obvious blocking false positive or false negative.
 
-The complete V4 implementation, including PowerShell 7 parsing, Windows PowerShell 5.1 parsing, the critical-UTF8 impact diagnostic, V4 eligibility correction, V4 bounded-review helper, V4 controller, all preserved V1/V2/V3 regressions, and fail-closed contract checks, passed GitHub Actions run `33315496183` at executable commit `7fea6d5cc6c35e6674e26be39ef75a74d27ccc4a`.
+Therefore the V4 semantic gate fails and V4 cannot freeze Stage 3.
 
-## Frozen task/gate IDs and current evidence status
+## Frozen V5 short-symbol refinement
+
+The V5 correction is intentionally narrow and leaves all upstream identities, aliases, non-short aliases, UTF-8 eligibility, and V2 lineage unchanged.
+
+For each default Kraken symbol-only alias of length one or two characters:
+
+### 1. Tight title-token boundary
+
+A page-title symbol occurrence is valid only when the symbol is not adjacent to a Unicode letter, digit, or underscore. Underscore is treated as part of the surrounding token.
+
+This makes `OP` in `OP_RETURN` **not** a valid Optimism title occurrence.
+
+### 2. Existing high-context retention
+
+A short symbol remains eligible when an independently approved non-default alias for the same asset matched the same record.
+
+A short symbol also remains eligible under `TITLE_CRYPTO` only when the short symbol itself has a valid tightened title occurrence or an exact structured occurrence in `ALLNAMES`, `V2PERSONS`, or `V2ORGANIZATIONS`.
+
+### 3. Parenthetical market-ticker retention
+
+A short symbol may be retained without generic `TITLE_CRYPTO` when the page title contains the exact parenthetical ticker form `(SYMBOL)` and the title contains a market/asset anchor such as price, market cap/capitalization, volume, trading/trade, exchange, token, coin, crypto, or cryptocurrency.
+
+This is designed to retain high-specificity observations such as `Arweave (AR) ... Market Capitalization ...` and `Story (IP) Price Down ...` while not reopening generic short-symbol matching.
+
+### 4. Otherwise reject
+
+If none of the conditions above is satisfied, reject the short-symbol-supported asset/news match.
+
+V5 must inspect the exact raw page title and structured fields for every affected V2 short-symbol record using preserved `(archive_file,row_ordinal)` lineage. It may scan only those targeted rows/archives; a full 9.18M-row rematch is not required.
+
+## Frozen task/gate IDs and current status
 
 | ID | Requirement | Status | Evidence boundary |
 |---|---|---|---|
 | `CFA-S3F-001` | Re-establish SoT authority and Stage 2 entry gate | PASS | Repository authority and Stage 2 evidence re-established. |
-| `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 parent lineage | PASS | Correction remains non-destructive and response-independent. |
-| `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 source shape and source reconciliation | PASS | Reproduced Stage 2 archive scan matches the frozen SHA-256 exactly. |
-| `CFA-S3F-004` | Implement the exact V3 short-default-symbol corrective rule | PASS | Windows PowerShell 5.1 regression passed; semantic rule frozen. |
-| `CFA-S3F-005` | Verify exact local parent V2 hashes and emit non-destructive V3 outputs/reject lineage | UNVERIFIED | Will be resolved by exact local V4 controller execution. |
-| `CFA-S3F-006` | Regression-test IP rejection, OM retention, approved non-default bypass, and unchanged 3+ character symbols | PASS | V3 post-filter regression passed in CI. |
-| `CFA-S3F-007` | Validate deterministic V3 review selection and automatic rule consistency | PASS | V3 bounded-review helper self-test passed in CI. |
-| `CFA-S3F-008` | Strict UTF-8 audit of every Stage 3-used field on the bounded raw issue set | FAIL | Direct local audit found 126 rows with invalid UTF-8 in matcher-used field 26. |
-| `CFA-S3F-009` | Parse and self-test implementation on Windows PowerShell 5.1 and PowerShell 7 | PASS | V4 workflow run `33315496183` passed at executable commit `7fea6d5cc6c35e6674e26be39ef75a74d27ccc4a`. |
-| `CFA-S3F-010` | Historical V3 freeze gate | BLOCKED | Invalidated by `CFA-S3F-008=FAIL`; V3 cannot freeze. |
-| `CFA-S3F-011` | Enumerate exact Stage 3-critical UTF-8 exclusion manifest at `(archive_file,row_ordinal,raw_line_sha256)` grain | UNVERIFIED | Code CI PASS; requires exact local execution. |
-| `CFA-S3F-012` | Reconcile exclusion manifest against exact hash-verified V2 match/reject outputs | UNVERIFIED | Code CI PASS; requires exact local execution. |
-| `CFA-S3F-013` | Apply corrected candidate: exclude all manifest rows and preserve frozen V3 short-symbol rule | UNVERIFIED | Code CI PASS; requires exact local execution. |
-| `CFA-S3F-014` | Produce and directly inspect deterministic bounded review for corrected candidate | BLOCKED | Review preparation requires exact local V4 candidate; direct inspection follows. |
-| `CFA-S3F-015` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on all corrected-candidate gates and direct semantic review passing. |
-| `CFA-S3-005` | Direct bounded accepted/rejected semantic review | BLOCKED | Must be regenerated and directly reviewed on corrected V4 candidate. |
-| `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze while any required corrected-candidate gate is unresolved. |
+| `CFA-S3F-002` | Preserve Stage 2 population/identity/alias decisions and V2 lineage | PASS | All corrections remain lineage-preserving. |
+| `CFA-S3F-003` | Preserve corrected 7,163 / 9,183,757 raw source shape | PASS | Reproduced Stage 2 scan matched frozen hash exactly. |
+| `CFA-S3F-004` | Historical V3 short-default-symbol rule | PASS | Implemented and regression-tested; later semantic review showed it is insufficient, not incorrectly implemented. |
+| `CFA-S3F-005` | Verify exact local parent V2 hashes and V3 lineage | PASS | Exact local V4 controller successfully executed the hash-verified V3 post-filter. |
+| `CFA-S3F-006` | V3 IP/OM/non-default regression tests | PASS | CI regression evidence preserved. |
+| `CFA-S3F-007` | V3 deterministic review helper | PASS | CI evidence preserved. |
+| `CFA-S3F-008` | Historical strict UTF-8 hard gate | FAIL | 126 Stage 3-used-field failures observed. |
+| `CFA-S3F-009` | PowerShell 5.1 / 7 implementation validation | PASS | V4 workflow run `33315496183` passed. |
+| `CFA-S3F-010` | Historical V3 freeze gate | BLOCKED | Superseded by downstream corrections. |
+| `CFA-S3F-011` | Enumerate exact UTF-8 exclusion manifest | PASS | Exact local V4 run produced 126-row manifest. |
+| `CFA-S3F-012` | Reconcile exclusion set against exact V2 outputs | PASS | Zero match/reject/sample overlap. |
+| `CFA-S3F-013` | Apply UTF-8 corrected V4 eligibility candidate | PASS | Local V4 candidate produced 9,183,626 eligible rows and 22,563 matches. |
+| `CFA-S3F-014` | Direct deterministic V4 semantic review | FAIL | 3 blocking rows among 26 reviewed. |
+| `CFA-S3F-015` | Historical V4 freeze gate | BLOCKED | V4 semantic review failed. |
+| `CFA-S3F-016` | Implement tightened short-symbol title token boundary including underscore | UNVERIFIED | V5 implementation required. |
+| `CFA-S3F-017` | Implement parenthetical market-ticker retention and exact short-symbol evidence rule | UNVERIFIED | V5 implementation required. |
+| `CFA-S3F-018` | Produce exact local V5 candidate from V2 lineage plus frozen UTF-8 exclusions | BLOCKED | Depends on `CFA-S3F-016` and `CFA-S3F-017`. |
+| `CFA-S3F-019` | Direct deterministic V5 bounded semantic review | BLOCKED | Depends on exact local V5 candidate. |
+| `CFA-S3F-020` | Freeze corrected Stage 3 news matching | BLOCKED | Depends on all V5 gates passing. |
+| `CFA-S3-005` | Stage 3 direct bounded semantic review | FAIL | Latest completed candidate review (V4) failed; may be resolved only by a corrected V5 review. |
+| `CFA-S3-006` | Freeze news matching | BLOCKED | Stage 3 cannot freeze while V5 requirements remain unresolved. |
 
-## Required V4 outputs
+## Completion boundary
 
-A valid local corrected candidate must contain:
-
-- `stage3-v4-finalization-candidate.json`;
-- critical-UTF8 impact summary and exact exclusion manifest with hashes;
-- hash-verified `CANDIDATE_V3` semantic-correction outputs;
-- `CANDIDATE_V4` `stage3-match-summary.json`;
-- corrected V4 match, reject, sample, and UTF-8 exclusion lineage with SHA-256 values;
-- deterministic V4 bounded-review CSV and SHA-256;
-- per-asset V4 news counts and SHA-256.
-
-## Current completion boundary
-
-Stage 3 is **not complete**. The next valid operation is the exact local V4 finalization controller. If its mechanical gates pass, the only remaining Stage 3 operation is direct inspection of every deterministic V4 bounded-review row. No response definition, candidate factor, leakage test, model-ready freeze, or PLS work may begin while `CFA-S3-006` remains BLOCKED.
+Stage 3 remains **BLOCKED**. The next valid operation is implementation and exact local execution of the frozen V5 short-symbol refinement. Response definition, factor construction, leakage testing, model-ready freeze, and PLS remain downstream and must not begin until `CFA-S3-006` passes.
