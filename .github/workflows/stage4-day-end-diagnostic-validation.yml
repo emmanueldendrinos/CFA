@@ -42,15 +42,40 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1 -SelfTest
 
-      - name: Enforce fail-closed diagnostic contract
+      - name: Enforce preserved diagnostic evidence
         shell: powershell
         run: |
           $script=Get-Content '.\scripts\windows\Diagnose-CfaStage4DayEndCoverage.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
-          foreach($marker in @('EXACT_2359_CANDIDATE_FAILED','CFA-S4-004','FAIL','CFA-S4-005','CFA-S4-007','UNVERIFIED','CFA-S4-008','BLOCKED','CFA-S4-010')){
+          foreach($marker in @(
+            'EXACT_2359_FAILED',
+            'LAST_OBSERVED_V2_REVIEW_FAILED',
+            'CFA-S4-004',
+            'FAIL',
+            'CFA-S4-007',
+            'PASS',
+            '37,058',
+            '5,134',
+            '36,505',
+            'CFA-S4-012',
+            'RET_USD_UTC_DAY_OBS_LOG',
+            'CFA-S4-015',
+            'BLOCKED'
+          )){
             if($contract -notmatch [regex]::Escape($marker)){throw "Contract marker missing: $marker"}
           }
-          foreach($marker in @('default_transaction_read_only=on','stage4-day-end-pair-summary.csv','stage4-day-end-global-summary.csv','stage4-day-end-last-time-frequency.csv','stage4-day-end-worst-200.csv','stage4-day-end-AEVOUSD.csv','consecutive_day_last_observed_candidates','consecutive_day_exact2359_candidates','CFA-S4-007','PASS','CFA-S4-008','UNVERIFIED')){
+          foreach($marker in @(
+            'default_transaction_read_only=on',
+            'stage4-day-end-pair-summary.csv',
+            'stage4-day-end-global-summary.csv',
+            'stage4-day-end-last-time-frequency.csv',
+            'stage4-day-end-worst-200.csv',
+            'stage4-day-end-AEVOUSD.csv',
+            'consecutive_day_last_observed_candidates',
+            'consecutive_day_exact2359_candidates',
+            'CFA-S4-007',
+            'PASS'
+          )){
             if($script -notmatch [regex]::Escape($marker)){throw "Diagnostic marker missing: $marker"}
           }
           if($script -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){
