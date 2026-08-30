@@ -1,0 +1,77 @@
+name: CFA Stage 3 Finalization Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Adjudicate-CfaStage3ExistingRun.ps1'
+      - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
+      - '.github/workflows/stage3-finalization-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Adjudicate-CfaStage3ExistingRun.ps1'
+      - 'scripts/windows/Prepare-CfaStage3SampleReview.ps1'
+      - 'scripts/windows/Run-CfaStage3NewsMatchingParallel.ps1'
+      - '.github/workflows/stage3-finalization-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse finalization scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          $files=@(
+            '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
+            '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "PowerShell 7 parse failed: $file"}
+          }
+
+      - name: Parse finalization scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $files=@(
+            '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1',
+            '.\scripts\windows\Prepare-CfaStage3SampleReview.ps1',
+            '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1'
+          )
+          foreach($file in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file :: $($_.Message)"};throw "Windows PowerShell 5.1 parse failed: $file"}
+          }
+
+      - name: Run exact Windows PowerShell 5.1 adjudication self-test
+        shell: powershell
+        run: .\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1 -SelfTest
+
+      - name: Run exact Windows PowerShell 5.1 sample-review self-test
+        shell: powershell
+        run: .\scripts\windows\Prepare-CfaStage3SampleReview.ps1 -SelfTest
+
+      - name: Run exact Windows PowerShell 5.1 parallel matcher self-test
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1 -SelfTest
+
+      - name: Enforce corrected Stage 3 source contract
+        shell: powershell
+        run: |
+          $parallel=Get-Content '.\scripts\windows\Run-CfaStage3NewsMatchingParallel.ps1' -Raw
+          $adjudicate=Get-Content '.\scripts\windows\Adjudicate-CfaStage3ExistingRun.ps1' -Raw
+          foreach($text in @($parallel,$adjudicate)){
+            if($text -notmatch '9183757L'){throw 'Corrected 9,183,757 Stage 3 row expectation is missing.'}
+            if($text -match '9091236L'){throw 'Stale 9,091,236 Stage 3 row expectation leaked into finalization code.'}
+          }
+          if($parallel -notmatch 'WorkerMode'){throw 'Parallel matcher worker mode is missing.'}
+          if($parallel -notmatch 'ExpectedMatchesSha256'){throw 'Parallel matcher deterministic equivalence gate is missing.'}
