@@ -1,0 +1,43 @@
+name: CFA Stage 3 Source Manifest Reconciliation Validation
+
+on:
+  push:
+    branches:
+      - 'cfa/recovery-inventory-ci-20260829'
+    paths:
+      - 'scripts/windows/Reconcile-CfaStage3SourceManifest.ps1'
+      - '.github/workflows/stage3-source-manifest-reconciliation-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Reconcile-CfaStage3SourceManifest.ps1'
+      - '.github/workflows/stage3-source-manifest-reconciliation-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Reconcile-CfaStage3SourceManifest.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Stage 3 source reconciliation failed PowerShell 7 parsing.'}
+
+      - name: Parse with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Reconcile-CfaStage3SourceManifest.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host $_.Message};throw 'Stage 3 source reconciliation failed Windows PowerShell 5.1 parsing.'}
+
+      - name: Run exact Windows PowerShell 5.1 self-test
+        shell: powershell
+        run: |
+          & .\scripts\windows\Reconcile-CfaStage3SourceManifest.ps1 -SelfTest
+          $code=if($null-eq$LASTEXITCODE){0}else{[int]$LASTEXITCODE}
+          if($code-ne0){throw "Stage 3 source reconciliation self-test failed with exit $code."}
