@@ -1,10 +1,10 @@
-# CFA Stage 4 response contract — V3 freeze candidate — 2026-08-31
+# CFA Stage 4 response contract — frozen V3 — 2026-08-31
 
-Status: **STAGE4_V3_VALIDATED / SOURCE_SCHEMA_PASS / DIRECT_USD_POPULATION_PASS / HISTORICAL_2359_FAIL / HISTORICAL_V2_FAIL / V3_CONSTRUCTION_PASS / V3_DIRECT_REVIEW_PASS / FINAL_FREEZE_EXECUTION_REQUIRED**
+Status: **STAGE4_FROZEN / V3_RESPONSE_APPROVED / CFA-S4-015_PASS**
 
 ## Authority and upstream entry
 
-This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT defines no response variable, so Stage 4 derives responses afresh from verified market source data.
+This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT defines no response variable, so Stage 4 derived responses afresh from verified market source data.
 
 Stage 3 is frozen on `CANDIDATE_V6` with `CFA-S3-006 = PASS`.
 
@@ -83,7 +83,7 @@ Historical V2 statuses:
 - `CFA-S4-010 = BLOCKED`;
 - `CFA-S4-011 = FAIL`.
 
-## V3 cutoff-safe response — approved design
+## Frozen V3 response definition
 
 Response ID: **`RET_USD_UTC_DAY_OBS_LOG`**.
 
@@ -106,25 +106,23 @@ Formula:
 
 `RET_USD_UTC_DAY_OBS_LOG(a,d) = ln(C_last(a,d) / O_first(a,d))`.
 
-Semantics: **observed within-UTC-day log return; not a fixed-duration 24-hour return**.
+Semantics: **observed within-UTC-day natural-log return; not a fixed-duration 24-hour return**.
 
-A one-candle active day is valid and uses that candle's own open-to-close return. If an asset has no valid direct-USD observation during day `d`, no response exists. No imputation, carry-forward, carry-backward, interpolation, quote substitution, or cross-rate conversion is permitted.
+A one-candle active day is valid and uses that candle's own open-to-close return. If an asset has no valid direct-USD observation during day `d`, no response exists.
+
+Missing policy: **no imputation**. No carry-forward, carry-backward, interpolation, quote substitution, stablecoin substitution, or cross-rate conversion is permitted.
 
 Required lineage per response includes response ID, base/pair/member identity, day, cutoff, response availability, first/last candle timestamps, first/last day-position metrics, observed span, first open, last close, first/last physical-record numbers, first/last raw-record SHA-256, and response value.
 
 `CFA-S4-012 = PASS`.
 
-## Exact local V3 construction — PASS
+## Exact V3 construction — PASS
 
 Exact local run root:
 
 `C:\Users\Emmanuel\Documents\CFA-local\stage4-responses-v3\20260830-210449-42a1dd2ba1904e778c11deede2cfe314`
 
-Candidate receipt:
-
-`stage4-response-v3-candidate.json`
-
-Exact observed candidate:
+Exact candidate:
 
 - response contract: `CANDIDATE_UTC_DAY_OBSERVED_V3`;
 - response rows: **37,058**;
@@ -136,7 +134,7 @@ Exact observed candidate:
 - day-summary SHA-256: `7402e19fb05014de59e90b0a2c7173eab40615dca6d2a831b454850d964267a6`;
 - candidate receipt SHA-256: `d76659f58d2d0ca7bc8dba9af3bc7782968dfb36ba98c3f7ad2cbf5a0b7e1ad2`.
 
-The constructor reconciled the full 37,058-row population, unique keys, cutoff/window timing, first/last selected rows, positive finite prices, formula within `1e-12`, and raw-record lineage.
+The constructor reconciled full population, unique keys, cutoff/window timing, first/last selected rows, positive finite prices, formula within `1e-12`, and raw-record lineage.
 
 `CFA-S4-013 = PASS`.
 
@@ -155,7 +153,7 @@ Observed review result:
 - invalid/non-positive sampled prices: **0**;
 - malformed sampled raw-record SHA-256 lineage: **0**.
 
-Stress coverage included earliest/latest dates, largest absolute returns, latest first observations, earliest last observations, and shortest observed spans. Sampled first observations ranged from minute **0 to 1,439** after midnight; sampled last-candle lags ranged from **0 to 1,436** minutes before midnight; observed spans ranged from **0 to 1,439** minutes. There were **26** zero-span sampled rows, all valid one-candle observed open-to-close responses under V3 semantics.
+Stress coverage included earliest/latest dates, largest absolute returns, latest first observations, earliest last observations, and shortest observed spans. There were **26** zero-span sampled rows, all valid one-candle observed open-to-close responses under V3 semantics.
 
 Detailed evidence:
 
@@ -164,19 +162,29 @@ Detailed evidence:
 
 `CFA-S4-014 = PASS`.
 
-## Freeze finalization requirement
+## Final V3 freeze — PASS
 
 Authorized finalizer:
 
 `scripts/windows/Finalize-CfaStage4ResponsesV3.ps1`
 
-The finalizer must fail closed unless it verifies the exact candidate receipt, 49-row review CSV, checked-in all-PASS adjudication, full 37,058-row response CSV, 91-day summary, exact artifact hashes, full response formula/timing/cutoff checks, unique keys, 434 response bases, and lineage fields.
+The finalizer was CI-validated to fail closed unless it verified the exact candidate receipt, 49-row review CSV, checked-in all-PASS adjudication, full 37,058-row response CSV, day-summary CSV, exact artifact hashes, formula/timing/cutoff checks, unique keys, 434 response bases, and lineage fields.
 
-Only a local finalizer result of:
+Exact local finalizer output:
 
-`CFA STAGE 4 V3 RESPONSE FREEZE: PASS`
+```text
+CFA STAGE 4 V3 RESPONSE FREEZE: PASS
+Response rows: 37058
+Distinct response bases: 434
+Review rows adjudicated PASS: 49
+CFA-S4-014 direct V3 review: PASS
+CFA-S4-015 freeze responses: PASS
+Freeze receipt: C:\Users\Emmanuel\Documents\CFA-local\stage4-freeze-v3\20260830-212830-1e5803b0a2b448b390e5204e401d1b39\stage4-v3-freeze-receipt.json
+```
 
-may set `CFA-S4-015 = PASS`.
+Final freeze evidence: `docs/evidence/stage4-v3-response-freeze-20260831.md`.
+
+`CFA-S4-015 = PASS`.
 
 ## Stage 4 gates
 
@@ -196,8 +204,12 @@ may set `CFA-S4-015 = PASS`.
 | `CFA-S4-012` | Define cutoff-safe V3 within-day observed return | PASS |
 | `CFA-S4-013` | Construct and validate exact V3 response candidate | PASS |
 | `CFA-S4-014` | Direct deterministic V3 bounded review | PASS |
-| `CFA-S4-015` | Freeze Stage 4 responses | BLOCKED |
+| `CFA-S4-015` | Freeze Stage 4 responses | PASS |
 
-## Current completion boundary
+Historical FAIL/BLOCKED statuses above are preserved failed candidate states and are not current blockers.
 
-Stage 4 is **not yet frozen**. Only exact local execution of `Finalize-CfaStage4ResponsesV3.ps1` against the reviewed V3 candidate may close `CFA-S4-015`. Stage 5 candidate-factor definition remains blocked until that finalizer returns PASS.
+## Completion boundary
+
+**Stage 4 is complete and frozen.**
+
+The next authorized project sequence step is **Stage 5: define candidate factors**. No Stage 5 factor is approved or frozen by this contract.
