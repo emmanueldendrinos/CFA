@@ -20,6 +20,7 @@ $Invariant = [Globalization.CultureInfo]::InvariantCulture
 $ExpectedAf001Sha256 = '569522ec450ab1870ffa1386f4e356e4047cf6ef017c77a98a3bedcf331f416f'
 $ExpectedStage3AliasSha256 = '11eef6de5bc64a19d8392ad20dc99836789e3aaec4cfe836410bbcb79cebf0d9'
 $ExpectedStage4ResponsesSha256 = '8e0cc38607be227339c71cb5daecbbb48af1e05c064472a019f0ffe9be11a004'
+$ExpectedResponseId = 'RET_USD_UTC_DAY_OBS_LOG'
 $ExpectedAf001Rows = 1059
 $ExpectedEligibleRows = 1058
 $ExpectedEligibleBases = 435
@@ -130,6 +131,8 @@ function Invoke-SelfTest {
     $onlyResponse = @($response | Where-Object { $news -notcontains $_ })
     $onlyNews = @($news | Where-Object { $response -notcontains $_ })
     if ($onlyResponse.Count -ne 1 -or $onlyResponse[0] -ne 'A' -or $onlyNews.Count -ne 1 -or $onlyNews[0] -ne 'D') { throw 'Set reconciliation self-test failed.' }
+    $singleDifference = @(Compare-Object @('A') @())
+    if ($singleDifference.Count -ne 1) { throw 'Strict-mode scalar Compare-Object count self-test failed.' }
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -173,10 +176,12 @@ try {
     $responses = @(Import-Csv -LiteralPath $Stage4ResponsesPath)
     if ($responses.Count -ne $ExpectedStage4Rows) { throw "Stage 4 response rows changed: $($responses.Count)." }
     Require-Columns $responses[0] @('response_id','base_asset_id','response_day_utc','predictor_cutoff_utc','response_available_utc') 'Stage 4 responses'
+    $responseIds = @($responses | Select-Object -ExpandProperty response_id -Unique)
+    if ($responseIds.Count -ne 1 -or [string]$responseIds[0] -ne $ExpectedResponseId) { throw "Stage 4 response ID set changed: $(@($responseIds) -join ', ')." }
     $responseBases = @($responses | Select-Object -ExpandProperty base_asset_id -Unique | Sort-Object)
     if ($responseBases.Count -ne $ExpectedStage4Bases) { throw "Stage 4 response bases changed: $($responseBases.Count)." }
     $afUsdBases = @($af.usd_bases | ForEach-Object { [string]$_ } | Sort-Object)
-    if ((Compare-Object $responseBases $afUsdBases).Count -ne 0) { throw 'Stage 4 response base set does not equal frozen AF-001 direct-USD base set.' }
+    if (@(Compare-Object $responseBases $afUsdBases).Count -ne 0) { throw 'Stage 4 response base set does not equal frozen AF-001 direct-USD base set.' }
 
     $intersection = @($responseBases | Where-Object { $newsPopulation -contains $_ })
     $responseOnly = @($responseBases | Where-Object { $newsPopulation -notcontains $_ })
