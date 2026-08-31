@@ -1,0 +1,56 @@
+name: CFA Stage 5 Factor Source Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage5FactorSources.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage4-response-contract.md'
+      - '.github/workflows/stage5-factor-source-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage5FactorSources.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage4-response-contract.md'
+      - '.github/workflows/stage5-factor-source-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 5 inspector with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage5FactorSources.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse Stage 5 inspector with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage5FactorSources.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run Stage 5 inspector self-test
+        shell: powershell
+        run: .\scripts\windows\Inspect-CfaStage5FactorSources.ps1 -Stage3V6MatchesPath . -Stage4ResponsesPath . -SelfTest
+
+      - name: Enforce Stage 5 fail-closed source contract
+        shell: powershell
+        run: |
+          $script=Get-Content '.\scripts\windows\Inspect-CfaStage5FactorSources.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage5-factor-contract.md' -Raw
+          $stage4=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
+          foreach($marker in @('STAGE4_FROZEN','CFA-S4-015','PASS')){if($stage4 -notmatch [regex]::Escape($marker)){throw "Stage 4 marker missing: $marker"}}
+          foreach($marker in @('STAGE5_ACTIVE','CFA-S5-001','PASS','CFA-S5-002','UNVERIFIED','CFA-S5-003','CFA-S5-004','CFA-S5-005','BLOCKED','CFA-S5-006','CFA-S5-007','434','431','No imputation')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 5 contract marker missing: $marker"}}
+          foreach($marker in @('default_transaction_read_only=on','CANDIDATE_V6','RET_USD_UTC_DAY_OBS_LOG','ExpectedDirectUsdBases = 434','ExpectedStage3NewsAssets = 431','ExpectedStage3Matches = 22060','ExpectedStage4Rows = 37058','stage5-population-reconciliation.csv','stage5-news-match-daily-counts.csv','stage5-market-columns.csv','stage5-prior-day-market-availability.csv','CFA-S5-002','CFA-S5-005')){if($script -notmatch [regex]::Escape($marker)){throw "Stage 5 inspector marker missing: $marker"}}
+          if($script -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 5 inspector contains forbidden database write/DDL marker.'}
