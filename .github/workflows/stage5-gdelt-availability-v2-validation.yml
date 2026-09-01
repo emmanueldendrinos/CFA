@@ -45,5 +45,5 @@ jobs:
         run: |
           $body=Get-Content '.\scripts\windows\Inspect-CfaStage5GdeltAvailabilityV2.ps1' -Raw
           foreach($marker in @('V2_EXACT_OBJECT_METADATA_NO_BUCKET_LIST','GcsObjectMetadataBase','exact_object_metadata','Exact-object provider metadata probe','ExpectedDownloaded=7163','ExpectedProviderMissing=1573','CFA-S5-012','CFA-S5-011','UNVERIFIED','CFA-S5-007','BLOCKED','md5ComparableCount','HttpConcurrency')){if($body -notmatch [regex]::Escape($marker)){throw "V2 marker missing: $marker"}}
-          if($body -match 'prefix='){throw 'Bucket-list prefix query reintroduced into V2.'}
+          foreach($forbidden in @('Invoke-GcsListPrefix','GcsListBase')){if($body -match [regex]::Escape($forbidden)){throw "Bucket-list implementation reintroduced into V2: $forbidden"}}
           if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'V2 contains forbidden database write/DDL marker.'}
