@@ -1,0 +1,57 @@
+name: CFA Stage 5 GDELT Batch Timing Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5GdeltBatchTiming.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage5-gdelt-batch-time-authority-20260901.md'
+      - '.github/workflows/stage5-gdelt-batch-timing-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5GdeltBatchTiming.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage5-gdelt-batch-time-authority-20260901.md'
+      - '.github/workflows/stage5-gdelt-batch-timing-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5GdeltBatchTiming.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5GdeltBatchTiming.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run validator self-test
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage5GdeltBatchTiming.ps1 -Stage3V6MatchesPath . -Stage4ResponsesPath . -NewsCoverageReceiptPath . -SelfTest
+
+      - name: Enforce offline fail-closed design
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Validate-CfaStage5GdeltBatchTiming.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage5-factor-contract.md' -Raw
+          $authority=Get-Content '.\docs\evidence\stage5-gdelt-batch-time-authority-20260901.md' -Raw
+          foreach($marker in @('Get-RecordBatchUtc','Get-ArchiveBatchUtc','Measure-ShiftedWindow','AvailabilityLagMinutes=15','ExpectedStage3Rows=22060','ExpectedStage4Rows=37058','ZAUD,ZEUR,ZGBP','CFA-S5-013','CFA-S5-011','PASS','CFA-S5-007','UNVERIFIED','stage5-gdelt-batch-timing.json')){if($body -notmatch [regex]::Escape($marker)){throw "Validator marker missing: $marker"}}
+          foreach($marker in @('NEWS_SLOT_COVERAGE_PASS','NEWS_HISTORICAL_AVAILABILITY_UNVERIFIED','CFA-S5-010','PASS','CFA-S5-013','UNVERIFIED','A_NEWS(r) = B(r) + 15 minutes','NEWS_V6_MATCH_COUNT_24H_LAG15','NEWS_V6_MATCH_COUNT_6H_LAG15','NEWS_V6_SOURCE_COUNT_24H_LAG15')){if($contract -notmatch [regex]::Escape($marker)){throw "Contract marker missing: $marker"}}
+          foreach($marker in @('GKGRECORDID','15-minute update batch','A_NEWS(r) = B(r) + 15 minutes','CFA-S5-013 = UNVERIFIED')){if($authority -notmatch [regex]::Escape($marker)){throw "Authority evidence marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis|GcsObject|Find-Psql|psql\.exe|Invoke-Psql'){throw 'Offline validator contains forbidden network/database access.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Offline validator contains forbidden database write/DDL marker.'}
