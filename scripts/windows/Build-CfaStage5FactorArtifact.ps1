@@ -457,7 +457,7 @@ ORDER BY d.source_member_ordinal,d.utc_day
 
     foreach($row in $factorRows){
         if($row.market_missing_reason-eq'NONE'){
-            $ret=Parse-DoubleStrict $row.MKT_RET_USD_UTC_DAY_OBS_L1 'market return';$range=Parse-DoubleStrict $row.MKT_RANGE_LOG_UTC_DAY_OBS_L1 'market range';$first=Parse-DoubleStrict $row.market_first_open_price_usd 'first';$last=Parse-DoubleStrict $row.market_last_close_price_usd 'last';$hi=Parse-DoubleStrict $row.market_max_high_price_usd 'high';$lo=Parse-DoubleStrict $row.market_min_low_price_usd 'low'
+            $ret=Parse-DoubleStrict $row.MKT_RET_USD_UTC_DAY_OBS_L1 'market return';$range=Parse-DoubleStrict $row.MKT_RANGE_LOG_UTC_DAY_L1 'market range';$first=Parse-DoubleStrict $row.market_first_open_price_usd 'first';$last=Parse-DoubleStrict $row.market_last_close_price_usd 'last';$hi=Parse-DoubleStrict $row.market_max_high_price_usd 'high';$lo=Parse-DoubleStrict $row.market_min_low_price_usd 'low'
             if([math]::Abs($ret-[math]::Log($last/$first))-gt1e-12-or[math]::Abs($range-[math]::Log($hi/$lo))-gt1e-12){throw "Market formula reconciliation failed: $($row.base_asset_id) $($row.response_day_utc)"}
             if([long]$row.MKT_OBS_COUNT_UTC_DAY_L1-lt1-or[long]$row.MKT_OBS_SPAN_MIN_UTC_DAY_L1-lt0){throw 'Market count/span invalid.'}
         }else{
