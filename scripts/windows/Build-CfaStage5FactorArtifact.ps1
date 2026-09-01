@@ -164,6 +164,8 @@ function Invoke-SelfTest {
     $newsRows=@([pscustomobject]@{record_id='20250401003000-1'})
     'abc' -match 'a'|Out-Null
     if($newsRows.Count-ne1){throw 'Automatic $Matches regression failed.'}
+    $groupProbe=@('A','A','B'|Group-Object)
+    if(@($groupProbe|Where-Object { $_.Count -gt 1 }).Count-ne1){throw 'Explicit grouped-count filter self-test failed.'}
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -199,7 +201,7 @@ try {
     $usd=@($eligible|Where-Object{([string]$_.quote_exchange_symbol).Trim()-ceq'USD'})
     $usdBases=@($usd|Select-Object -ExpandProperty base_asset_id -Unique)
     if($usd.Count-ne434-or$usdBases.Count-ne434){throw "Direct-USD AF population changed: pairs=$($usd.Count) bases=$($usdBases.Count)."}
-    if(@($usd|Group-Object base_asset_id|Where-Object Count-gt1).Count-ne0){throw 'Direct-USD AF base ambiguity detected.'}
+    if(@($usd|Group-Object base_asset_id|Where-Object { $_.Count -gt 1 }).Count-ne0){throw 'Direct-USD AF base ambiguity detected.'}
     $afByBase=@{};$afByOrdinal=@{}
     foreach($r in $usd){$afByBase[[string]$r.base_asset_id]=$r;$afByOrdinal[([string]$r.source_member_ordinal).Trim()]=$r}
 
