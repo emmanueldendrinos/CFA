@@ -1,0 +1,57 @@
+name: CFA Stage 5 Factor Artifact Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Build-CfaStage5FactorArtifact.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage5-gdelt-batch-timing-local-20260901.md'
+      - '.github/workflows/stage5-factor-artifact-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Build-CfaStage5FactorArtifact.ps1'
+      - 'docs/evidence/stage5-factor-contract.md'
+      - 'docs/evidence/stage5-gdelt-batch-timing-local-20260901.md'
+      - '.github/workflows/stage5-factor-artifact-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse constructor with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Build-CfaStage5FactorArtifact.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse constructor with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Build-CfaStage5FactorArtifact.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run constructor self-test
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage5FactorArtifact.ps1 -Stage3V6MatchesPath . -Stage4ResponsesPath . -BatchTimingReceiptPath . -SelfTest
+
+      - name: Enforce factor-construction contract
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Build-CfaStage5FactorArtifact.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage5-factor-contract.md' -Raw
+          foreach($marker in @('NEWS_FACTOR_DEFINITIONS_PASS','CFA-S5-006','CFA-S5-007','CFA-S5-011','CFA-S5-013','PASS','CFA-S5-008','UNVERIFIED','CFA-S5-009','BLOCKED')){if($contract -notmatch [regex]::Escape($marker)){throw "Contract marker missing: $marker"}}
+          foreach($marker in @('INITIAL_7_FACTOR_V1','ExpectedStage4Rows=37058','ExpectedStage4Bases=434','ExpectedMarketAvailable=36505','ExpectedMarketMissing=553','ExpectedNews24Available=27267','ExpectedNews24Incomplete=9518','ExpectedNews24Outside=273','ExpectedNews6Available=28849','ExpectedNews6Incomplete=7936','ExpectedNews6Outside=273','default_transaction_read_only=on','GDELT_RECORD_BATCH_PLUS_ONE_HEARTBEAT','A_NEWS=B(record_id)+15m','NO_PRIOR_ACTIVE_MARKET_DAY','SOURCE_WINDOW_INCOMPLETE','OUTSIDE_NEWS_POPULATION','stage5-candidate-factors.csv','stage5-candidate-factor-review-sample.csv','CFA-S5-008','PASS','CFA-S5-009','BLOCKED')){if($body -notmatch [regex]::Escape($marker)){throw "Constructor marker missing: $marker"}}
+          foreach($factor in @('MKT_RET_USD_UTC_DAY_OBS_L1','MKT_RANGE_LOG_UTC_DAY_L1','MKT_OBS_COUNT_UTC_DAY_L1','MKT_OBS_SPAN_MIN_UTC_DAY_L1','NEWS_V6_MATCH_COUNT_24H_LAG15','NEWS_V6_MATCH_COUNT_6H_LAG15','NEWS_V6_SOURCE_COUNT_24H_LAG15')){if($body -notmatch [regex]::Escape($factor)){throw "Constructor factor missing: $factor"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com'){throw 'Factor constructor must not call external network sources.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Factor constructor contains forbidden database write/DDL marker.'}
+          if($body -match '(?i)winsori[sz]|standardi[sz]|z[-_ ]?score|imput|interpolat|carry[-_ ]?forward|cross[-_ ]?rate'){throw 'Constructor embeds forbidden Stage 5 preprocessing/substitution marker.'}
