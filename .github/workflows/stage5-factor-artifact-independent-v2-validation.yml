@@ -42,12 +42,11 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1 -CandidateReceiptPath . -Stage4ResponsesPath . -RepoRoot . -SelfTest
 
-      - name: Enforce narrow validator repair
+      - name: Enforce narrow validator repairs
         shell: powershell
         run: |
           $v2=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1' -Raw
           $source=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1' -Raw
-          foreach($marker in @('V2 repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','CFA repository-root preflight failed','-RepoRoot',$EffectiveRepoRoot)){if($marker -eq $null){continue}}
-          foreach($marker in @('V2 repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','CFA repository-root preflight failed')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 repair marker missing: $marker"}}
-          if($source -notmatch [regex]::Escape('-ne[long]$dayAgg[$k][$p]')){throw 'Source validator repair target missing.'}
+          foreach($marker in @('day-summary repair target occurrence count changed','review-property repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','Ambiguous dynamic review property access remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','$reviewProp=$rv.PSObject.Properties[$p.Name]','CFA repository-root preflight failed')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 repair marker missing: $marker"}}
+          foreach($marker in @('-ne[long]$dayAgg[$k][$p]','$rv.($p.Name)')){if($source -notmatch [regex]::Escape($marker)){throw "Source validator repair target missing: $marker"}}
           if($v2 -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'V2 validator launcher must remain offline.'}
