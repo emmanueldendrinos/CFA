@@ -6,8 +6,10 @@ on:
       - 'scripts/windows/Inspect-CfaStage5FactorSources.ps1'
       - 'scripts/windows/Validate-CfaStage5FactorSourceReceipt.ps1'
       - 'scripts/windows/Diagnose-CfaStage5NewsWindowCoverage.ps1'
+      - 'scripts/windows/Inspect-CfaStage5GdeltAvailability.ps1'
       - 'docs/evidence/stage5-factor-contract.md'
       - 'docs/evidence/stage5-source-entry-correction-20260901.md'
+      - 'docs/evidence/stage5-news-window-coverage-20260901.md'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage5-factor-source-validation.yml'
   pull_request:
@@ -15,8 +17,10 @@ on:
       - 'scripts/windows/Inspect-CfaStage5FactorSources.ps1'
       - 'scripts/windows/Validate-CfaStage5FactorSourceReceipt.ps1'
       - 'scripts/windows/Diagnose-CfaStage5NewsWindowCoverage.ps1'
+      - 'scripts/windows/Inspect-CfaStage5GdeltAvailability.ps1'
       - 'docs/evidence/stage5-factor-contract.md'
       - 'docs/evidence/stage5-source-entry-correction-20260901.md'
+      - 'docs/evidence/stage5-news-window-coverage-20260901.md'
       - 'docs/evidence/stage4-response-contract.md'
       - '.github/workflows/stage5-factor-source-validation.yml'
   workflow_dispatch:
@@ -33,7 +37,7 @@ jobs:
       - name: Parse Stage 5 scripts with PowerShell 7
         shell: pwsh
         run: |
-          foreach($file in @('.\scripts\windows\Inspect-CfaStage5FactorSources.ps1','.\scripts\windows\Validate-CfaStage5FactorSourceReceipt.ps1','.\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1')){
+          foreach($file in @('.\scripts\windows\Inspect-CfaStage5FactorSources.ps1','.\scripts\windows\Validate-CfaStage5FactorSourceReceipt.ps1','.\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1','.\scripts\windows\Inspect-CfaStage5GdeltAvailability.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
@@ -42,7 +46,7 @@ jobs:
       - name: Parse Stage 5 scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
-          foreach($file in @('.\scripts\windows\Inspect-CfaStage5FactorSources.ps1','.\scripts\windows\Validate-CfaStage5FactorSourceReceipt.ps1','.\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1')){
+          foreach($file in @('.\scripts\windows\Inspect-CfaStage5FactorSources.ps1','.\scripts\windows\Validate-CfaStage5FactorSourceReceipt.ps1','.\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1','.\scripts\windows\Inspect-CfaStage5GdeltAvailability.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
@@ -60,18 +64,26 @@ jobs:
         shell: powershell
         run: .\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1 -Stage3V6MatchesPath . -Stage4ResponsesPath . -SelfTest
 
+      - name: Run Stage 5 provider-metadata self-test
+        shell: powershell
+        run: .\scripts\windows\Inspect-CfaStage5GdeltAvailability.ps1 -SelfTest
+
       - name: Enforce Stage 5 fail-closed source contract
         shell: powershell
         run: |
           $script=Get-Content '.\scripts\windows\Inspect-CfaStage5FactorSources.ps1' -Raw
           $corrector=Get-Content '.\scripts\windows\Validate-CfaStage5FactorSourceReceipt.ps1' -Raw
           $newsDiag=Get-Content '.\scripts\windows\Diagnose-CfaStage5NewsWindowCoverage.ps1' -Raw
+          $availability=Get-Content '.\scripts\windows\Inspect-CfaStage5GdeltAvailability.ps1' -Raw
           $contract=Get-Content '.\docs\evidence\stage5-factor-contract.md' -Raw
+          $coverage=Get-Content '.\docs\evidence\stage5-news-window-coverage-20260901.md' -Raw
           $stage4=Get-Content '.\docs\evidence\stage4-response-contract.md' -Raw
           foreach($marker in @('STAGE4_FROZEN','CFA-S4-015','PASS','RET_USD_UTC_DAY_OBS_LOG')){if($stage4 -notmatch [regex]::Escape($marker)){throw "Stage 4 marker missing: $marker"}}
-          foreach($marker in @('STAGE5_ACTIVE','FACTOR_SOURCE_RECONCILIATION_PASS','MARKET_FACTOR_DEFINITIONS_PASS','NEWS_SLOT_COVERAGE_UNVERIFIED','CFA-S5-002','CFA-S5-003','CFA-S5-004','CFA-S5-005','CFA-S5-006','PASS','CFA-S5-007','BLOCKED','CFA-S5-010','UNVERIFIED','ZAUD','ZEUR','ZGBP','MKT_RET_USD_UTC_DAY_OBS_L1','MKT_RANGE_LOG_UTC_DAY_L1','MKT_OBS_COUNT_UTC_DAY_L1','MKT_OBS_SPAN_MIN_UTC_DAY_L1','1,573','provider-missing')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 5 contract marker missing: $marker"}}
+          foreach($marker in @('STAGE5_ACTIVE','FACTOR_SOURCE_RECONCILIATION_PASS','MARKET_FACTOR_DEFINITIONS_PASS','NEWS_SLOT_COVERAGE_PASS','NEWS_HISTORICAL_AVAILABILITY_UNVERIFIED','CFA-S5-002','CFA-S5-003','CFA-S5-004','CFA-S5-005','CFA-S5-006','PASS','CFA-S5-007','BLOCKED','CFA-S5-010','CFA-S5-011','UNVERIFIED','ZAUD','ZEUR','ZGBP','MKT_RET_USD_UTC_DAY_OBS_L1','MKT_RANGE_LOG_UTC_DAY_L1','MKT_OBS_COUNT_UTC_DAY_L1','MKT_OBS_SPAN_MIN_UTC_DAY_L1','NEWS_V6_MATCH_COUNT_24H','NEWS_V6_MATCH_COUNT_6H','NEWS_V6_SOURCE_COUNT_24H','27,644','28,849','1,573','provider-missing')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 5 contract marker missing: $marker"}}
+          foreach($marker in @('CFA-S5-010 = PASS','27,644','9,141','28,849','7,936','273','CFA-S5-011 = UNVERIFIED','CFA-S5-007 = BLOCKED')){if($coverage -notmatch [regex]::Escape($marker)){throw "Stage 5 coverage evidence marker missing: $marker"}}
           foreach($marker in @('default_transaction_read_only=on','CANDIDATE_V6','ExpectedDirectUsdBases = 434','ExpectedStage3NewsAssets = 431','ExpectedStage3Matches = 22060','ExpectedStage4Rows = 37058','stage5-population-reconciliation.csv','stage5-news-match-daily-counts.csv','stage5-market-columns.csv','stage5-prior-day-market-availability.csv','CFA-S5-002','CFA-S5-005')){if($script -notmatch [regex]::Escape($marker)){throw "Stage 5 inspector marker missing: $marker"}}
           foreach($marker in @('POWERSHELL_MATCHES_AUTOMATIC_VARIABLE_COLLISION','ExpectedStage3Matches=22060','ExpectedStage3DistinctRecords=18503','ExpectedStage3MatchedAssets=282','ZAUD','ZEUR','ZGBP','ExpectedPriorAvailable=36505','ExpectedPriorMissing=553','stage5-factor-source-corrected-receipt.json','CFA-S5-005')){if($corrector -notmatch [regex]::Escape($marker)){throw "Stage 5 correction marker missing: $marker"}}
           foreach($marker in @('default_transaction_read_only=on','ExpectedContractSha','ExpectedSlots=8736','ExpectedDownloaded=7163','ExpectedProviderMissing=1573','Measure-Window','provider_missing','stage5-news-source-slots.csv','stage5-news-window-coverage-by-day.csv','blank_source_common_name_rows','CFA-S5-010','PASS','CFA-S5-007','UNVERIFIED','PS51_NATIVE_PSQL_QUOTE_SAFE_EPOCH_SERIALIZATION','ExpectedContractStartEpoch=1743465600L','ExpectedContractEndEpoch=1751328000L','extract(epoch FROM interval_start_utc)::bigint')){if($newsDiag -notmatch [regex]::Escape($marker)){throw "Stage 5 news diagnostic marker missing: $marker"}}
           if($newsDiag -match [regex]::Escape('YYYY-MM-DD"T"HH24:MI:SS"Z"')){throw 'Fragile embedded-double-quote PostgreSQL timestamp format reintroduced.'}
-          foreach($body in @($script,$corrector,$newsDiag)){if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 5 validation contains forbidden database write/DDL marker.'}}
+          foreach($marker in @('default_transaction_read_only=on','GcsListBase','Invoke-GcsListPrefix','timeCreated','updated','generation','provider_md5_base64','stage5-gdelt-provider-object-metadata.csv','CFA-S5-012','CFA-S5-011','UNVERIFIED','CFA-S5-007','BLOCKED')){if($availability -notmatch [regex]::Escape($marker)){throw "Stage 5 availability inspector marker missing: $marker"}}
+          foreach($body in @($script,$corrector,$newsDiag,$availability)){if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 5 validation contains forbidden database write/DDL marker.'}}
