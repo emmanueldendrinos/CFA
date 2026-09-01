@@ -124,6 +124,8 @@ function Invoke-SelfTest {
     $created=Parse-Utc '2025-04-01T00:00:08.000Z' 'selftest'
     $slot=[datetimeoffset]::Parse('2025-04-01T00:00:00Z',$Invariant)
     if([long][math]::Round(($created-$slot).TotalSeconds)-ne8){throw 'Creation-lag self-test failed.'}
+    $count=0L;$isComparable=$true;if($isComparable){$count++}
+    if($count-ne1){throw 'MD5 comparability bookkeeping self-test failed.'}
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -183,7 +185,7 @@ ORDER BY archive_timestamp_utc
     $rows=New-Object System.Collections.ArrayList
     $creationLags=New-Object System.Collections.ArrayList
     $updateLags=New-Object System.Collections.ArrayList
-    [long]$metadataMissing=0;[long]$httpFailures=0;[long]$identityFailures=0;[long]$sizeFailures=0;[long]$md5Comparable=0;[long]$md5Failures=0
+    [long]$metadataMissing=0;[long]$httpFailures=0;[long]$identityFailures=0;[long]$sizeFailures=0;[long]$md5ComparableCount=0;[long]$md5Failures=0
     [long]$negativeCreationLag=0;[long]$creationLagGt15m=0;[long]$creationLagGt1h=0;[long]$creationLagGt24h=0
 
     for($offset=0;$offset-lt$downloaded.Count;$offset+=$HttpConcurrency){
@@ -212,10 +214,10 @@ ORDER BY archive_timestamp_utc
             $sizeMatch=([long]$item.size-eq[long]$slot.observed_size_bytes)
             if(-not$sizeMatch){$sizeFailures++}
             $frozenMd5=([string]$slot.provider_md5_base64).Trim();$providerMd5=([string]$item.md5Hash).Trim()
-            $md5Comparable=(-not[string]::IsNullOrWhiteSpace($frozenMd5))
+            $isMd5Comparable=(-not[string]::IsNullOrWhiteSpace($frozenMd5))
             $md5Match=$false
-            if($md5Comparable){$md5Comparable++;$md5Match=($providerMd5-eq$frozenMd5);if(-not$md5Match){$md5Failures++}}
-            [void]$rows.Add([pscustomobject][ordered]@{object_key=$objectKey;object_name=$name;slot_key=$slot.slot_key;http_status=200;metadata_status='FOUND';time_created_utc=$created.ToString('o');updated_utc=$updated.ToString('o');creation_lag_seconds=$createLag;updated_lag_seconds=$updateLag;generation=[string]$item.generation;provider_size_bytes=[string]$item.size;frozen_size_bytes=[string]$slot.observed_size_bytes;size_match=$sizeMatch;provider_md5_base64=$providerMd5;frozen_provider_md5_base64=$frozenMd5;md5_comparable=$md5Comparable;md5_match=$md5Match})
+            if($isMd5Comparable){$md5ComparableCount++;$md5Match=($providerMd5-eq$frozenMd5);if(-not$md5Match){$md5Failures++}}
+            [void]$rows.Add([pscustomobject][ordered]@{object_key=$objectKey;object_name=$name;slot_key=$slot.slot_key;http_status=200;metadata_status='FOUND';time_created_utc=$created.ToString('o');updated_utc=$updated.ToString('o');creation_lag_seconds=$createLag;updated_lag_seconds=$updateLag;generation=[string]$item.generation;provider_size_bytes=[string]$item.size;frozen_size_bytes=[string]$slot.observed_size_bytes;size_match=$sizeMatch;provider_md5_base64=$providerMd5;frozen_provider_md5_base64=$frozenMd5;md5_comparable=$isMd5Comparable;md5_match=$md5Match})
         }
         $done=$end+1
         if($done-eq$downloaded.Count-or($done%512)-lt$HttpConcurrency){Write-Host "Exact-object provider metadata: $done / $($downloaded.Count)"}
@@ -240,7 +242,7 @@ ORDER BY archive_timestamp_utc
         source_contract_sha256=$ExpectedContractSha
         provider=[ordered]@{bucket=$BucketName;api=$GcsObjectMetadataBase;access_mode='exact_object_metadata';http_concurrency=$HttpConcurrency}
         frozen=[ordered]@{nominal_slots=$slots.Count;downloaded_slots=$downloaded.Count;provider_missing_slots=$missing.Count}
-        reconciliation=[ordered]@{provider_metadata_found=$creationArray.Count;provider_metadata_missing=$metadataMissing;http_failures=$httpFailures;identity_failures=$identityFailures;size_mismatches=$sizeFailures;md5_comparable=$md5Comparable;md5_mismatches=$md5Failures}
+        reconciliation=[ordered]@{provider_metadata_found=$creationArray.Count;provider_metadata_missing=$metadataMissing;http_failures=$httpFailures;identity_failures=$identityFailures;size_mismatches=$sizeFailures;md5_comparable=$md5ComparableCount;md5_mismatches=$md5Failures}
         timing=[ordered]@{creation_lag_min_seconds=$minCreate;creation_lag_max_seconds=$maxCreate;updated_lag_min_seconds=$minUpdate;updated_lag_max_seconds=$maxUpdate;negative_creation_lags=$negativeCreationLag;creation_lag_gt_15m=$creationLagGt15m;creation_lag_gt_1h=$creationLagGt1h;creation_lag_gt_24h=$creationLagGt24h}
         outputs=[ordered]@{provider_object_metadata_csv=$metadataPath}
         gates=[ordered]@{'CFA-S5-012'=if($mechanicalPass){'PASS'}else{'FAIL'};'CFA-S5-011'=$availabilityDecision;'CFA-S5-007'='BLOCKED'}
@@ -255,6 +257,7 @@ ORDER BY archive_timestamp_utc
     Write-Host "Frozen downloaded objects: $($downloaded.Count)"
     Write-Host "Exact-object metadata found: $($creationArray.Count)"
     Write-Host "HTTP / size / comparable-MD5 mismatches: $httpFailures / $sizeFailures / $md5Failures"
+    Write-Host "Comparable provider MD5 rows: $md5ComparableCount"
     Write-Host "Creation lag seconds min / max: $minCreate / $maxCreate"
     Write-Host "Updated lag seconds min / max: $minUpdate / $maxUpdate"
     Write-Host "Creation lag >15m / >1h / >24h: $creationLagGt15m / $creationLagGt1h / $creationLagGt24h"
