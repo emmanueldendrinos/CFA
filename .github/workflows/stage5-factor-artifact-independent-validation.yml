@@ -1,0 +1,54 @@
+name: CFA Stage 5 Independent Factor Artifact Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5FactorArtifact.ps1'
+      - 'docs/evidence/stage5-factor-artifact-construction-local-20260901.md'
+      - '.github/workflows/stage5-factor-artifact-independent-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5FactorArtifact.ps1'
+      - 'docs/evidence/stage5-factor-artifact-construction-local-20260901.md'
+      - '.github/workflows/stage5-factor-artifact-independent-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run validator self-test
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage5FactorArtifact.ps1 -CandidateReceiptPath . -Stage4ResponsesPath . -SelfTest
+
+      - name: Enforce independent validation contract
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1' -Raw
+          foreach($marker in @('INDEPENDENT_FACTOR_ARTIFACT_V1','ExpectedRows=37058','ExpectedBases=434','ExpectedReviewRows=46','ExpectedNews24Available=27267','ExpectedNews24Incomplete=9518','ExpectedNews24Outside=273','ExpectedNews6Available=28849','ExpectedNews6Incomplete=7936','ExpectedNews6Outside=273','market_formula_and_witness_windows','news_slot_completeness_recomputed','news_v6_counts_recomputed','news_source_counts_recomputed','review_sample_exactness_and_coverage','CFA-S5-014','PASS','CFA-S5-009','UNVERIFIED')){if($body -notmatch [regex]::Escape($marker)){throw "Validator marker missing: $marker"}}
+          foreach($factor in @('MKT_RET_USD_UTC_DAY_OBS_L1','MKT_RANGE_LOG_UTC_DAY_L1','MKT_OBS_COUNT_UTC_DAY_L1','MKT_OBS_SPAN_MIN_UTC_DAY_L1','NEWS_V6_MATCH_COUNT_24H_LAG15','NEWS_V6_MATCH_COUNT_6H_LAG15','NEWS_V6_SOURCE_COUNT_24H_LAG15')){if($body -notmatch [regex]::Escape($factor)){throw "Validator factor missing: $factor"}}
+          if($body -match 'Where-Object\s+Count-'){throw 'Unsafe Where-Object comparison shorthand is forbidden.'}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com'){throw 'Independent artifact validator must not use network access.'}
+          if($body -match '(?i)psql|PGPASSWORD|INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Independent artifact validator must be offline and must not access/write PostgreSQL.'}
+          if($body -match '(?i)winsori[sz]|standardi[sz]|z[-_ ]?score|imput|interpolat|carry[-_ ]?forward|cross[-_ ]?rate'){throw 'Independent validator must not perform Stage 6/model preprocessing.'}
