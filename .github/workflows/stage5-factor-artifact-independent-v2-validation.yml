@@ -1,0 +1,53 @@
+name: CFA Stage 5 Independent Factor Artifact V2 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5FactorArtifact.ps1'
+      - 'scripts/windows/Validate-CfaStage5FactorArtifactV2.ps1'
+      - '.github/workflows/stage5-factor-artifact-independent-v2-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage5FactorArtifact.ps1'
+      - 'scripts/windows/Validate-CfaStage5FactorArtifactV2.ps1'
+      - '.github/workflows/stage5-factor-artifact-independent-v2-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V2 launcher with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 launcher parse failed.'}
+
+      - name: Parse V2 launcher with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 launcher parse failed.'}
+
+      - name: Run patched full-validator self-test
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1 -CandidateReceiptPath . -Stage4ResponsesPath . -RepoRoot . -SelfTest
+
+      - name: Enforce narrow validator repair
+        shell: powershell
+        run: |
+          $v2=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1' -Raw
+          $source=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1' -Raw
+          foreach($marker in @('V2 repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','CFA repository-root preflight failed','-RepoRoot',$EffectiveRepoRoot)){if($marker -eq $null){continue}}
+          foreach($marker in @('V2 repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','CFA repository-root preflight failed')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 repair marker missing: $marker"}}
+          if($source -notmatch [regex]::Escape('-ne[long]$dayAgg[$k][$p]')){throw 'Source validator repair target missing.'}
+          if($v2 -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'V2 validator launcher must remain offline.'}
