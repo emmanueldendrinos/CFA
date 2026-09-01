@@ -42,6 +42,7 @@ $ExpectedNews6Outside=273
 $AvailabilityLagMinutes=15
 $Q2Start=[datetime]::SpecifyKind([datetime]::ParseExact('2025-04-01 00:00:00','yyyy-MM-dd HH:mm:ss',$Invariant),[DateTimeKind]::Utc)
 $Q2End=[datetime]::SpecifyKind([datetime]::ParseExact('2025-07-01 00:00:00','yyyy-MM-dd HH:mm:ss',$Invariant),[DateTimeKind]::Utc)
+# STAGE4_CUTOFF_EXACT_SERIALIZATION: the frozen Stage 4 CSV must serialize predictor cutoff as response_day_utc + T00:00:00Z.
 
 function Find-Psql {
     $cmd=Get-Command 'psql.exe' -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1
@@ -166,6 +167,10 @@ function Invoke-SelfTest {
     if($newsRows.Count-ne1){throw 'Automatic $Matches regression failed.'}
     $groupProbe=@('A','A','B'|Group-Object)
     if(@($groupProbe|Where-Object { $_.Count -gt 1 }).Count-ne1){throw 'Explicit grouped-count filter self-test failed.'}
+    $probeDay='2025-04-01';$probeCutoff=$probeDay+'T00:00:00Z'
+    if($probeCutoff-cne'2025-04-01T00:00:00Z'){throw 'Stage 4 cutoff serialization self-test failed.'}
+    $probeParsed=Parse-UtcSecond $probeCutoff 'cutoff serialization selftest'
+    if($probeParsed.ToString("yyyy-MM-ddTHH:mm:ss'Z'",$Invariant)-cne$probeCutoff){throw 'Stage 4 cutoff parse/format self-test failed.'}
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -221,8 +226,15 @@ try {
     if($responseBases.Count-ne$ExpectedStage4Bases){throw "Stage 4 response base count changed: $($responseBases.Count)."}
     $responseKeySet=New-Object 'Collections.Generic.HashSet[string]'
     foreach($r in $responses){
-        $key=([string]$r.base_asset_id)+'|'+([string]$r.response_day_utc)
+        $dayText=([string]$r.response_day_utc).Trim()
+        $key=([string]$r.base_asset_id)+'|'+$dayText
         if(-not$responseKeySet.Add($key)){throw "Duplicate Stage 4 response key: $key"}
+        if($dayText-notmatch'^\d{4}-\d{2}-\d{2}$'){throw "Malformed Stage 4 response_day_utc: $key day='$dayText'"}
+        $expectedCutoffText=$dayText+'T00:00:00Z'
+        $observedCutoffText=([string]$r.predictor_cutoff_utc).Trim()
+        if($observedCutoffText-cne$expectedCutoffText){throw "Stage 4 cutoff serialization mismatch: $key observed=$observedCutoffText expected=$expectedCutoffText"}
+        $parsedCutoff=Parse-UtcSecond $observedCutoffText "Stage 4 cutoff $key"
+        if($parsedCutoff.ToString("yyyy-MM-ddTHH:mm:ss'Z'",$Invariant)-cne$expectedCutoffText){throw "Stage 4 cutoff parse/format mismatch: $key"}
         if(-not$afByBase.ContainsKey([string]$r.base_asset_id)){throw "Response base outside direct-USD AF population: $($r.base_asset_id)"}
         $a=$afByBase[[string]$r.base_asset_id]
         if(([string]$r.source_member_ordinal).Trim()-ne([string]$a.source_member_ordinal).Trim()-or[string]$r.pair_token_opaque-ne[string]$a.pair_token_opaque){throw "Response/AF lineage mismatch: $key"}
@@ -371,9 +383,8 @@ ORDER BY d.source_member_ordinal,d.utc_day
     [long]$news6Available=0;[long]$news6Incomplete=0;[long]$news6Outside=0
 
     foreach($r in @($responses|Sort-Object response_day_utc,base_asset_id)){
-        $base=[string]$r.base_asset_id;$dayText=[string]$r.response_day_utc;$cutoff=Parse-UtcSecond $r.predictor_cutoff_utc "response cutoff $base $dayText"
-        $expectedCutoff=[datetime]::SpecifyKind([datetime]::ParseExact($dayText,'yyyy-MM-dd',$Invariant),[DateTimeKind]::Utc)
-        if($cutoff-ne$expectedCutoff){throw "Response cutoff/day mismatch: $base $dayText"}
+        $base=[string]$r.base_asset_id;$dayText=([string]$r.response_day_utc).Trim()
+        $cutoff=[datetime]::SpecifyKind([datetime]::ParseExact($dayText,'yyyy-MM-dd',$Invariant),[DateTimeKind]::Utc)
         $ordinal=([string]$r.source_member_ordinal).Trim();$priorDay=$cutoff.AddDays(-1).ToString('yyyy-MM-dd',$Invariant);$mkey=$ordinal+'|'+$priorDay
         $marketReason='NONE';$mRet=$null;$mRange=$null;$mCount=$null;$mSpan=$null
         $mFirstTs=$null;$mLastTs=$null;$mFirstOpen=$null;$mLastClose=$null;$mMaxHigh=$null;$mMinLow=$null
@@ -446,7 +457,7 @@ ORDER BY d.source_member_ordinal,d.utc_day
 
     foreach($row in $factorRows){
         if($row.market_missing_reason-eq'NONE'){
-            $ret=Parse-DoubleStrict $row.MKT_RET_USD_UTC_DAY_OBS_L1 'market return';$range=Parse-DoubleStrict $row.MKT_RANGE_LOG_UTC_DAY_L1 'market range';$first=Parse-DoubleStrict $row.market_first_open_price_usd 'first';$last=Parse-DoubleStrict $row.market_last_close_price_usd 'last';$hi=Parse-DoubleStrict $row.market_max_high_price_usd 'high';$lo=Parse-DoubleStrict $row.market_min_low_price_usd 'low'
+            $ret=Parse-DoubleStrict $row.MKT_RET_USD_UTC_DAY_OBS_L1 'market return';$range=Parse-DoubleStrict $row.MKT_RANGE_LOG_UTC_DAY_OBS_L1 'market range';$first=Parse-DoubleStrict $row.market_first_open_price_usd 'first';$last=Parse-DoubleStrict $row.market_last_close_price_usd 'last';$hi=Parse-DoubleStrict $row.market_max_high_price_usd 'high';$lo=Parse-DoubleStrict $row.market_min_low_price_usd 'low'
             if([math]::Abs($ret-[math]::Log($last/$first))-gt1e-12-or[math]::Abs($range-[math]::Log($hi/$lo))-gt1e-12){throw "Market formula reconciliation failed: $($row.base_asset_id) $($row.response_day_utc)"}
             if([long]$row.MKT_OBS_COUNT_UTC_DAY_L1-lt1-or[long]$row.MKT_OBS_SPAN_MIN_UTC_DAY_L1-lt0){throw 'Market count/span invalid.'}
         }else{
