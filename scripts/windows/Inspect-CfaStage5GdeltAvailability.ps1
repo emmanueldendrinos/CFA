@@ -90,7 +90,7 @@ function Invoke-GcsListPrefix {
         try {
             $response=Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec $HttpTimeoutSeconds -ErrorAction Stop
         }
-        catch { throw "Provider metadata list failed for prefix $Prefix page $pages: $($_.Exception.Message)" }
+        catch { throw "Provider metadata list failed for prefix $Prefix page ${pages}: $($_.Exception.Message)" }
         foreach($item in @($response.items)){Add-MetadataItem $Index $item}
         $pageToken=if($null-ne$response.PSObject.Properties['nextPageToken']){[string]$response.nextPageToken}else{$null}
     } while(-not[string]::IsNullOrWhiteSpace([string]$pageToken))
