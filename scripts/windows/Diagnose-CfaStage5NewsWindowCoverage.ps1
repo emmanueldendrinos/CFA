@@ -20,6 +20,9 @@ $Invariant=[Globalization.CultureInfo]::InvariantCulture
 $ExpectedContractSha='11f3d81f61533efd0b1984c8f84da3e68128c05142923f4e7a62a76c8de9002e'
 $ExpectedContractStart=[datetime]::SpecifyKind([datetime]::ParseExact('2025-04-01 00:00:00','yyyy-MM-dd HH:mm:ss',$Invariant),[DateTimeKind]::Utc)
 $ExpectedContractEnd=[datetime]::SpecifyKind([datetime]::ParseExact('2025-07-01 00:00:00','yyyy-MM-dd HH:mm:ss',$Invariant),[DateTimeKind]::Utc)
+# PS51_NATIVE_PSQL_QUOTE_SAFE_EPOCH_SERIALIZATION: avoid embedded SQL double-quoted literals across Windows PowerShell native argument binding.
+$ExpectedContractStartEpoch=1743465600L
+$ExpectedContractEndEpoch=1751328000L
 $ExpectedSlots=8736
 $ExpectedDownloaded=7163
 $ExpectedProviderMissing=1573
@@ -86,14 +89,6 @@ function Parse-GdeltUtc {
     return [datetime]::SpecifyKind($dt,[DateTimeKind]::Utc)
 }
 
-function Parse-UtcSecond {
-    param([object]$Value,[string]$Label)
-    $text=([string]$Value).Trim()
-    $dt=[datetime]::MinValue
-    if(-not[datetime]::TryParseExact($text,'yyyy-MM-ddTHH:mm:ssZ',$Invariant,[Globalization.DateTimeStyles]::None,[ref]$dt)){throw "Malformed UTC timestamp for ${Label}: '$Value'"}
-    return [datetime]::SpecifyKind($dt,[DateTimeKind]::Utc)
-}
-
 function Measure-Window {
     param([datetime]$CutoffUtc,[int]$Hours,[hashtable]$SlotByKey)
     $expected=[int](($Hours*60)/$ExpectedCadenceMinutes)
@@ -125,6 +120,8 @@ function Invoke-SelfTest {
     if([bool]$w.complete-or[int]$w.provider_missing_slots-ne1){throw 'Provider-missing window self-test failed.'}
     $d=Parse-GdeltUtc '20250401001500' 'selftest'
     if($d.ToString('yyyy-MM-ddTHH:mm:ssZ',$Invariant)-ne'2025-04-01T00:15:00Z'){throw 'GDELT timestamp self-test failed.'}
+    if($ExpectedContractStartEpoch-ne1743465600L-or$ExpectedContractEndEpoch-ne1751328000L){throw 'Contract epoch self-test failed.'}
+    if(($ExpectedContractEndEpoch-$ExpectedContractStartEpoch)-ne7862400L){throw 'Contract epoch span self-test failed.'}
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -199,8 +196,8 @@ try {
 
     $contractCsv=Invoke-PsqlCsv -PsqlExe $psql -Database $DatabaseName -Query @"
 SELECT contract_sha256,source_product,
-       to_char(interval_start_utc AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS interval_start_utc,
-       to_char(interval_end_exclusive_utc AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS interval_end_exclusive_utc,
+       extract(epoch FROM interval_start_utc)::bigint AS interval_start_epoch,
+       extract(epoch FROM interval_end_exclusive_utc)::bigint AS interval_end_exclusive_epoch,
        cadence_minutes,nominal_slot_count
 FROM source_news.source_contracts
 WHERE contract_sha256='$ExpectedContractSha'
@@ -209,7 +206,7 @@ WHERE contract_sha256='$ExpectedContractSha'
     if($contracts.Count-ne1){throw "Expected one frozen GDELT source contract; observed $($contracts.Count)."}
     $contract=$contracts[0]
     if([int]$contract.cadence_minutes-ne$ExpectedCadenceMinutes-or[int]$contract.nominal_slot_count-ne$ExpectedSlots){throw 'Frozen GDELT contract cadence/slot count changed.'}
-    if((Parse-UtcSecond $contract.interval_start_utc 'contract start')-ne$ExpectedContractStart-or(Parse-UtcSecond $contract.interval_end_exclusive_utc 'contract end')-ne$ExpectedContractEnd){throw 'Frozen GDELT contract interval changed.'}
+    if([long]$contract.interval_start_epoch-ne$ExpectedContractStartEpoch-or[long]$contract.interval_end_exclusive_epoch-ne$ExpectedContractEndEpoch){throw "Frozen GDELT contract interval changed: start_epoch=$($contract.interval_start_epoch) end_epoch=$($contract.interval_end_exclusive_epoch)."}
 
     $slotCsv=Invoke-PsqlCsv -PsqlExe $psql -Database $DatabaseName -Query @"
 SELECT object_key,
