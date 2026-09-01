@@ -19,10 +19,11 @@ $EffectiveRepoRoot=(Resolve-Path -LiteralPath $EffectiveRepoRoot).ProviderPath
 if(-not(Test-Path -LiteralPath (Join-Path $EffectiveRepoRoot 'candidate-analysis\CFA-Stage3-News-Aliases.csv') -PathType Leaf)){throw "CFA repository-root preflight failed: $EffectiveRepoRoot"}
 
 $text=[IO.File]::ReadAllText($SourcePath)
-$target=@'
+
+$targetDay=@'
     foreach($k in $dayAgg.Keys){if(-not$dayByKey.ContainsKey($k)){throw "Missing day-summary row: $k"};$d=$dayByKey[$k];foreach($p in @('response_rows','market_available_rows','market_missing_rows','news24_available_rows','news24_incomplete_rows','news24_outside_rows','news6_available_rows','news6_incomplete_rows','news6_outside_rows')){if((Parse-LongStrict $d.$p "$k day summary $p")-ne[long]$dayAgg[$k][$p]){throw "Day-summary mismatch: $k $p"}}}
 '@
-$replacement=@'
+$replacementDay=@'
     foreach($k in $dayAgg.Keys){
         if(-not$dayByKey.ContainsKey($k)){throw "Missing day-summary row: $k"}
         $d=$dayByKey[$k]
@@ -33,11 +34,39 @@ $replacement=@'
         }
     }
 '@
-$count=[regex]::Matches($text,[regex]::Escape($target),[Text.RegularExpressions.RegexOptions]::CultureInvariant).Count
-if($count-ne1){throw "V2 repair target occurrence count changed: expected 1, observed $count."}
-$text=$text.Replace($target,$replacement)
+$targetReview=@'
+    foreach($rv in $review){$k=([string]$rv.base_asset_id)+'|'+([string]$rv.response_day_utc);if(-not$factorByKey.ContainsKey($k)){throw "Review key absent from factor artifact: $k"};$src=$factorByKey[$k];foreach($p in $src.PSObject.Properties){if(([string]$rv.($p.Name))-cne([string]$p.Value){throw "Review row differs from factor artifact: $k column=$($p.Name)"}};foreach($reason in (([string]$rv.review_reason)-split'\|')){if(-not[string]::IsNullOrWhiteSpace($reason)){[void]$reviewReasons.Add($reason)}};[void]$reviewValidation.Add([pscustomobject][ordered]@{base_asset_id=$rv.base_asset_id;response_day_utc=$rv.response_day_utc;review_reason=$rv.review_reason;validation_status='PASS'})}
+'@
+$replacementReview=@'
+    foreach($rv in $review){
+        $k=([string]$rv.base_asset_id)+'|'+([string]$rv.response_day_utc)
+        if(-not$factorByKey.ContainsKey($k)){throw "Review key absent from factor artifact: $k"}
+        $src=$factorByKey[$k]
+        foreach($p in $src.PSObject.Properties){
+            $reviewProp=$rv.PSObject.Properties[$p.Name]
+            if($null-eq$reviewProp){throw "Review column missing: $k column=$($p.Name)"}
+            $observedReviewValue=[string]$reviewProp.Value
+            $expectedReviewValue=[string]$p.Value
+            if($observedReviewValue-cne$expectedReviewValue){throw "Review row differs from factor artifact: $k column=$($p.Name)"}
+        }
+        foreach($reason in (([string]$rv.review_reason)-split'\|')){if(-not[string]::IsNullOrWhiteSpace($reason)){[void]$reviewReasons.Add($reason)}}
+        [void]$reviewValidation.Add([pscustomobject][ordered]@{base_asset_id=$rv.base_asset_id;response_day_utc=$rv.response_day_utc;review_reason=$rv.review_reason;validation_status='PASS'})
+    }
+'@
+
+foreach($pair in @(
+    [pscustomobject]@{Name='day-summary';Target=$targetDay;Replacement=$replacementDay},
+    [pscustomobject]@{Name='review-property';Target=$targetReview;Replacement=$replacementReview}
+)){
+    $count=[regex]::Matches($text,[regex]::Escape($pair.Target),[Text.RegularExpressions.RegexOptions]::CultureInvariant).Count
+    if($count-ne1){throw "V2 $($pair.Name) repair target occurrence count changed: expected 1, observed $count."}
+    $text=$text.Replace($pair.Target,$pair.Replacement)
+}
+
 if($text.Contains('-ne[long]$dayAgg[$k][$p]')){throw 'Ambiguous day-summary cast remained after V2 repair.'}
+if($text.Contains('$rv.($p.Name)')){throw 'Ambiguous dynamic review property access remained after V2 repair.'}
 if(-not$text.Contains('$expectedValue=[long]($dayAgg[$k][$p])')){throw 'Explicit day-summary expected-value repair missing.'}
+if(-not$text.Contains('$reviewProp=$rv.PSObject.Properties[$p.Name]')){throw 'Explicit review-property repair missing.'}
 
 $tempPath=Join-Path ([IO.Path]::GetTempPath()) ('CFA-Stage5-FactorArtifactValidatorV2-'+[guid]::NewGuid().ToString('N')+'.ps1')
 try {
