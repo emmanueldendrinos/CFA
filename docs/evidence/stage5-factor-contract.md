@@ -1,10 +1,10 @@
-# CFA Stage 5 candidate-factor contract — source entry PASS / market definitions approved — 2026-09-01
+# CFA Stage 5 candidate-factor contract — market definitions PASS / news availability UNVERIFIED — 2026-09-01
 
-Status: **STAGE5_ACTIVE / STAGE4_ENTRY_PASS / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_SLOT_COVERAGE_UNVERIFIED / NEWS_FACTOR_DEFINITIONS_BLOCKED**
+Status: **STAGE5_ACTIVE / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_SLOT_COVERAGE_PASS / NEWS_HISTORICAL_AVAILABILITY_UNVERIFIED / NEWS_FACTOR_DEFINITIONS_BLOCKED**
 
 ## Authority and entry condition
 
-This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT authorizes definition of candidate market/news factors from verified source data but supplies no factor formula. The reproducible SoT authority snapshot reports that no `DATA-###` identifiers exist in the workbook; therefore no DATA-001/002/003 factor formula is imported or reconstructed.
+This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT authorizes definition of candidate market/news factors from verified source data but supplies no factor formula. The reproducible SoT authority snapshot reports no `DATA-###` identifiers in the workbook; therefore no DATA-001/002/003 factor formula is imported or reconstructed.
 
 Stage 4 is frozen on `RET_USD_UTC_DAY_OBS_LOG` with `CFA-S4-015 = PASS`.
 
@@ -18,32 +18,29 @@ For response day `d`:
 - response window: `[d 00:00:00+00,d+1 00:00:00+00)`;
 - response availability: `d+1 00:00:00+00`.
 
-Every Stage 5 predictor must use only information available no later than the predictor cutoff according to its exact source semantics. Any factor whose source window overlaps the response window is a blocking leakage failure.
-
-No Stage 5 factor uses any row from UTC day `d` or later.
+Every predictor must use only information established as available no later than the predictor cutoff. A source timestamp is not automatically an information-availability timestamp. Any unresolved availability assumption is a blocking leakage issue.
 
 ## Source-entry reconciliation — PASS
 
-Exact direct local correction evidence is recorded in:
+Exact source-entry correction evidence is recorded in:
 
 `docs/evidence/stage5-source-entry-correction-20260901.md`
 
-Observed and independently corrected source-entry facts:
+Directly reconciled facts:
 
-- frozen Stage 4 response/direct-USD bases: **434**;
-- frozen Stage 3 news-population assets: **431**;
+- Stage 4 response/direct-USD bases: **434**;
+- Stage 3 news-population assets: **431**;
 - intersection: **431**;
-- response-only outside Stage 3 news population: **3 — `ZAUD`, `ZEUR`, `ZGBP`**;
+- response-only outside Stage 3 news population: **`ZAUD`, `ZEUR`, `ZGBP`**;
 - news-only without direct-USD response: **0**;
 - frozen V6 retained asset/news rows: **22,060**;
 - V6 matched assets: **282**;
 - V6 distinct records: **18,503**;
-- V6 retained-match timestamp range: `2025-04-01T00:00:00Z` through `2025-06-14T17:45:00Z`;
-- market field types: OHLC and `base_volume` = PostgreSQL `numeric`; `trade_count` = `bigint`;
+- V6 retained timestamp range: `2025-04-01T00:00:00Z` through `2025-06-14T17:45:00Z`;
 - response rows with active direct-USD market observations on the immediately preceding UTC calendar day: **36,505**;
 - response rows without such a preceding active market day: **553**.
 
-The historical source-inspection receipt that reported `V6 match rows: 1` remains preserved as a reporting defect caused by collision with PowerShell's automatic `$Matches` variable. The authorized correction validator independently re-read the exact V6 and Stage 4 artifacts and restored the correct 22,060-row observation before these gates were promoted.
+The historical source-inspection receipt that reported `V6 match rows: 1` remains preserved as a reporting defect caused by collision with PowerShell's automatic `$Matches` variable. The correction validator independently re-read the exact artifacts and restored the correct 22,060-row result.
 
 Therefore:
 
@@ -56,213 +53,227 @@ Therefore:
 
 Frozen relation: `asrp.q2_market_1m_observations`.
 
-Stage 5 directly re-verified these factor-relevant columns and types:
+Stage 5 directly re-verified factor-relevant identity, timestamp, OHLC, lineage, and eligibility fields. OHLC and `base_volume` are PostgreSQL `numeric`; `trade_count` is `bigint`. The inspected direct-USD population had zero null factor fields, zero nonpositive OHLC values, zero negative `base_volume`, zero negative `trade_count`, and retained the frozen market integrity conditions.
 
-- `source_member_ordinal`;
-- `pair_token_opaque`;
-- `physical_record_number`;
-- `raw_record_sha256`;
-- `candle_start_utc` (`timestamp with time zone`);
-- `open_price` (`numeric`);
-- `high_price` (`numeric`);
-- `low_price` (`numeric`);
-- `close_price` (`numeric`);
-- `base_volume` (`numeric`);
-- `trade_count` (`bigint`);
-- `canonical_eligible`;
-- `in_source_window`;
-- `minute_aligned`;
-- `quality_flags`;
-- `duplicate_class`.
-
-The direct-USD inspected population had zero null factor fields, zero nonpositive OHLC values, zero negative `base_volume`, zero negative `trade_count`, and retained the frozen market integrity conditions.
-
-Field names alone do not establish economic units. Therefore the initial approved market factor set deliberately excludes `base_volume` and `trade_count` until their source semantics/units are independently frozen. Observation-row counts and timestamp spans are used instead because their units are directly defined by the verified relation grain and timestamp field.
+Field names alone do not establish economic units. The initial approved factor set therefore excludes `base_volume` and `trade_count` until their economic semantics/units are independently frozen.
 
 ## Exact initial market-factor definitions — PASS
 
-### Shared population, grain, window, eligibility, timing and missing policy
+### Shared market population, grain, window and missing policy
 
 Population: the **434** frozen Stage 4 direct-USD response bases.
 
-Factor grain: one candidate factor row per frozen response key `(base_asset_id,response_day_utc)`.
+Grain: one candidate factor row per frozen response key `(base_asset_id,response_day_utc)`.
 
-For response day `d`, market lookback window:
+For response day `d`:
 
 `W_MKT(d) = [d-1 00:00:00+00, d 00:00:00+00)`.
 
-This is the immediately preceding UTC calendar day and is fully before the Stage 4 response window.
+Let `E(a,d)` be all frozen-eligible one-minute rows from asset `a`'s unique direct-USD pair in `W_MKT(d)`.
 
-For asset `a`, let `E(a,d)` be all rows from its unique frozen AF-001 direct-USD pair whose `candle_start_utc` lies in `W_MKT(d)` and satisfies the frozen canonical/source-window/minute-alignment/quality/duplicate eligibility policy.
-
-If `E(a,d)` is empty, **all four initial market factors are missing (`NULL`)** for `(a,d)`. No earlier day is substituted; no carry-forward, carry-backward, interpolation, cross-rate, or stablecoin substitution is permitted.
+If `E(a,d)` is empty, all four initial market factors are `NULL`. No earlier day, carry-forward, interpolation, cross-rate, or substitute quote is permitted.
 
 If non-empty:
 
-- `F(a,d)` is the row with minimum `candle_start_utc`; timestamp ties use lowest `physical_record_number`;
-- `L(a,d)` is the row with maximum `candle_start_utc`; timestamp ties use highest `physical_record_number`.
+- `F(a,d)` = minimum `candle_start_utc`, tie-break lowest `physical_record_number`;
+- `L(a,d)` = maximum `candle_start_utc`, tie-break highest `physical_record_number`.
 
-Information availability: the factors become available at predictor cutoff `d 00:00:00+00`, after `W_MKT(d)` has closed. No row with `candle_start_utc >= d 00:00:00+00` may enter any market factor.
+All source rows lie strictly before the response window. Market factor availability is the predictor cutoff `d 00:00:00+00` after the preceding calendar day has closed.
 
-Stage 5 intrinsic scaling: **none**. Model-standardization/centering is a later preprocessing decision and must not be embedded here.
+Stage 5 intrinsic scaling: **none**.
 
 ### `MKT_RET_USD_UTC_DAY_OBS_L1`
 
-Formula:
-
-`ln(L(a,d).close_price / F(a,d).open_price)`.
-
-Semantics: observed direct-USD log return across the first observed open to the last observed close of the **preceding** UTC calendar day. It is not claimed to be a fixed-duration 24-hour return when the market observations are sparse.
-
-Source fields: `candle_start_utc`, `physical_record_number`, `open_price`, `close_price`, direct-USD identity/eligibility lineage.
+`ln(L(a,d).close_price / F(a,d).open_price)`
 
 Unit: dimensionless natural-log price ratio.
 
-Lookback/lag: immediately preceding UTC calendar day; one calendar-day lag relative to the response day.
+Semantics: observed first-open to last-close direct-USD return over the preceding UTC calendar day; not claimed to have a fixed 24-hour observed span.
 
-Missing policy: `NULL` if `E(a,d)` is empty.
+Missing: `NULL` when `E(a,d)` is empty.
 
 ### `MKT_RANGE_LOG_UTC_DAY_L1`
 
-Formula:
-
-`ln(max_{r in E(a,d)} r.high_price / min_{r in E(a,d)} r.low_price)`.
-
-Semantics: observed high/low log range across the available direct-USD candles in the preceding UTC calendar day; not a claim of continuous full-day coverage.
-
-Source fields: `candle_start_utc`, `high_price`, `low_price`, direct-USD identity/eligibility lineage.
+`ln(max_{r in E(a,d)} r.high_price / min_{r in E(a,d)} r.low_price)`
 
 Unit: dimensionless natural-log price ratio.
 
-Lookback/lag: immediately preceding UTC calendar day.
+Semantics: observed high/low log range across available preceding-day candles.
 
-Missing policy: `NULL` if `E(a,d)` is empty.
+Missing: `NULL` when `E(a,d)` is empty.
 
 ### `MKT_OBS_COUNT_UTC_DAY_L1`
 
-Formula:
+`|E(a,d)|`
 
-`|E(a,d)|`.
+Unit: verified one-minute observation rows.
 
-Semantics: count of verified direct-USD one-minute observation rows in the preceding UTC calendar day. It is an observation-intensity measure and is **not** relabeled as trade count or volume.
+This is an observation-intensity factor, not trade count or volume.
 
-Source fields: row grain, `candle_start_utc`, direct-USD identity/eligibility lineage.
-
-Unit: observation rows (count).
-
-Lookback/lag: immediately preceding UTC calendar day.
-
-Missing policy: `NULL`, not zero, if `E(a,d)` is empty. A zero cannot occur for a non-empty set.
+Missing: `NULL` when `E(a,d)` is empty.
 
 ### `MKT_OBS_SPAN_MIN_UTC_DAY_L1`
 
-Formula:
-
-`(max_{r in E(a,d)} candle_start_utc - min_{r in E(a,d)} candle_start_utc) / 1 minute`.
-
-Semantics: elapsed minutes between the first and last observed direct-USD candle starts in the preceding UTC calendar day. A one-row day has value `0`.
-
-Source fields: `candle_start_utc`, direct-USD identity/eligibility lineage.
+`(max_{r in E(a,d)} candle_start_utc - min_{r in E(a,d)} candle_start_utc) / 1 minute`
 
 Unit: minutes.
 
-Lookback/lag: immediately preceding UTC calendar day.
+A one-row day has value `0`; an empty day is `NULL`.
 
-Missing policy: `NULL` if `E(a,d)` is empty.
+### Market decision
 
-### Market-definition decision
-
-The source-entry run measured **36,505** frozen response rows with an immediately preceding active market day and **553** without one. Therefore the four factors above have a defined source window on 36,505 rows and structural market missingness on 553 rows before any later model-completeness filter.
+The four factors above have source availability on **36,505** frozen response rows and structural market missingness on **553** rows.
 
 `CFA-S5-006 = PASS` — exact initial market-factor definitions.
 
-This PASS approves definitions only; it does not claim the factor artifact has been constructed or validated.
+This PASS approves definitions only; the combined factor artifact is not yet constructed or frozen.
 
-## News source and provider-slot boundary
+## News source and population boundary
 
-Frozen Stage 3 V6 output: exact `stage3-news-matches.csv` / `CANDIDATE_V6`.
+Frozen Stage 3 V6 artifact: exact `stage3-news-matches.csv` / `CANDIDATE_V6`.
 
-Frozen retained-match columns include:
+Each retained asset/news row carries `base_asset_id`, `record_id`, `gdelt_date_utc`, `source_common_name`, source-document lineage, archive filename/row ordinal, matched aliases/surfaces, and context reasons. Stage 3 guarantees zero duplicate `(base_asset_id,record_id)` retained matches.
 
-- `base_asset_id`;
-- `record_id`;
-- `gdelt_date_utc`;
-- `source_common_name`;
-- `document_identifier`;
-- `archive_file`;
-- `row_ordinal`;
-- `matched_aliases`;
-- `matched_surfaces`;
-- `context_reasons`.
+Stage 1 freezes the replacement news source to GDELT 2.0 native/base GKG fifteen-minute update archives over:
 
-Stage 3 guarantees zero duplicate `(base_asset_id,record_id)` retained matches.
+`[2025-04-01 00:00:00+00, 2025-07-01 00:00:00+00)`
 
-Stage 1 freezes the replacement GDELT source contract to:
+with:
 
-- source product: `GDELT 2.0 native/base GKG fifteen-minute update archives`;
-- interval: `[2025-04-01 00:00:00+00, 2025-07-01 00:00:00+00)`;
-- cadence: **15 minutes**;
-- nominal source slots: **8,736**;
+- nominal slots: **8,736**;
 - downloaded slots: **7,163**;
 - explicit provider-missing HTTP-404 slots: **1,573**;
 - unresolved slots: **0**.
 
-Provider-missing slots are missing source observations. They must never be interpreted as evidence that no news occurred.
+The three response assets `ZAUD`, `ZEUR`, and `ZGBP` are outside the frozen 431-asset Stage 3 news population. Their news predictors are structural `NULL`, never zero.
 
-The observed final downloaded/V6 timestamp of `2025-06-14T17:45:00Z` therefore does not authorize zero-valued news factors for later dates.
+Provider-missing source slots are also structural missingness and may never be converted to zero-news evidence.
 
-The three response assets `ZAUD`, `ZEUR`, and `ZGBP` are outside the frozen 431-asset Stage 3 news-matching population. Their news factors must be structural `NULL`/outside-population, never zero.
+## News source-window completeness — PASS
 
-## News source-window completeness gate — UNVERIFIED
+Exact local evidence:
 
-Before any news-hype factor formula can pass, Stage 5 must reconcile each intended lookback window against the exact 8,736-slot Stage 1 source manifest.
+`docs/evidence/stage5-news-window-coverage-20260901.md`
 
-A candidate news window is **complete** only if:
+Direct successful diagnostic at executable commit:
 
-1. every nominal 15-minute source slot in the exact lookback lies inside the frozen Q2 source contract;
-2. every such slot is present in `source_news.source_slots` under the exact frozen contract;
-3. every such slot has `status='downloaded'`;
-4. no slot in the window is provider-missing or unresolved;
-5. every retained V6 match timestamp maps to a downloaded source slot;
-6. the population distinction between the 431 Stage 3 news assets and the three response-only assets remains explicit.
+`9357392866e0d99719153f83634d4546ad2d0095`
 
-The diagnostic must measure at least the candidate 24-hour and 6-hour lookbacks, using half-open windows ending at the predictor cutoff and excluding records timestamped exactly at the cutoff.
+observed:
 
-It must also measure blank/null `source_common_name` values before any distinct-source breadth factor is approved.
+- source slots: **8,736**;
+- downloaded/provider-missing: **7,163 / 1,573**;
+- V6 matches mapping to downloaded source slots: **22,060 / 22,060**;
+- blank `source_common_name` rows: **0**;
+- distinct nonblank `source_common_name` values: **1,601**;
+- complete 24-hour response days: **69 / 91**;
+- 24-hour available / source-incomplete / outside-population response rows: **27,644 / 9,141 / 273**;
+- complete 6-hour response days: **72 / 91**;
+- 6-hour available / source-incomplete / outside-population response rows: **28,849 / 7,936 / 273**.
 
-`CFA-S5-010 = UNVERIFIED` — news source-slot lookback coverage.
+Both response-row accountings equal the frozen **37,058** response rows.
 
-## Candidate news factors — BLOCKED
+`CFA-S5-010 = PASS` — candidate news-lookback source-slot completeness is measured and reconciled.
 
-No news-hype factor is approved yet.
+## Candidate news-hype formulas — mathematically defined, availability UNVERIFIED
 
-Subject to `CFA-S5-010 = PASS`, the bounded candidates to adjudicate are:
+For response day `d`, candidate windows are half-open and exclude the cutoff itself:
 
-- retained V6 asset/news match count in `[d-24h,d)`;
-- retained V6 asset/news match count in `[d-6h,d)`;
-- distinct retained `source_common_name` count in `[d-24h,d)` if source-name completeness is directly verified.
+- `W_NEWS_24(d) = [d-24h,d)`;
+- `W_NEWS_6(d) = [d-6h,d)`.
 
-For any eventual count factor, zero will be valid **only** when the asset belongs to the frozen 431-asset Stage 3 news population and every nominal source slot in the lookback is downloaded. Outside-population or incomplete-source windows must be `NULL` with an explicit missingness reason.
+For asset `a`, let `N(a,W)` be the frozen V6 retained `(a,record_id)` rows whose parsed `gdelt_date_utc` lies in window `W`.
 
-`CFA-S5-007 = BLOCKED` pending `CFA-S5-010`.
+A news factor is numerically eligible only when:
+
+1. `a` is inside the frozen 431-asset Stage 3 news population; and
+2. every nominal 15-minute source slot in the exact lookback is present and `downloaded` under the frozen source contract.
+
+If either condition fails, the factor is `NULL` with an explicit missingness reason. If both conditions pass and `N(a,W)` is empty, count `0` is valid.
+
+The following candidate formulas are frozen as **unapproved mathematical candidates** pending the historical availability gate:
+
+### `NEWS_V6_MATCH_COUNT_24H`
+
+`|N(a,W_NEWS_24(d))|`
+
+Unit: retained V6 asset/news records.
+
+Numerical availability from source coverage: **27,644** response rows; **9,141** in-population rows have incomplete source windows; **273** rows are outside news population.
+
+### `NEWS_V6_MATCH_COUNT_6H`
+
+`|N(a,W_NEWS_6(d))|`
+
+Unit: retained V6 asset/news records.
+
+Numerical availability from source coverage: **28,849** response rows; **7,936** in-population rows have incomplete source windows; **273** rows are outside news population.
+
+### `NEWS_V6_SOURCE_COUNT_24H`
+
+Number of distinct **exact stored `source_common_name` strings** among `N(a,W_NEWS_24(d))`.
+
+No case folding, trimming, domain normalization, publisher consolidation, or inferred source identity is performed. The diagnostic observed zero blank `source_common_name` rows among all 22,060 retained V6 matches.
+
+Unit: distinct exact recorded source-common-name strings.
+
+Numerical source-window availability is the same **27,644 / 9,141 / 273** partition as the 24-hour match count.
+
+Stage 5 intrinsic scaling for all news candidates: **none**.
+
+## Historical GDELT information-availability gate — UNVERIFIED
+
+The CFA acquisition schema directly stores:
+
+- nominal `archive_timestamp_utc`;
+- object key and URL;
+- source status and HTTP status;
+- payload/hash/local lineage;
+- CFA's later `last_attempt_at_utc` acquisition timestamp.
+
+It does **not** store the provider's historical first-publication/first-availability timestamp for each 2025 archive.
+
+Therefore current authorized evidence does not prove that:
+
+- `archive_timestamp_utc`, or
+- a retained row's `gdelt_date_utc`
+
+is exactly the time at which the information became observable to a historical predictor.
+
+No fixed publication delay, one-slot delay, or other latency allowance is assumed without evidence. Source-window completeness and historical information availability are distinct gates.
+
+`CFA-S5-011 = UNVERIFIED` — historical GDELT information-availability semantics.
+
+Because leakage is a blocking failure:
+
+`CFA-S5-007 = BLOCKED` pending `CFA-S5-011`.
+
+The candidate news formulas above must not enter a predictor matrix while `CFA-S5-011` is unresolved.
+
+## Next admissible evidence
+
+The next Stage 5 task is to inspect direct provider-produced metadata capable of establishing a historical archive availability timestamp or a defensible upper bound on publication latency. Evidence may include provider object metadata retained or directly acquired under CFA controls. Archive nominal timestamps or CFA's 2026 download times alone are insufficient.
+
+Any proposed availability rule must be source-supported, exact, reproducible, and fail closed. If direct evidence is insufficient, `CFA-S5-011` remains `UNVERIFIED` and news factors remain blocked.
 
 ## Stage 5 gates
 
 | ID | Requirement | Status |
 |---|---|---|
-| `CFA-S5-001` | Frozen Stage 4 entry (`CFA-S4-015=PASS`) | PASS |
-| `CFA-S5-002` | Reconcile 434 response bases with 431 Stage 3 news-population assets | PASS |
-| `CFA-S5-003` | Verify exact V6 news-match artifact, schema, deduplication, timestamps, and source boundary | PASS |
-| `CFA-S5-004` | Re-inspect market factor fields/types/value boundaries and direct-USD coverage | PASS |
-| `CFA-S5-005` | Measure immediately preceding active-market-day availability at frozen predictor cutoffs | PASS |
+| `CFA-S5-001` | Frozen Stage 4 entry | PASS |
+| `CFA-S5-002` | Reconcile response/news populations | PASS |
+| `CFA-S5-003` | Verify exact V6 artifact/schema/dedup/timestamps/source boundary | PASS |
+| `CFA-S5-004` | Re-inspect market factor fields/types/value boundaries/direct-USD coverage | PASS |
+| `CFA-S5-005` | Measure prior-market-day availability | PASS |
 | `CFA-S5-006` | Define exact initial market factors | PASS |
-| `CFA-S5-007` | Define exact initial news-hype factors and outside-population policy | BLOCKED |
+| `CFA-S5-010` | Reconcile 24h/6h news lookbacks against exact provider-slot coverage | PASS |
+| `CFA-S5-011` | Establish historical GDELT information-availability timestamp/latency rule | UNVERIFIED |
+| `CFA-S5-007` | Approve exact initial news-hype factors and missingness policy | BLOCKED |
 | `CFA-S5-008` | Construct candidate factor artifact | BLOCKED |
-| `CFA-S5-009` | Freeze Stage 5 candidate-factor definitions/artifact | BLOCKED |
-| `CFA-S5-010` | Reconcile candidate news lookbacks against exact provider-slot availability | UNVERIFIED |
+| `CFA-S5-009` | Freeze Stage 5 factor definitions/artifact | BLOCKED |
 
 ## Current completion boundary
 
-Stage 5 source entry and initial market-factor definitions are approved. News-hype definitions remain blocked until exact provider-slot lookback completeness is measured.
+Stage 5 source entry, market-factor definitions, and news source-window completeness are PASS. News-hype factor approval remains blocked by historical information-availability semantics.
 
-Stage 6 data-quality/leakage testing and Stage 7 model-ready freezing remain blocked. PLS remains blocked.
+Stage 6 data-quality/leakage testing, Stage 7 model-ready freezing, and PLS remain blocked.
