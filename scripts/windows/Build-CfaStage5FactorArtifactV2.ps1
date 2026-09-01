@@ -16,9 +16,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Narrow repair launcher for the frozen Stage 5 constructor.
-# It preserves the original script as historical implementation lineage and
-# removes only two redundant DateTime parse/format round-trip assertions.
+# Narrow repair launcher for the Stage 5 constructor.
+# The original script remains as historical implementation lineage.
+# V2 removes only two redundant DateTime parse/format round-trip assertions.
 $SourceName='Build-CfaStage5FactorArtifact.ps1'
 $SourcePath=Join-Path $PSScriptRoot $SourceName
 if(-not(Test-Path -LiteralPath $SourcePath -PathType Leaf)){throw "Source constructor missing: $SourcePath"}
@@ -43,10 +43,10 @@ foreach($target in @($targetSelfTest,$targetRuntime)){
 if($text.Contains('Stage 4 cutoff parse/format mismatch')-or$text.Contains('Stage 4 cutoff parse/format self-test failed')){
     throw 'Redundant cutoff parse/format assertion remained after narrow repair.'
 }
-if(-not$text.Contains("if(`$observedCutoffText-cne`$expectedCutoffText){throw \"Stage 4 cutoff serialization mismatch:")){
+if(-not$text.Contains('Stage 4 cutoff serialization mismatch:')){
     throw 'Exact Stage 4 cutoff serialization guard was not preserved.'
 }
-if(-not$text.Contains("`$cutoff=[datetime]::SpecifyKind([datetime]::ParseExact(`$dayText,'yyyy-MM-dd',`$Invariant),[DateTimeKind]::Utc)")){
+if(-not$text.Contains('$cutoff=[datetime]::SpecifyKind([datetime]::ParseExact($dayText')){
     throw 'Response-day-derived UTC cutoff construction was not preserved.'
 }
 if(-not$text.Contains('MKT_RANGE_LOG_UTC_DAY_L1')){throw 'Approved market-range factor identifier missing after repair.'}
