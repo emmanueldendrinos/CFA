@@ -1,16 +1,10 @@
-# CFA Stage 5 candidate-factor contract — market definitions PASS / news availability UNVERIFIED — 2026-09-01
+# CFA Stage 5 candidate-factor contract — market definitions PASS / GDELT batch timing candidate — 2026-09-01
 
 Status: **STAGE5_ACTIVE / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_SLOT_COVERAGE_PASS / NEWS_HISTORICAL_AVAILABILITY_UNVERIFIED / NEWS_FACTOR_DEFINITIONS_BLOCKED**
 
 ## Authority and entry condition
 
-This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. The SoT authorizes definition of candidate market/news factors from verified source data but supplies no factor formula. The reproducible SoT authority snapshot reports no `DATA-###` identifiers in the workbook; therefore no DATA-001/002/003 factor formula is imported or reconstructed.
-
-Stage 4 is frozen on `RET_USD_UTC_DAY_OBS_LOG` with `CFA-S4-015 = PASS`.
-
-`CFA-S5-001 = PASS` — Stage 5 entry gate.
-
-## Frozen predictor/response timing boundary
+This contract is subordinate to the CFA Source of Truth and authorized CFA evidence. No factor formula is imported from prior work. Stage 4 is frozen on `RET_USD_UTC_DAY_OBS_LOG` with `CFA-S4-015 = PASS`.
 
 For response day `d`:
 
@@ -18,15 +12,11 @@ For response day `d`:
 - response window: `[d 00:00:00+00,d+1 00:00:00+00)`;
 - response availability: `d+1 00:00:00+00`.
 
-Every predictor must use only information established as available no later than the predictor cutoff. A source timestamp is not automatically an information-availability timestamp. Any unresolved availability assumption is a blocking leakage issue.
+Any predictor must use only information established as available before the response window. Leakage is blocking.
 
 ## Source-entry reconciliation — PASS
 
-Exact source-entry correction evidence is recorded in:
-
-`docs/evidence/stage5-source-entry-correction-20260901.md`
-
-Directly reconciled facts:
+Direct Stage 5 source-entry evidence established:
 
 - Stage 4 response/direct-USD bases: **434**;
 - Stage 3 news-population assets: **431**;
@@ -36,11 +26,8 @@ Directly reconciled facts:
 - frozen V6 retained asset/news rows: **22,060**;
 - V6 matched assets: **282**;
 - V6 distinct records: **18,503**;
-- V6 retained timestamp range: `2025-04-01T00:00:00Z` through `2025-06-14T17:45:00Z`;
-- response rows with active direct-USD market observations on the immediately preceding UTC calendar day: **36,505**;
-- response rows without such a preceding active market day: **553**.
-
-The historical source-inspection receipt that reported `V6 match rows: 1` remains preserved as a reporting defect caused by collision with PowerShell's automatic `$Matches` variable. The correction validator independently re-read the exact artifacts and restored the correct 22,060-row result.
+- response rows with immediately preceding active direct-USD market day: **36,505**;
+- response rows without it: **553**.
 
 Therefore:
 
@@ -49,38 +36,21 @@ Therefore:
 - `CFA-S5-004 = PASS`;
 - `CFA-S5-005 = PASS`.
 
-## Market source
-
-Frozen relation: `asrp.q2_market_1m_observations`.
-
-Stage 5 directly re-verified factor-relevant identity, timestamp, OHLC, lineage, and eligibility fields. OHLC and `base_volume` are PostgreSQL `numeric`; `trade_count` is `bigint`. The inspected direct-USD population had zero null factor fields, zero nonpositive OHLC values, zero negative `base_volume`, zero negative `trade_count`, and retained the frozen market integrity conditions.
-
-Field names alone do not establish economic units. The initial approved factor set therefore excludes `base_volume` and `trade_count` until their economic semantics/units are independently frozen.
-
 ## Exact initial market-factor definitions — PASS
 
-### Shared market population, grain, window and missing policy
+Population: all **434** frozen Stage 4 direct-USD response bases.
 
-Population: the **434** frozen Stage 4 direct-USD response bases.
+Grain: `(base_asset_id,response_day_utc)`.
 
-Grain: one candidate factor row per frozen response key `(base_asset_id,response_day_utc)`.
-
-For response day `d`:
+For response day `d`, market lookback:
 
 `W_MKT(d) = [d-1 00:00:00+00, d 00:00:00+00)`.
 
-Let `E(a,d)` be all frozen-eligible one-minute rows from asset `a`'s unique direct-USD pair in `W_MKT(d)`.
+Let `E(a,d)` be frozen-eligible one-minute rows from asset `a`'s unique direct-USD pair in that window. If empty, all market factors are `NULL`; no substitution, imputation, interpolation, carry, or cross-rate is permitted.
 
-If `E(a,d)` is empty, all four initial market factors are `NULL`. No earlier day, carry-forward, interpolation, cross-rate, or substitute quote is permitted.
+If non-empty, `F(a,d)` is the earliest row by `candle_start_utc` with lowest `physical_record_number` tie-break, and `L(a,d)` is the latest row with highest `physical_record_number` tie-break.
 
-If non-empty:
-
-- `F(a,d)` = minimum `candle_start_utc`, tie-break lowest `physical_record_number`;
-- `L(a,d)` = maximum `candle_start_utc`, tie-break highest `physical_record_number`.
-
-All source rows lie strictly before the response window. Market factor availability is the predictor cutoff `d 00:00:00+00` after the preceding calendar day has closed.
-
-Stage 5 intrinsic scaling: **none**.
+Approved definitions:
 
 ### `MKT_RET_USD_UTC_DAY_OBS_L1`
 
@@ -88,19 +58,11 @@ Stage 5 intrinsic scaling: **none**.
 
 Unit: dimensionless natural-log price ratio.
 
-Semantics: observed first-open to last-close direct-USD return over the preceding UTC calendar day; not claimed to have a fixed 24-hour observed span.
-
-Missing: `NULL` when `E(a,d)` is empty.
-
 ### `MKT_RANGE_LOG_UTC_DAY_L1`
 
-`ln(max_{r in E(a,d)} r.high_price / min_{r in E(a,d)} r.low_price)`
+`ln(max(high_price in E(a,d)) / min(low_price in E(a,d)))`
 
 Unit: dimensionless natural-log price ratio.
-
-Semantics: observed high/low log range across available preceding-day candles.
-
-Missing: `NULL` when `E(a,d)` is empty.
 
 ### `MKT_OBS_COUNT_UTC_DAY_L1`
 
@@ -108,153 +70,133 @@ Missing: `NULL` when `E(a,d)` is empty.
 
 Unit: verified one-minute observation rows.
 
-This is an observation-intensity factor, not trade count or volume.
-
-Missing: `NULL` when `E(a,d)` is empty.
-
 ### `MKT_OBS_SPAN_MIN_UTC_DAY_L1`
 
-`(max_{r in E(a,d)} candle_start_utc - min_{r in E(a,d)} candle_start_utc) / 1 minute`
+`(max(candle_start_utc in E(a,d)) - min(candle_start_utc in E(a,d))) / 1 minute`
 
-Unit: minutes.
+Unit: minutes; one-row day = `0`.
 
-A one-row day has value `0`; an empty day is `NULL`.
+Stage 5 intrinsic scaling: none.
 
-### Market decision
+Observed market availability: **36,505** response rows defined, **553** structurally missing.
 
-The four factors above have source availability on **36,505** frozen response rows and structural market missingness on **553** rows.
-
-`CFA-S5-006 = PASS` — exact initial market-factor definitions.
-
-This PASS approves definitions only; the combined factor artifact is not yet constructed or frozen.
+`CFA-S5-006 = PASS`.
 
 ## News source and population boundary
 
-Frozen Stage 3 V6 artifact: exact `stage3-news-matches.csv` / `CANDIDATE_V6`.
+Frozen source: exact Stage 3 `CANDIDATE_V6` retained-match artifact and Stage 1 GDELT 2.0 native/base GKG source manifest.
 
-Each retained asset/news row carries `base_asset_id`, `record_id`, `gdelt_date_utc`, `source_common_name`, source-document lineage, archive filename/row ordinal, matched aliases/surfaces, and context reasons. Stage 3 guarantees zero duplicate `(base_asset_id,record_id)` retained matches.
-
-Stage 1 freezes the replacement news source to GDELT 2.0 native/base GKG fifteen-minute update archives over:
+Stage 1 source interval:
 
 `[2025-04-01 00:00:00+00, 2025-07-01 00:00:00+00)`
 
-with:
+Source accounting:
 
 - nominal slots: **8,736**;
-- downloaded slots: **7,163**;
-- explicit provider-missing HTTP-404 slots: **1,573**;
-- unresolved slots: **0**.
+- downloaded: **7,163**;
+- explicit provider-missing HTTP-404: **1,573**;
+- unresolved: **0**.
 
-The three response assets `ZAUD`, `ZEUR`, and `ZGBP` are outside the frozen 431-asset Stage 3 news population. Their news predictors are structural `NULL`, never zero.
-
-Provider-missing source slots are also structural missingness and may never be converted to zero-news evidence.
+`ZAUD`, `ZEUR`, and `ZGBP` are outside the frozen 431-asset news population. Their news factors are structural `NULL`, never zero. Provider-missing source windows are also structural `NULL`, never zero.
 
 ## News source-window completeness — PASS
 
-Exact local evidence:
+The direct local diagnostic established, using the original unlagged candidate windows:
 
-`docs/evidence/stage5-news-window-coverage-20260901.md`
+- all **22,060** retained V6 rows mapped to downloaded source slots;
+- blank `source_common_name`: **0**;
+- distinct nonblank `source_common_name`: **1,601**;
+- original 24h availability partition: **27,644 available / 9,141 source-incomplete / 273 outside-population**;
+- original 6h availability partition: **28,849 / 7,936 / 273**.
 
-Direct successful diagnostic at executable commit:
+`CFA-S5-010 = PASS` for source-slot accounting methodology and the original windows.
 
-`9357392866e0d99719153f83634d4546ad2d0095`
+These counts are **not** frozen as the final news-factor availability counts because the historical timing rule is being corrected below and shifted windows must be remeasured.
 
-observed:
+## Direct first-party GDELT timing evidence
 
-- source slots: **8,736**;
-- downloaded/provider-missing: **7,163 / 1,573**;
-- V6 matches mapping to downloaded source slots: **22,060 / 22,060**;
-- blank `source_common_name` rows: **0**;
-- distinct nonblank `source_common_name` values: **1,601**;
-- complete 24-hour response days: **69 / 91**;
-- 24-hour available / source-incomplete / outside-population response rows: **27,644 / 9,141 / 273**;
-- complete 6-hour response days: **72 / 91**;
-- 6-hour available / source-incomplete / outside-population response rows: **28,849 / 7,936 / 273**.
+Evidence record:
 
-Both response-row accountings equal the frozen **37,058** response rows.
+`docs/evidence/stage5-gdelt-batch-time-authority-20260901.md`
 
-`CFA-S5-010 = PASS` — candidate news-lookback source-slot completeness is measured and reconciled.
+Directly inspected GDELT documentation establishes:
 
-## Candidate news-hype formulas — mathematically defined, availability UNVERIFIED
+1. `GKGRECORDID` begins with the full date/time of the **15-minute update batch in which the record was created**.
+2. GDELT processes monitored worldwide news on a **15-minute** heartbeat.
+3. GDELT separately distinguishes article/publication time from its own monitoring/processing time; for open-web material GDELT treats its retrieval timing as authoritative rather than trusting page-claimed publication time.
 
-For response day `d`, candidate windows are half-open and exclude the cutoff itself:
+The frozen Stage 3 matcher preserves:
 
-- `W_NEWS_24(d) = [d-24h,d)`;
-- `W_NEWS_6(d) = [d-6h,d)`.
+- raw GKG field 0 as `record_id`;
+- raw GKG field 1 as `gdelt_date_utc`.
 
-For asset `a`, let `N(a,W)` be the frozen V6 retained `(a,record_id)` rows whose parsed `gdelt_date_utc` lies in window `W`.
+Therefore `gdelt_date_utc` must not be used as the historical predictor-availability timestamp merely because it is a date field.
 
-A news factor is numerically eligible only when:
+## Conservative GDELT availability policy candidate
 
-1. `a` is inside the frozen 431-asset Stage 3 news population; and
-2. every nominal 15-minute source slot in the exact lookback is present and `downloaded` under the frozen source contract.
+For retained record `r`:
 
-If either condition fails, the factor is `NULL` with an explicit missingness reason. If both conditions pass and `N(a,W)` is empty, count `0` is valid.
+`B(r) = UTC timestamp parsed from the first 14 digits of record_id`.
 
-The following candidate formulas are frozen as **unapproved mathematical candidates** pending the historical availability gate:
+`B(r)` is the GDELT processing-batch timestamp supplied by the GKG record identifier.
 
-### `NEWS_V6_MATCH_COUNT_24H`
+Because that timestamp has 15-minute batch resolution, CFA applies a conservative one-heartbeat safety lag:
 
-`|N(a,W_NEWS_24(d))|`
+`A_NEWS(r) = B(r) + 15 minutes`.
 
-Unit: retained V6 asset/news records.
+This is a CFA leakage-control policy. It is **not** a claim that the downloadable archive became public exactly 15 minutes later. It intentionally prevents any record from being used at the boundary of the same batch in which it was created.
 
-Numerical availability from source coverage: **27,644** response rows; **9,141** in-population rows have incomplete source windows; **273** rows are outside news population.
+A record is predictor-eligible only through `A_NEWS(r)`, never through `gdelt_date_utc`.
 
-### `NEWS_V6_MATCH_COUNT_6H`
+## Revised candidate news windows
 
-`|N(a,W_NEWS_6(d))|`
+For H-hour lookback at predictor cutoff `d`:
 
-Unit: retained V6 asset/news records.
+`W_NEWS_H(d) = { r : A_NEWS(r) in [d-H,d) }`.
 
-Numerical availability from source coverage: **28,849** response rows; **7,936** in-population rows have incomplete source windows; **273** rows are outside news population.
+Equivalent batch-time window:
 
-### `NEWS_V6_SOURCE_COUNT_24H`
+`B(r) in [d-H-15m, d-15m)`.
 
-Number of distinct **exact stored `source_common_name` strings** among `N(a,W_NEWS_24(d))`.
+Candidate IDs are therefore revised to make the safety lag explicit:
 
-No case folding, trimming, domain normalization, publisher consolidation, or inferred source identity is performed. The diagnostic observed zero blank `source_common_name` rows among all 22,060 retained V6 matches.
+- `NEWS_V6_MATCH_COUNT_24H_LAG15`;
+- `NEWS_V6_MATCH_COUNT_6H_LAG15`;
+- `NEWS_V6_SOURCE_COUNT_24H_LAG15`.
 
-Unit: distinct exact recorded source-common-name strings.
+The first two count retained V6 `(base_asset_id,record_id)` rows in the corresponding availability-time window. The third counts distinct exact stored `source_common_name` strings in the 24h window, with no normalization or publisher consolidation.
 
-Numerical source-window availability is the same **27,644 / 9,141 / 273** partition as the 24-hour match count.
+Zero is valid only when the asset is inside the frozen 431-asset population **and** every nominal source slot required by the shifted batch-time window is downloaded. Otherwise the value is `NULL` with explicit missingness reason.
 
-Stage 5 intrinsic scaling for all news candidates: **none**.
+Stage 5 intrinsic scaling: none.
 
-## Historical GDELT information-availability gate — UNVERIFIED
+These are still **unapproved candidate definitions** until the exact V6 artifact and shifted source windows are locally reconciled.
 
-The CFA acquisition schema directly stores:
+## Required local batch-timing validation
 
-- nominal `archive_timestamp_utc`;
-- object key and URL;
-- source status and HTTP status;
-- payload/hash/local lineage;
-- CFA's later `last_attempt_at_utc` acquisition timestamp.
+The next validation must use only already-frozen local artifacts. No provider API, cloud metadata, or new acquisition is required.
 
-It does **not** store the provider's historical first-publication/first-availability timestamp for each 2025 archive.
+It must verify all **22,060** retained V6 rows for:
 
-Therefore current authorized evidence does not prove that:
+1. valid `record_id` batch prefix;
+2. 15-minute alignment;
+3. exact equality between parsed batch timestamp and retained `archive_file` timestamp;
+4. mapping to a frozen source slot with `status='downloaded'`;
+5. exact shifted 24h/6h source-window completeness under `A_NEWS = B + 15m`;
+6. exact response-row accounting across complete in-population, incomplete in-population, and outside-population rows;
+7. measured `gdelt_date_utc - B(r)` differences for lineage only.
 
-- `archive_timestamp_utc`, or
-- a retained row's `gdelt_date_utc`
+`CFA-S5-013 = UNVERIFIED` — V6 batch-timestamp and shifted-window reconciliation.
 
-is exactly the time at which the information became observable to a historical predictor.
-
-No fixed publication delay, one-slot delay, or other latency allowance is assumed without evidence. Source-window completeness and historical information availability are distinct gates.
-
-`CFA-S5-011 = UNVERIFIED` — historical GDELT information-availability semantics.
-
-Because leakage is a blocking failure:
+`CFA-S5-011 = UNVERIFIED` pending `CFA-S5-013` — the source-supported one-heartbeat availability policy has been defined but not yet validated against every frozen V6 row and source slot.
 
 `CFA-S5-007 = BLOCKED` pending `CFA-S5-011`.
 
-The candidate news formulas above must not enter a predictor matrix while `CFA-S5-011` is unresolved.
+## Superseded provider-metadata exploration
 
-## Next admissible evidence
+The bucket-list and exact-object GCS metadata attempts are retained as historical implementation lineage only. They are no longer the required path for Stage 5 because the frozen GKG record itself preserves the source-processing batch timestamp needed for a leakage-controlled rule.
 
-The next Stage 5 task is to inspect direct provider-produced metadata capable of establishing a historical archive availability timestamp or a defensible upper bound on publication latency. Evidence may include provider object metadata retained or directly acquired under CFA controls. Archive nominal timestamps or CFA's 2026 download times alone are insufficient.
-
-Any proposed availability rule must be source-supported, exact, reproducible, and fail closed. If direct evidence is insufficient, `CFA-S5-011` remains `UNVERIFIED` and news factors remain blocked.
+No further provider-metadata debugging is required for this gate.
 
 ## Stage 5 gates
 
@@ -262,18 +204,19 @@ Any proposed availability rule must be source-supported, exact, reproducible, an
 |---|---|---|
 | `CFA-S5-001` | Frozen Stage 4 entry | PASS |
 | `CFA-S5-002` | Reconcile response/news populations | PASS |
-| `CFA-S5-003` | Verify exact V6 artifact/schema/dedup/timestamps/source boundary | PASS |
-| `CFA-S5-004` | Re-inspect market factor fields/types/value boundaries/direct-USD coverage | PASS |
+| `CFA-S5-003` | Verify exact V6 artifact/schema/dedup/source boundary | PASS |
+| `CFA-S5-004` | Re-inspect market factor fields/types/direct-USD coverage | PASS |
 | `CFA-S5-005` | Measure prior-market-day availability | PASS |
 | `CFA-S5-006` | Define exact initial market factors | PASS |
-| `CFA-S5-010` | Reconcile 24h/6h news lookbacks against exact provider-slot coverage | PASS |
-| `CFA-S5-011` | Establish historical GDELT information-availability timestamp/latency rule | UNVERIFIED |
+| `CFA-S5-010` | Verify news source-slot accounting/completeness methodology | PASS |
+| `CFA-S5-013` | Reconcile V6 record batch timestamps and shifted lag-15 source windows | UNVERIFIED |
+| `CFA-S5-011` | Validate historical GDELT availability policy `A_NEWS=B+15m` | UNVERIFIED |
 | `CFA-S5-007` | Approve exact initial news-hype factors and missingness policy | BLOCKED |
 | `CFA-S5-008` | Construct candidate factor artifact | BLOCKED |
 | `CFA-S5-009` | Freeze Stage 5 factor definitions/artifact | BLOCKED |
 
 ## Current completion boundary
 
-Stage 5 source entry, market-factor definitions, and news source-window completeness are PASS. News-hype factor approval remains blocked by historical information-availability semantics.
+Stage 5 source entry, market-factor definitions, and provider-slot accounting are PASS. The remaining news timing work is one deterministic local reconciliation of the already-frozen V6 `record_id` batch timestamps and shifted windows.
 
-Stage 6 data-quality/leakage testing, Stage 7 model-ready freezing, and PLS remain blocked.
+Stage 6, Stage 7, and PLS remain blocked.
