@@ -1,0 +1,53 @@
+name: CFA Stage 5 Factor Artifact V2 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Build-CfaStage5FactorArtifact.ps1'
+      - 'scripts/windows/Build-CfaStage5FactorArtifactV2.ps1'
+      - '.github/workflows/stage5-factor-artifact-v2-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Build-CfaStage5FactorArtifact.ps1'
+      - 'scripts/windows/Build-CfaStage5FactorArtifactV2.ps1'
+      - '.github/workflows/stage5-factor-artifact-v2-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V2 launcher with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Build-CfaStage5FactorArtifactV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse V2 launcher with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Build-CfaStage5FactorArtifactV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run V2 patched-constructor self-test
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage5FactorArtifactV2.ps1 -Stage3V6MatchesPath . -Stage4ResponsesPath . -BatchTimingReceiptPath . -SelfTest
+
+      - name: Enforce narrow repair surface
+        shell: powershell
+        run: |
+          $v2=Get-Content '.\scripts\windows\Build-CfaStage5FactorArtifactV2.ps1' -Raw
+          $source=Get-Content '.\scripts\windows\Build-CfaStage5FactorArtifact.ps1' -Raw
+          foreach($marker in @('Narrow repair target occurrence count changed','Stage 4 cutoff serialization mismatch:','Response-day-derived UTC cutoff construction was not preserved','MKT_RANGE_LOG_UTC_DAY_L1','MKT_RANGE_LOG_UTC_DAY_OBS_L1','powershell.exe')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 marker missing: $marker"}}
+          foreach($marker in @('Stage 4 cutoff parse/format mismatch','Stage 4 cutoff parse/format self-test failed','Stage 4 cutoff serialization mismatch:','$cutoff=[datetime]::SpecifyKind([datetime]::ParseExact($dayText')){if($source -notmatch [regex]::Escape($marker)){throw "Source constructor repair target/guard missing: $marker"}}
+          if($v2 -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com'){throw 'V2 launcher must not add network access.'}
+          if($v2 -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'V2 launcher must not add database write/DDL.'}
