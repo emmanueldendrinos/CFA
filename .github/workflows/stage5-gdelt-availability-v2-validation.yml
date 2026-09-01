@@ -1,0 +1,49 @@
+name: CFA Stage 5 GDELT Availability V2 Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage5GdeltAvailabilityV2.ps1'
+      - '.github/workflows/stage5-gdelt-availability-v2-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Inspect-CfaStage5GdeltAvailabilityV2.ps1'
+      - '.github/workflows/stage5-gdelt-availability-v2-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse V2 with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage5GdeltAvailabilityV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse V2 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Inspect-CfaStage5GdeltAvailabilityV2.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count-gt0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run V2 self-test
+        shell: powershell
+        run: .\scripts\windows\Inspect-CfaStage5GdeltAvailabilityV2.ps1 -SelfTest
+
+      - name: Enforce exact-object fail-closed design
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Inspect-CfaStage5GdeltAvailabilityV2.ps1' -Raw
+          foreach($marker in @('V2_EXACT_OBJECT_METADATA_NO_BUCKET_LIST','GcsObjectMetadataBase','exact_object_metadata','Exact-object provider metadata probe','ExpectedDownloaded=7163','ExpectedProviderMissing=1573','CFA-S5-012','CFA-S5-011','UNVERIFIED','CFA-S5-007','BLOCKED','md5ComparableCount','HttpConcurrency')){if($body -notmatch [regex]::Escape($marker)){throw "V2 marker missing: $marker"}}
+          if($body -match 'prefix='){throw 'Bucket-list prefix query reintroduced into V2.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'V2 contains forbidden database write/DDL marker.'}
