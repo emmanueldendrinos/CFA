@@ -19,9 +19,21 @@ $ErrorActionPreference='Stop'
 # Narrow repair launcher for the Stage 5 constructor.
 # The original script remains as historical implementation lineage.
 # V2 removes only two redundant DateTime parse/format round-trip assertions.
+# The launcher always forwards the actual CFA repository root because the
+# temporary patched script runs under %TEMP% and must not derive RepoRoot there.
 $SourceName='Build-CfaStage5FactorArtifact.ps1'
 $SourcePath=Join-Path $PSScriptRoot $SourceName
 if(-not(Test-Path -LiteralPath $SourcePath -PathType Leaf)){throw "Source constructor missing: $SourcePath"}
+
+if([string]::IsNullOrWhiteSpace($RepoRoot)){
+    $EffectiveRepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+}else{
+    $EffectiveRepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
+}
+$ContractProbe=Join-Path $EffectiveRepoRoot 'docs\evidence\stage5-factor-contract.md'
+if(-not(Test-Path -LiteralPath $ContractProbe -PathType Leaf)){
+    throw "CFA repository-root preflight failed; Stage 5 contract not found: $ContractProbe"
+}
 
 $text=[IO.File]::ReadAllText($SourcePath)
 
@@ -63,9 +75,9 @@ try {
         '-PgHost',$PgHost,
         '-PgPort',[string]$PgPort,
         '-PgUser',$PgUser,
+        '-RepoRoot',$EffectiveRepoRoot,
         '-StatementTimeoutSeconds',[string]$StatementTimeoutSeconds
     )
-    if(-not[string]::IsNullOrWhiteSpace($RepoRoot)){$argsList+=@('-RepoRoot',$RepoRoot)}
     if(-not[string]::IsNullOrWhiteSpace($OutputRoot)){$argsList+=@('-OutputRoot',$OutputRoot)}
     if($SelfTest){$argsList+='-SelfTest'}
 
