@@ -44,7 +44,7 @@ function Get-CfaBenchmarkPred {
         elseif($Id-eq'BENCH_RESPONSE_MEAN'){$predictions[$rowIndex]=$Mean}
         else{throw "Unknown benchmark $Id"}
     }
-    return $predictions
+    return ,$predictions
 }
 
 function New-CfaMetricRow {
