@@ -1,0 +1,54 @@
+name: CFA Stage 6 Data Quality Leakage Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage6DataQualityLeakage.ps1'
+      - 'docs/evidence/stage6-data-quality-leakage-contract.md'
+      - '.github/workflows/stage6-data-quality-leakage-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage6DataQualityLeakage.ps1'
+      - 'docs/evidence/stage6-data-quality-leakage-contract.md'
+      - '.github/workflows/stage6-data-quality-leakage-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 6 validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage6DataQualityLeakage.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse Stage 6 validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage6DataQualityLeakage.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run Stage 6 failure-path self-test
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage6DataQualityLeakage.ps1 -Stage5ValidationReceiptPath . -Stage4ResponsesPath . -RepoRoot . -SelfTest
+
+      - name: Enforce Stage 6 contract and offline surface
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Validate-CfaStage6DataQualityLeakage.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage6-data-quality-leakage-contract.md' -Raw
+          foreach($marker in @('STAGE6_ACTIVE','CFA-S6-001','CFA-S6-008','CFA-S6-009','c35bd125b7ce3036009a2e75f240bc2cd81168dcec3847dd1d0863cc00bc902b')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 6 contract marker missing: $marker"}}
+          foreach($marker in @('ExpectedFactorSha','ExpectedStage4Sha','DATA_QUALITY_LEAKAGE_V1','DUPLICATE_RESPONSE_KEY','DUPLICATE_FACTOR_KEY','NO_PRIOR_ACTIVE_MARKET_DAY','SOURCE_WINDOW_INCOMPLETE','OUTSIDE_NEWS_POPULATION','Blocking violations','stage6-dq-leakage-rejects.csv','stage6-dq-descriptive-diagnostics.csv','stage6-dq-leakage-validation.json')){if($body -notmatch [regex]::Escape($marker)){throw "Stage 6 validator marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 6 validator must remain offline and database-free.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 6 validator contains forbidden database write/DDL.'}
+          if($body -match '(?i)winsori[sz]|standardi[sz]|z[-_ ]?score|imput|carry[-_ ]?forward|cross[-_ ]?rate'){throw 'Stage 6 validator must not perform model preprocessing or substitution.'}
