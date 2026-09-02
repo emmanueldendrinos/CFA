@@ -35,10 +35,19 @@ $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
 
 function Assert-CfaIndependentMetric {
     param($Observed,$Expected,[string]$Label)
-    foreach($name in @('rmse','mae','sse','predictive_r2')){
-        $observedValue=Parse-CfaIndependentDouble $Observed.$name "$Label observed $name"
-        $expectedValue=[double]$Expected.$name
-        if(-not(Test-CfaIndependentNear $observedValue $expectedValue)){throw "$Label $name mismatch: observed=$observedValue expected=$expectedValue"}
+    foreach($pair in @(
+        @('rmse','rmse'),
+        @('mae','mae'),
+        @('sse','sse'),
+        @('predictive_r2_vs_response_mean','predictive_r2')
+    )){
+        $observedName=[string]$pair[0]
+        $expectedName=[string]$pair[1]
+        $property=$Observed.PSObject.Properties[$observedName]
+        if($null -eq $property){throw "$Label observed metric property missing: $observedName"}
+        $observedValue=Parse-CfaIndependentDouble $property.Value "$Label observed $observedName"
+        $expectedValue=[double]$Expected.$expectedName
+        if(-not(Test-CfaIndependentNear $observedValue $expectedValue)){throw "$Label $observedName mismatch: observed=$observedValue expected=$expectedValue"}
     }
 }
 
@@ -72,7 +81,7 @@ function Assert-CfaPredictionRows {
 function Invoke-CfaStage8ValidatorSelfTest {
     if(-not(Test-CfaStage8IndependentCore)){throw 'Independent PLS core self-test returned false.'}
     if(-not(Test-CfaStage8IndependentData)){throw 'Independent data self-test returned false.'}
-    $observed=[pscustomobject]@{rmse='1';mae='2';sse='3';predictive_r2='4'}
+    $observed=[pscustomobject]@{rmse='1';mae='2';sse='3';predictive_r2_vs_response_mean='4'}
     $expected=[pscustomobject]@{rmse=1.0;mae=2.0;sse=3.0;predictive_r2=4.0}
     Assert-CfaIndependentMetric $observed $expected 'selftest metric'
     Write-Host 'SELF-TEST: PASS'
@@ -200,8 +209,10 @@ try {
     foreach($benchmarkId in @('BENCH_ZERO_RETURN','BENCH_PRIOR_MARKET_RETURN','BENCH_RESPONSE_MEAN')){
         $validationBenchmarkMetrics=Get-CfaIndependentMetrics $validationProcessed.y_raw $validationBenchmarks[$benchmarkId] $trainProcessed.response_center
         $testBenchmarkMetrics=Get-CfaIndependentMetrics $testProcessed.y_raw $testBenchmarks[$benchmarkId] $trainValidationProcessed.response_center
-        Assert-CfaIndependentMetric $benchmarkMetricMap['VALIDATION|'+$benchmarkId] $validationBenchmarkMetrics "VALIDATION $benchmarkId"
-        Assert-CfaIndependentMetric $benchmarkMetricMap['TEST|'+$benchmarkId] $testBenchmarkMetrics "TEST $benchmarkId"
+        $validationBenchmarkKey='VALIDATION|'+$benchmarkId
+        $testBenchmarkKey='TEST|'+$benchmarkId
+        Assert-CfaIndependentMetric $benchmarkMetricMap[$validationBenchmarkKey] $validationBenchmarkMetrics "VALIDATION $benchmarkId"
+        Assert-CfaIndependentMetric $benchmarkMetricMap[$testBenchmarkKey] $testBenchmarkMetrics "TEST $benchmarkId"
     }
 
     $coefficientRows=@(Import-Csv -LiteralPath $coefficientsPath)
