@@ -1,6 +1,6 @@
-# CFA Stage 5 candidate-factor contract — definitions PASS / construction UNVERIFIED — 2026-09-01
+# CFA Stage 5 candidate-factor contract — definitions PASS / construction PASS / independent validation UNVERIFIED — 2026-09-02
 
-Status: **STAGE5_ACTIVE / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_FACTOR_DEFINITIONS_PASS / FACTOR_ARTIFACT_UNVERIFIED / STAGE5_FREEZE_BLOCKED**
+Status: **STAGE5_ACTIVE / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_FACTOR_DEFINITIONS_PASS / FACTOR_ARTIFACT_CONSTRUCTION_PASS / FACTOR_ARTIFACT_VALIDATION_UNVERIFIED / STAGE5_FREEZE_BLOCKED**
 
 ## Authority and entry condition
 
@@ -212,9 +212,9 @@ Stage 5 intrinsic scaling for all news factors: none.
 
 `CFA-S5-007 = PASS` — exact initial news-hype factor definitions and missingness policy.
 
-## Candidate factor artifact contract
+## Candidate factor artifact contract and construction — PASS
 
-The Stage 5 candidate artifact must now construct exactly one row for every frozen Stage 4 response key: **37,058 rows** at grain `(base_asset_id,response_day_utc)`.
+The Stage 5 candidate artifact must contain exactly one row for every frozen Stage 4 response key: **37,058 rows** at grain `(base_asset_id,response_day_utc)`.
 
 It must contain the seven approved factors:
 
@@ -241,9 +241,25 @@ For reproducibility and later leakage/data-quality testing it must also preserve
 
 No imputation, scaling, winsorization, clipping, standardization, centering, or model preprocessing is permitted in Stage 5 construction.
 
-`CFA-S5-008 = UNVERIFIED` — candidate factor artifact has not yet been constructed.
+Direct construction evidence:
 
-`CFA-S5-009 = BLOCKED` pending construction and direct validation of the exact artifact.
+`docs/evidence/stage5-factor-artifact-construction-local-20260901.md`.
+
+The exact local construction reported:
+
+- factor rows: **37,058**;
+- distinct bases: **434**;
+- market available / missing: **36,505 / 553**;
+- news 24h available / source-incomplete / outside-population: **27,267 / 9,518 / 273**;
+- news 6h available / source-incomplete / outside-population: **28,849 / 7,936 / 273**;
+- review rows: **46**;
+- PostgreSQL session: `default_transaction_read_only=on`.
+
+`CFA-S5-008 = PASS` — the exact seven-factor validation candidate was constructed with the required cardinality and expected source/missingness partitions.
+
+`CFA-S5-014 = UNVERIFIED` — independent artifact validation has not yet passed against the exact candidate receipt and referenced outputs.
+
+`CFA-S5-009 = BLOCKED` pending `CFA-S5-014 = PASS` and explicit recording of the exact candidate/output hashes before freeze.
 
 ## Superseded provider-metadata exploration
 
@@ -263,11 +279,12 @@ The bucket-list and exact-object GCS metadata attempts are retained as historica
 | `CFA-S5-013` | Reconcile V6 record batch timestamps and shifted lag-15 source windows | PASS |
 | `CFA-S5-011` | Validate historical GDELT availability policy `A_NEWS=B+15m` | PASS |
 | `CFA-S5-007` | Approve exact initial news-hype factors and missingness policy | PASS |
-| `CFA-S5-008` | Construct candidate factor artifact | UNVERIFIED |
+| `CFA-S5-008` | Construct candidate factor artifact | PASS |
+| `CFA-S5-014` | Independently validate exact factor artifact/receipt/lineage | UNVERIFIED |
 | `CFA-S5-009` | Freeze Stage 5 factor definitions/artifact | BLOCKED |
 
 ## Current completion boundary
 
-All Stage 5 factor definitions, source populations, source completeness rules, and timing/leakage availability rules are PASS. The remaining Stage 5 work is construction and direct validation of the exact seven-factor artifact.
+All Stage 5 factor definitions, source populations, source completeness rules, timing/leakage availability rules, and candidate construction are PASS. The remaining Stage 5 work is independent validation of the exact candidate artifact and then explicit freeze on validated hashes.
 
-Stage 6 data-quality/leakage testing must not begin until the Stage 5 artifact is constructed and frozen. Stage 7 and PLS remain blocked.
+Stage 6 data-quality/leakage testing must not begin until `CFA-S5-014 = PASS` and `CFA-S5-009 = PASS`. Stage 7 and PLS remain blocked.
