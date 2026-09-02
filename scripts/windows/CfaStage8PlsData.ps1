@@ -65,9 +65,16 @@ function Test-CfaStage8PlsData {
     }
     $processed=Build-CfaProcessed $rows $map 'SELFTEST' $factorIds
     if($processed.X.GetLength(0)-ne2-or$processed.X.GetLength(1)-ne2){throw 'Processed matrix dimension self-test failed.'}
-    if([math]::Abs($processed.X[0,0]-1.0)-gt1e-12-or[math]::Abs($processed.X[0,1]+1.0)-gt1e-12-or[math]::Abs($processed.X[1,0]+1.0)-gt1e-12-or[math]::Abs($processed.X[1,1]-1.0)-gt1e-12){throw 'Processed predictor self-test failed.'}
-    if([math]::Abs($processed.y_centered[0]+1.0)-gt1e-12-or[math]::Abs($processed.y_centered[1]-1.0)-gt1e-12){throw 'Processed response self-test failed.'}
+    $cell00=$processed.X[0,0]
+    $cell01=$processed.X[0,1]
+    $cell10=$processed.X[1,0]
+    $cell11=$processed.X[1,1]
+    if([math]::Abs($cell00-1.0)-gt1e-12-or[math]::Abs($cell01+1.0)-gt1e-12-or[math]::Abs($cell10+1.0)-gt1e-12-or[math]::Abs($cell11-1.0)-gt1e-12){throw 'Processed predictor self-test failed.'}
+    $centered0=$processed.y_centered[0]
+    $centered1=$processed.y_centered[1]
+    if([math]::Abs($centered0+1.0)-gt1e-12-or[math]::Abs($centered1-1.0)-gt1e-12){throw 'Processed response self-test failed.'}
     $prior=Get-CfaBenchmarkPred @([pscustomobject]@{MKT_RET_USD_UTC_DAY_OBS_L1='0.25'}) 'BENCH_PRIOR_MARKET_RETURN' 0.0
-    if($prior.Count-ne1-or[math]::Abs($prior[0]-0.25)-gt1e-12){throw 'Benchmark prediction self-test failed.'}
+    $prior0=$prior[0]
+    if($prior.Count-ne1-or[math]::Abs($prior0-0.25)-gt1e-12){throw 'Benchmark prediction self-test failed.'}
     return $true
 }
