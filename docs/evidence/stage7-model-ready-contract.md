@@ -1,12 +1,12 @@
-# CFA Stage 7 model-ready dataset and validation-design contract — construction PASS / independent freeze blocked — 2026-09-02
+# CFA Stage 7 model-ready dataset and validation-design contract — frozen — 2026-09-02
 
-Status: **STAGE7_ACTIVE / STAGE6_ENTRY_PASS / MODEL_ELIGIBILITY_PASS / MODEL_POPULATION_PASS / TIME_SPLIT_PASS / PREPROCESSING_PASS / BENCHMARK_PLAN_PASS / MODEL_READY_DATASET_PASS / STAGE7_FREEZE_BLOCKED**
+Status: **STAGE7_FROZEN / STAGE6_ENTRY_PASS / MODEL_ELIGIBILITY_PASS / MODEL_POPULATION_PASS / TIME_SPLIT_PASS / PREPROCESSING_PASS / BENCHMARK_PLAN_PASS / MODEL_READY_DATASET_PASS / CFA-S7-008_PASS**
 
 ## Authority and frozen entry
 
 This contract is subordinate to the CFA Source of Truth and the frozen Stage 6 data-quality/leakage result. Stage 7 may not redefine upstream identities, news matching, responses, factors, timestamps, missingness reasons, or leakage policy.
 
-Frozen inputs:
+Frozen upstream inputs:
 
 - Stage 4 response SHA-256: `8e0cc38607be227339c71cb5daecbbb48af1e05c064472a019f0ffe9be11a004`;
 - Stage 5 factor CSV SHA-256: `c35bd125b7ce3036009a2e75f240bc2cd81168dcec3847dd1d0863cc00bc902b`;
@@ -16,7 +16,7 @@ Frozen inputs:
 - Stage 6 freeze candidate SHA-256: `cce6e7772beb385880390c943e04cc4e987bbaa12b87cdf049d81e9223aa83a2`;
 - `CFA-S6-001` through `CFA-S6-009`: **PASS**.
 
-No PLS fitting or hyperparameter selection may begin before Stage 7 is frozen.
+Stage 8 may proceed only from the exact Stage 7 hashes frozen below. Any change to population, matrix, split, preprocessing, benchmark plan, or model-ready artifacts requires a new versioned Stage 7 design and independent revalidation.
 
 ## `CFA-S7-001` frozen Stage 6 entry — PASS
 
@@ -59,9 +59,9 @@ Predictor order is exactly:
 6. `NEWS_V6_MATCH_COUNT_6H_LAG15`;
 7. `NEWS_V6_SOURCE_COUNT_24H_LAG15`.
 
-Observed pre-embargo eligibility is **27,152 rows / 418 bases / 68 days**. The constructed non-embargo model-ready population is **26,337 rows**; the two temporal embargo days account for **815** separately preserved excluded rows.
+Observed pre-embargo eligibility is **27,152 rows / 418 bases / 68 days**. The frozen non-embargo model-ready population is **26,337 rows**; the two temporal embargo days account for **815** separately preserved excluded rows.
 
-`CFA-S7-003 = PASS` pending no further population change; independent `CFA-S7-008` must verify exact keys and hashes.
+`CFA-S7-003 = PASS`.
 
 ## `CFA-S7-004` chronological split and embargo — PASS
 
@@ -75,9 +75,7 @@ For the 68 eligible response days sorted ascending:
 - index 55: `EMBARGO_VALIDATION_TEST`;
 - indexes 56–68: `TEST`.
 
-Canonical shorthand: **40 TRAIN / 13 validation / 13 test**, plus two one-day embargoes.
-
-Direct construction observed:
+Frozen split:
 
 - `TRAIN`: **40 days / 15,648 rows / 410 bases**;
 - first embargo: **2025-05-17 / 404 rows**;
@@ -91,7 +89,9 @@ Use rules:
 - `TEST` may not influence design or component choice;
 - after validation-only selection, final test model may be refit on `TRAIN + VALIDATION`, excluding both embargo days, then evaluated once on `TEST`.
 
-`CFA-S7-004 = PASS`; independent `CFA-S7-008` must verify exact day-role assignments and response-availability embargo ordering.
+The independent validator confirmed the exact day-role assignments and response-availability separation across both embargoes.
+
+`CFA-S7-004 = PASS`.
 
 ## `CFA-S7-005` preprocessing — PASS
 
@@ -111,13 +111,13 @@ Response:
 - test refit center = `TRAIN + VALIDATION` response mean;
 - predictions are returned to original log-return units by adding the fitted mean.
 
-The construction emitted a phase-specific preprocessing-parameter CSV from the frozen raw model rows.
+Exactly **16** phase/variable preprocessing parameters were independently recomputed from the permitted fit roles and validated.
 
-`CFA-S7-005 = PASS`; independent `CFA-S7-008` must recompute every parameter from the exact permitted fit roles before freeze.
+`CFA-S7-005 = PASS`.
 
 ## `CFA-S7-006` benchmark and evaluation plan — PASS
 
-Benchmarks are fixed before Stage 8 performance is observed:
+Benchmarks are frozen before any Stage 8 performance is observed:
 
 1. `BENCH_ZERO_RETURN`: prediction `0`; no fit.
 2. `BENCH_PRIOR_MARKET_RETURN`: prediction `MKT_RET_USD_UTC_DAY_OBS_L1`; no fit.
@@ -131,46 +131,62 @@ Metrics:
 
 If Stage 8 compares PLS component counts, select lowest `VALIDATION` RMSE; exact ties choose the smaller component count. Test metrics are forbidden from component selection.
 
-The benchmark-plan JSON was constructed before any Stage 8 fitting or held-out performance evaluation.
+The independent validator confirmed the exact benchmark-plan identity.
 
-`CFA-S7-006 = PASS`; independent `CFA-S7-008` must verify exact benchmark-plan identity/hash.
+`CFA-S7-006 = PASS`.
 
 ## `CFA-S7-007` model-ready artifact — PASS
 
-The candidate was constructed reproducibly from the exact frozen response/factor artifacts and Stage 7 eligibility receipt. It preserves:
+The exact model-ready artifact preserves:
 
 - key, predictor cutoff, pair/source-member lineage;
 - temporal role `TRAIN`, `VALIDATION`, or `TEST`;
 - embargo rows separately with explicit exclusion reason;
-- seven predictors in frozen order;
+- seven predictors in the frozen order;
 - response ID/value;
 - no missing model values;
 - split assignment, preprocessing parameters, and benchmark-plan identity.
 
-Direct construction observed **26,337 model rows + 815 embargo rows = 27,152 eligible rows**.
+Frozen accounting:
 
-Local candidate receipt:
+- eligible rows: **27,152**;
+- model rows: **26,337**;
+- embargo rows: **815**;
+- `26,337 + 815 = 27,152`.
 
-`C:\Users\Emmanuel\Documents\CFA-local\stage7-model-ready\20260902-134023-04e30bf2c0ee4dfdb42cf88a0db2b259\stage7-model-ready-candidate-receipt.json`
+`CFA-S7-007 = PASS`.
 
-`CFA-S7-007 = PASS` for construction. The artifact is not frozen until `CFA-S7-008 = PASS`.
+## `CFA-S7-008` independent validation and Stage 7 freeze — PASS
 
-## `CFA-S7-008` independent validation and freeze — BLOCKED
+Direct independent evidence:
 
-Must independently verify from the candidate receipt and referenced files:
+`docs/evidence/stage7-model-ready-independent-validation-freeze-20260902.md`.
 
-- exact upstream/source hashes;
-- all 27,152 eligibility keys accounted for exactly once across model + embargo outputs;
-- exact model-row key identity and predictor/response order;
-- exact chronological day roles and two embargo days;
-- response-availability separation across train→validation and validation→test;
-- all 16 phase/variable preprocessing parameters by direct recomputation from allowed fit roles;
-- benchmark-plan identity;
-- all output hashes.
+The independent validator confirmed:
 
-`CFA-S7-008 = BLOCKED` until the independent validator passes and exact validated hashes are recorded.
+- exact upstream frozen Stage 4/5 source hashes and Stage 7 candidate lineage;
+- complete accounting of all **27,152** eligibility keys across model + embargo outputs;
+- exact **26,337** model-row key identity and frozen predictor/response values;
+- exact chronological day roles and embargo dates;
+- response-availability separation across TRAIN→VALIDATION and VALIDATION→TEST;
+- direct recomputation of all **16** preprocessing parameters from allowed fit roles;
+- benchmark-plan identity and component-selection rule;
+- exact output hashes.
 
-## Current gate table
+Frozen Stage 7 hashes:
+
+- candidate receipt SHA-256: `9913ae948894c26ebdbf284e25b9268109c9c645eeceb33b1195de690ef04702`;
+- model-ready CSV SHA-256: `fc0498881957688acffd6fe3805ac96037ca884304bff9964e1e248b4ec0e024`;
+- split assignment SHA-256: `4a0878a60ba16dfaddc10591931ec4c659efe7c04415338805f660a998625874`;
+- embargo exclusions SHA-256: `d938a382a4a8bb654d07d678fcebfe887a32933b0c1c5195104f38e3017c4fdd`;
+- preprocessing parameters SHA-256: `8a2a02676236b31d05dbdba6e11f8cd4f4086973448958337e0ee50c52329578`;
+- benchmark plan SHA-256: `9b2fd8c9deae62b7c8bf1e04df6ec4d8926844fb8becd995e1efacb927399f9c`;
+- independent validation checks SHA-256: `e591ca703ce68dd5b6d92c9dc770da57d042ec1a3462591473ec2737a98a6cef`;
+- independent validation receipt SHA-256: `e3e9088e511b74e875e1bccc3e8d292acc9c49209c93943117195f8ace5b3756`.
+
+`CFA-S7-008 = PASS`.
+
+## Frozen gate table
 
 | ID | Requirement | Status |
 |---|---|---|
@@ -181,10 +197,10 @@ Must independently verify from the candidate receipt and referenced files:
 | `CFA-S7-005` | Freeze preprocessing and missing-data policy | PASS |
 | `CFA-S7-006` | Freeze benchmark plan and evaluation metrics | PASS |
 | `CFA-S7-007` | Construct exact model-ready artifact | PASS |
-| `CFA-S7-008` | Independently validate and freeze Stage 7 | BLOCKED |
+| `CFA-S7-008` | Independently validate and freeze Stage 7 | PASS |
 
 ## Completion boundary
 
-Stage 7 is complete only when `CFA-S7-008 = PASS` on the exact candidate artifacts and hashes.
+Stage 7 is **FROZEN**. The predictor matrix, response vector, retained population, chronological split and embargoes, preprocessing, leakage controls, benchmark plan, and exact model-ready artifacts are all fixed and independently validated.
 
-**Stage 8 PLS programming remains BLOCKED until `CFA-S7-008 = PASS`.**
+Stage 8 PLS programming is now admissible, but only against this exact frozen Stage 7 handoff. No Stage 8 implementation may alter Stage 7 design choices or use TEST results for component selection.
