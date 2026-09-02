@@ -1,0 +1,53 @@
+name: CFA Stage 6 Freeze Finalizer Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Finalize-CfaStage6Validation.ps1'
+      - '.github/workflows/stage6-freeze-finalizer-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Finalize-CfaStage6Validation.ps1'
+      - '.github/workflows/stage6-freeze-finalizer-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse finalizer with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Finalize-CfaStage6Validation.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse finalizer with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Finalize-CfaStage6Validation.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run finalizer self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Finalize-CfaStage6Validation.ps1 -Stage6ValidationReceiptPath . -SelfTest
+
+      - name: Run finalizer self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Finalize-CfaStage6Validation.ps1 -Stage6ValidationReceiptPath . -SelfTest
+
+      - name: Enforce narrow offline freeze surface
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Finalize-CfaStage6Validation.ps1' -Raw
+          foreach($marker in @('ExpectedStage4Sha','ExpectedFactorSha','CFA STAGE 6 FREEZE CANDIDATE','stage6-freeze-candidate.json','Reject CSV is not the expected header-only zero-violation artifact','Diagnostics variable set/order mismatch','CFA-S6-009')){if($body -notmatch [regex]::Escape($marker)){throw "Finalizer marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 6 finalizer must remain offline and database-free.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 6 finalizer contains forbidden database write/DDL.'}
