@@ -1,0 +1,58 @@
+name: CFA Stage 7 Independent Model-Ready Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage7ModelReadyCandidate.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-ready-independent-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage7ModelReadyCandidate.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-ready-independent-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage7ModelReadyCandidate.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Validate-CfaStage7ModelReadyCandidate.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run validator self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Validate-CfaStage7ModelReadyCandidate.ps1 -CandidateReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run validator self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage7ModelReadyCandidate.ps1 -CandidateReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce independent offline validation surface
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Validate-CfaStage7ModelReadyCandidate.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage7-model-ready-contract.md' -Raw
+          foreach($marker in @('MODEL_READY_DATASET_PASS','CFA-S7-008','40 TRAIN / 13 validation / 13 test','sample standard deviation','BENCH_PRIOR_MARKET_RETURN')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 7 contract marker missing: $marker"}}
+          foreach($marker in @('ExpectedEligibleRows=27152','ExpectedModelRows=26337','ExpectedEmbargoRows=815','ExpectedEmbargo1Day','ExpectedEmbargo2Day','recomputedEligible','Train response availability is not strictly before validation start','Preprocessing parameters independently validated: 16','BENCH_ZERO_RETURN|BENCH_PRIOR_MARKET_RETURN|BENCH_RESPONSE_MEAN','stage7-model-ready-independent-validation-checks.csv','stage7-model-ready-independent-validation.json')){if($body -notmatch [regex]::Escape($marker)){throw "Independent validator marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 7 independent validator must remain offline and database-free.'}
+          if($body -match '(?i)PLSRegression|fit\(|predict\(|n_components|cross[_ -]?val'){throw 'Stage 7 independent validator must not fit/evaluate PLS.'}
+          if($body -match '(?i)winsori[sz]|carry[-_ ]?forward|cross[-_ ]?rate'){throw 'Stage 7 independent validator contains forbidden data substitution/preprocessing.'}
