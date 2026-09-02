@@ -1,0 +1,67 @@
+name: CFA Stage 8 PLS Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/CfaStage8PlsCore.ps1'
+      - 'scripts/windows/CfaStage8PlsData.ps1'
+      - 'scripts/windows/Run-CfaStage8Pls.ps1'
+      - 'docs/evidence/stage8-pls-contract.md'
+      - '.github/workflows/stage8-pls-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/CfaStage8PlsCore.ps1'
+      - 'scripts/windows/CfaStage8PlsData.ps1'
+      - 'scripts/windows/Run-CfaStage8Pls.ps1'
+      - 'docs/evidence/stage8-pls-contract.md'
+      - '.github/workflows/stage8-pls-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 8 scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8PlsCore.ps1','.\scripts\windows\CfaStage8PlsData.ps1','.\scripts\windows\Run-CfaStage8Pls.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+          }
+
+      - name: Parse Stage 8 scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8PlsCore.ps1','.\scripts\windows\CfaStage8PlsData.ps1','.\scripts\windows\Run-CfaStage8Pls.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+          }
+
+      - name: Run Stage 8 PLS self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Run-CfaStage8Pls.ps1 -Stage7ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run Stage 8 PLS self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage8Pls.ps1 -Stage7ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce frozen selection boundary and dependency-free surface
+        shell: powershell
+        run: |
+          $core=Get-Content '.\scripts\windows\CfaStage8PlsCore.ps1' -Raw
+          $runner=Get-Content '.\scripts\windows\Run-CfaStage8Pls.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage8-pls-contract.md' -Raw
+          foreach($m in @('PLS1/NIPALS','components 1 through 7','LOWEST_VALIDATION_RMSE','TEST metrics are forbidden','CFA-S8-007')){if($contract -notmatch [regex]::Escape($m)){throw "Stage 8 contract marker missing: $m"}}
+          foreach($m in @('Fit-CfaPls1Path','Solve-CfaLinearSystem','Test-CfaStage8PlsCore','beta')){if($core -notmatch [regex]::Escape($m)){throw "PLS core marker missing: $m"}}
+          foreach($m in @('selectedK','TEST phase begins after selectedK is fixed above','LOWEST_VALIDATION_RMSE','test_used_for_selection=$false','stage8-validation-component-metrics.csv','stage8-test-selected-predictions.csv','stage8-pls-run-receipt.json')){if($runner -notmatch [regex]::Escape($m)){throw "Stage 8 runner marker missing: $m"}}
+          $all=$core+"`n"+$runner
+          if($all -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 8 PLS must remain offline and database-free.'}
+          if($all -match '(?i)numpy|scikit|sklearn|pip\s+install|conda\s+install'){throw 'Stage 8 PLS must not assume undeclared external packages.'}
+          if($runner -match '(?i)Random|Get-Random|Shuffle'){throw 'Stage 8 must not randomize frozen split rows.'}
