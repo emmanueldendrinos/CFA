@@ -69,8 +69,9 @@ jobs:
           foreach($marker in @(
             '-ne[long]$dayAgg[$k][$p]',
             '$rv.($p.Name)',
-            "$ExpectedStage3Sha='c1741dc7ae8de4272fa3c55f59c9efb035e4e72b0c330939b1e12caa6742d20c'",
+            '$ExpectedStage3Sha=',
+            'c1741dc7ae8de4272fa3c55f59c9efb035e4e72b0c330939b1e12caa6742d20c',
             'receipt.sources.stage3_matches_sha256-ne$ExpectedStage3Sha',
-            "if((Get-Sha $stage3Path)-ne$ExpectedStage3Sha)"
+            '(Get-Sha $stage3Path)-ne$ExpectedStage3Sha'
           )){if($source -notmatch [regex]::Escape($marker)){throw "Source validator repair target missing: $marker"}}
           if($v2 -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'V2 validator launcher must remain offline.'}
