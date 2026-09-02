@@ -169,15 +169,15 @@ function Get-CfaRegressionMetrics {
 }
 
 function Test-CfaStage8PlsCore {
-    $predictors=[double[,]]::new(4,2)
-    $fixture=@(@(-1.0,-1.0),@(-1.0,1.0),@(1.0,-1.0),@(1.0,1.0))
-    for($row=0;$row -lt 4;$row++){for($col=0;$col -lt 2;$col++){$predictors[$row,$col]=$fixture[$row][$col]}}
-    [double[]]$response=@(-1.0,-3.0,3.0,1.0)
+    $predictors=[double[,]]::new(5,2)
+    $fixture=@(@(-2.0,-1.0),@(-1.0,0.0),@(0.0,1.0),@(1.0,1.0),@(2.0,3.0))
+    for($row=0;$row -lt 5;$row++){for($col=0;$col -lt 2;$col++){$predictors[$row,$col]=$fixture[$row][$col]}}
+    [double[]]$response=@(-3.0,-2.0,-1.0,1.0,1.0)
     $path=Fit-CfaPls1Path $predictors $response 2
     $beta=[double[]]$path.betas[1]
     if([math]::Abs($beta[0]-2.0) -gt 1e-10 -or [math]::Abs($beta[1]+1.0) -gt 1e-10){throw "PLS coefficient self-test failed: $($beta[0]), $($beta[1])"}
     $predictions=Predict-CfaPlsOriginal $predictors $beta 0.0
-    for($row=0;$row -lt 4;$row++){if([math]::Abs($predictions[$row]-$response[$row]) -gt 1e-10){throw "PLS prediction self-test failed at row $row"}}
+    for($row=0;$row -lt 5;$row++){if([math]::Abs($predictions[$row]-$response[$row]) -gt 1e-10){throw "PLS prediction self-test failed at row $row"}}
     $metrics=Get-CfaRegressionMetrics $response $predictions 0.0
     if($metrics.rmse -gt 1e-10 -or $metrics.mae -gt 1e-10){throw 'Metric self-test failed.'}
     return $true
