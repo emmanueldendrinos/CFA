@@ -1,0 +1,58 @@
+name: CFA Stage 7 Model-Ready Candidate Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Build-CfaStage7ModelReadyCandidate.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-ready-candidate-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Build-CfaStage7ModelReadyCandidate.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-ready-candidate-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse constructor with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Build-CfaStage7ModelReadyCandidate.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse constructor with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Build-CfaStage7ModelReadyCandidate.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run constructor self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Build-CfaStage7ModelReadyCandidate.ps1 -Stage7EligibilityReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run constructor self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage7ModelReadyCandidate.ps1 -Stage7EligibilityReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce Stage 7 design and offline surface
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Build-CfaStage7ModelReadyCandidate.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage7-model-ready-contract.md' -Raw
+          foreach($marker in @('MODEL_ELIGIBILITY_PASS','40 TRAIN / 13 validation / 13 test','BENCH_ZERO_RETURN','BENCH_PRIOR_MARKET_RETURN','BENCH_RESPONSE_MEAN','sample standard deviation','CFA-S7-008')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 7 contract marker missing: $marker"}}
+          foreach($marker in @('ExpectedEligibleRows=27152','ExpectedEligibleBases=418','ExpectedEligibleDays=68','EMBARGO_TRAIN_VALIDATION','EMBARGO_VALIDATION_TEST','CENTER_AND_SAMPLE_SD_SCALE','CENTER_ONLY','BENCH_ZERO_RETURN','BENCH_PRIOR_MARKET_RETURN','LOWEST_VALIDATION_RMSE','stage7-model-ready-candidate.csv','stage7-preprocessing-parameters.csv','stage7-model-ready-candidate-receipt.json')){if($body -notmatch [regex]::Escape($marker)){throw "Stage 7 constructor marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 7 constructor must remain offline and database-free.'}
+          if($body -match '(?i)PLSRegression|fit\(|predict\(|n_components|cross[_ -]?val'){throw 'Stage 7 constructor must not fit or evaluate PLS.'}
+          if($body -match '(?i)winsori[sz]|imput|carry[-_ ]?forward|cross[-_ ]?rate'){throw 'Stage 7 constructor contains forbidden missing-data/model preprocessing.'}
