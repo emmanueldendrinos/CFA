@@ -1,6 +1,6 @@
-# CFA Stage 5 candidate-factor contract — definitions PASS / construction PASS / independent validation UNVERIFIED — 2026-09-02
+# CFA Stage 5 candidate-factor contract — FROZEN — 2026-09-02
 
-Status: **STAGE5_ACTIVE / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_FACTOR_DEFINITIONS_PASS / FACTOR_ARTIFACT_CONSTRUCTION_PASS / FACTOR_ARTIFACT_VALIDATION_UNVERIFIED / STAGE5_FREEZE_BLOCKED**
+Status: **STAGE5_FROZEN / FACTOR_SOURCE_RECONCILIATION_PASS / MARKET_FACTOR_DEFINITIONS_PASS / NEWS_FACTOR_DEFINITIONS_PASS / FACTOR_ARTIFACT_CONSTRUCTION_PASS / FACTOR_ARTIFACT_VALIDATION_PASS / CFA-S5-009_PASS**
 
 ## Authority and entry condition
 
@@ -212,11 +212,11 @@ Stage 5 intrinsic scaling for all news factors: none.
 
 `CFA-S5-007 = PASS` — exact initial news-hype factor definitions and missingness policy.
 
-## Candidate factor artifact contract and construction — PASS
+## Frozen factor artifact — PASS
 
-The Stage 5 candidate artifact must contain exactly one row for every frozen Stage 4 response key: **37,058 rows** at grain `(base_asset_id,response_day_utc)`.
+The exact Stage 5 factor artifact contains one row for every frozen Stage 4 response key: **37,058 rows** at grain `(base_asset_id,response_day_utc)` across **434** bases and **91** response days.
 
-It must contain the seven approved factors:
+It contains the seven approved factors:
 
 - `MKT_RET_USD_UTC_DAY_OBS_L1`;
 - `MKT_RANGE_LOG_UTC_DAY_L1`;
@@ -226,7 +226,7 @@ It must contain the seven approved factors:
 - `NEWS_V6_MATCH_COUNT_6H_LAG15`;
 - `NEWS_V6_SOURCE_COUNT_24H_LAG15`.
 
-For reproducibility and later leakage/data-quality testing it must also preserve, per row:
+For reproducibility and later leakage/data-quality testing it preserves, per row:
 
 - `base_asset_id`;
 - `response_day_utc`;
@@ -239,27 +239,35 @@ For reproducibility and later leakage/data-quality testing it must also preserve
 - equivalent news batch-window start/end;
 - factor-source lineage sufficient to reproduce the values.
 
-No imputation, scaling, winsorization, clipping, standardization, centering, or model preprocessing is permitted in Stage 5 construction.
+No imputation, scaling, winsorization, clipping, standardization, centering, or model preprocessing is performed by Stage 5.
 
-Direct construction evidence:
+Construction evidence:
 
 `docs/evidence/stage5-factor-artifact-construction-local-20260901.md`.
 
-The exact local construction reported:
+Independent validation and freeze evidence:
 
-- factor rows: **37,058**;
-- distinct bases: **434**;
+`docs/evidence/stage5-factor-artifact-independent-validation-20260902.md`.
+
+Exact frozen factor CSV SHA-256:
+
+`c35bd125b7ce3036009a2e75f240bc2cd81168dcec3847dd1d0863cc00bc902b`.
+
+Independent validation reported:
+
+- factor rows / bases / days: **37,058 / 434 / 91**;
 - market available / missing: **36,505 / 553**;
 - news 24h available / source-incomplete / outside-population: **27,267 / 9,518 / 273**;
 - news 6h available / source-incomplete / outside-population: **28,849 / 7,936 / 273**;
-- review rows: **46**;
-- PostgreSQL session: `default_transaction_read_only=on`.
+- independently validated review rows: **46**.
 
-`CFA-S5-008 = PASS` — the exact seven-factor validation candidate was constructed with the required cardinality and expected source/missingness partitions.
+The independent validator reconciled exact Stage 4 keys and pair lineage, factor formulas and market witnesses, timing/window boundaries, structural missingness, frozen Stage 3 V6 lineage and hash semantics, the 8,736-slot source registry, record-batch/source-slot lineage, independent recomputation of all three news factors, all 91 day-summary rows, and all 46 review rows.
 
-`CFA-S5-014 = UNVERIFIED` — independent artifact validation has not yet passed against the exact candidate receipt and referenced outputs.
+Therefore:
 
-`CFA-S5-009 = BLOCKED` pending `CFA-S5-014 = PASS` and explicit recording of the exact candidate/output hashes before freeze.
+- `CFA-S5-008 = PASS` — candidate factor artifact construction;
+- `CFA-S5-014 = PASS` — independent factor artifact validation;
+- `CFA-S5-009 = PASS` — Stage 5 factor definitions and exact artifact freeze.
 
 ## Superseded provider-metadata exploration
 
@@ -280,11 +288,11 @@ The bucket-list and exact-object GCS metadata attempts are retained as historica
 | `CFA-S5-011` | Validate historical GDELT availability policy `A_NEWS=B+15m` | PASS |
 | `CFA-S5-007` | Approve exact initial news-hype factors and missingness policy | PASS |
 | `CFA-S5-008` | Construct candidate factor artifact | PASS |
-| `CFA-S5-014` | Independently validate exact factor artifact/receipt/lineage | UNVERIFIED |
-| `CFA-S5-009` | Freeze Stage 5 factor definitions/artifact | BLOCKED |
+| `CFA-S5-014` | Independently validate exact factor artifact/receipt/lineage | PASS |
+| `CFA-S5-009` | Freeze Stage 5 factor definitions/artifact | PASS |
 
 ## Current completion boundary
 
-All Stage 5 factor definitions, source populations, source completeness rules, timing/leakage availability rules, and candidate construction are PASS. The remaining Stage 5 work is independent validation of the exact candidate artifact and then explicit freeze on validated hashes.
+**Stage 5 is complete and frozen** on the exact seven-factor artifact with SHA-256 `c35bd125b7ce3036009a2e75f240bc2cd81168dcec3847dd1d0863cc00bc902b`.
 
-Stage 6 data-quality/leakage testing must not begin until `CFA-S5-014 = PASS` and `CFA-S5-009 = PASS`. Stage 7 and PLS remain blocked.
+The required project sequence may now advance to **Stage 6: data-quality and leakage testing**. Stage 7 model-ready dataset/validation-design freeze and Stage 8 PLS remain blocked until the Stage 6 hard gates pass.
