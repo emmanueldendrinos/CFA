@@ -180,5 +180,6 @@ function Test-CfaStage8PlsCore {
     for($row=0;$row -lt 5;$row++){if([math]::Abs($predictions[$row]-$response[$row]) -gt 1e-10){throw "PLS prediction self-test failed at row $row"}}
     $metrics=Get-CfaRegressionMetrics $response $predictions 0.0
     if($metrics.rmse -gt 1e-10 -or $metrics.mae -gt 1e-10){throw 'Metric self-test failed.'}
+    if(-not(Test-CfaStage8PlsData)){throw 'PLS data/preprocessing self-test returned false.'}
     return $true
 }
