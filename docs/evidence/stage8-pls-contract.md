@@ -106,6 +106,8 @@ For each component count:
 
 ## `CFA-S8-004` component selection
 
+Machine-readable selection criterion: **`LOWEST_VALIDATION_RMSE`**.
+
 Select the component count with the lowest VALIDATION RMSE. Exact RMSE ties select the smaller component count.
 
 No TEST metric or TEST prediction may influence selection. TEST metrics are forbidden from component selection.
