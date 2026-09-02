@@ -1,0 +1,59 @@
+name: CFA Stage 7 Model Eligibility Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Diagnose-CfaStage7ModelEligibility.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-eligibility-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Diagnose-CfaStage7ModelEligibility.ps1'
+      - 'docs/evidence/stage7-model-ready-contract.md'
+      - '.github/workflows/stage7-model-eligibility-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse diagnostic with PowerShell 7
+        shell: pwsh
+        run: |
+          $file='.\scripts\windows\Diagnose-CfaStage7ModelEligibility.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse diagnostic with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file='.\scripts\windows\Diagnose-CfaStage7ModelEligibility.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run diagnostic self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Diagnose-CfaStage7ModelEligibility.ps1 -Stage6ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run diagnostic self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Diagnose-CfaStage7ModelEligibility.ps1 -Stage6ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce observational offline surface
+        shell: powershell
+        run: |
+          $body=Get-Content '.\scripts\windows\Diagnose-CfaStage7ModelEligibility.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage7-model-ready-contract.md' -Raw
+          foreach($marker in @('STAGE7_ACTIVE','CFA-S7-001','CFA-S7-002','CFA-S7-008','5c8fd64d367af847ea1efa25e34cddca05239186282c6d97a4ca70de104a3089','c35bd125b7ce3036009a2e75f240bc2cd81168dcec3847dd1d0863cc00bc902b')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 7 contract marker missing: $marker"}}
+          foreach($marker in @('MODEL_ELIGIBILITY_V1','all_seven_eligible','stage7-availability-patterns.csv','stage7-eligibility-by-day.csv','stage7-eligibility-by-asset.csv','stage7-all-seven-eligible-keys.csv','stage7-complete-case-variable-diagnostics.csv','stage7-chronological-split-candidates.csv','CFA-S7-002')){if($body -notmatch [regex]::Escape($marker)){throw "Stage 7 diagnostic marker missing: $marker"}}
+          if($body -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 7 eligibility diagnostic must remain offline and database-free.'}
+          if($body -match '(?i)INSERT\s+INTO|UPDATE\s+[^\r\n]+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE'){throw 'Stage 7 eligibility diagnostic contains forbidden database write/DDL.'}
+          if($body -match '(?i)PLSRegression|fit\(|predict\(|cross_val|GridSearch|RandomForest|XGBoost'){throw 'Stage 7 eligibility diagnostic must not fit models.'}
+          if($body -match '-cmp'){throw 'Unsupported comparison operator reintroduced.'}
