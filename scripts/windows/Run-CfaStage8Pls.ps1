@@ -30,7 +30,7 @@ function Write-CfaPredictionCsv {
     @($out.ToArray())|Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8
 }
 
-if($SelfTest){try{if(-not(Test-CfaStage8PlsCore)){throw 'PLS core self-test returned false.'};Write-Host 'SELF-TEST: PASS';exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
+if($SelfTest){try{if(-not(Test-CfaStage8PlsCore)){throw 'PLS core self-test returned false.'};Write-Host 'SELF-TEST: PASS';exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;if($_.ScriptStackTrace){Write-Host $_.ScriptStackTrace};exit 1}}
 
 try{
     $stage8Contract=Get-Content -LiteralPath (Require-CfaFile (Join-Path $RepoRoot 'docs\evidence\stage8-pls-contract.md') 'Stage 8 contract') -Raw
