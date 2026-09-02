@@ -10,9 +10,13 @@ function Solve-CfaLinearSystem {
         $aug[$i,$N]=$B[$i]
     }
     for($col=0;$col -lt $N;$col++){
-        $pivot=$col;$max=[math]::Abs($aug[$col,$col])
+        $pivot=$col
+        $pivotCell=$aug[$col,$col]
+        $max=[math]::Abs($pivotCell)
         for($r=$col+1;$r -lt $N;$r++){
-            $v=[math]::Abs($aug[$r,$col]);if($v -gt $max){$max=$v;$pivot=$r}
+            $candidateCell=$aug[$r,$col]
+            $v=[math]::Abs($candidateCell)
+            if($v -gt $max){$max=$v;$pivot=$r}
         }
         if($max -le $script:CfaPlsTolerance){throw "Singular linear system at column $col"}
         if($pivot -ne $col){
