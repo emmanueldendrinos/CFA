@@ -61,11 +61,41 @@ $replacementNews24Outside=@'
                 if($has24MatchValue -or $has24SourceValue){throw '24h outside row contains value'}
 '@
 
+$targetStatType=@'
+function New-Stat {
+    return [ordered]@{non_null=[long]0;null=[long]0;min=$null;max=$null;unique=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal))}
+}
+'@
+$replacementStatType=@'
+function New-Stat {
+    return @{non_null=[long]0;null=[long]0;min=$null;max=$null;unique=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal))}
+}
+'@
+
+$targetStatSelfTest=@'
+    $failed=$false
+    try{[void](Parse-DoubleStrict 'NaN' 'bad double')}catch{$failed=$true}
+    if(-not$failed){throw 'Non-finite failure-path self-test failed.'}
+    Write-Host 'SELF-TEST: PASS'
+'@
+$replacementStatSelfTest=@'
+    $failed=$false
+    try{[void](Parse-DoubleStrict 'NaN' 'bad double')}catch{$failed=$true}
+    if(-not$failed){throw 'Non-finite failure-path self-test failed.'}
+    $statProbe=New-Stat
+    Add-StatValue $statProbe 1.25 '1.25'
+    Add-StatNull $statProbe
+    if([long]$statProbe.non_null-ne1-or[long]$statProbe.null-ne1-or[double]$statProbe.min-ne1.25-or[double]$statProbe.max-ne1.25-or$statProbe.unique.Count-ne1){throw 'Statistics accumulator self-test failed.'}
+    Write-Host 'SELF-TEST: PASS'
+'@
+
 foreach($repair in @(
     [pscustomobject]@{Name='lineage';Target=$targetLineage;Replacement=$replacementLineage},
     [pscustomobject]@{Name='market-span';Target=$targetSpan;Replacement=$replacementSpan},
     [pscustomobject]@{Name='news24-incomplete';Target=$targetNews24Incomplete;Replacement=$replacementNews24Incomplete},
-    [pscustomobject]@{Name='news24-outside';Target=$targetNews24Outside;Replacement=$replacementNews24Outside}
+    [pscustomobject]@{Name='news24-outside';Target=$targetNews24Outside;Replacement=$replacementNews24Outside},
+    [pscustomobject]@{Name='stat-type';Target=$targetStatType;Replacement=$replacementStatType},
+    [pscustomobject]@{Name='stat-selftest';Target=$targetStatSelfTest;Replacement=$replacementStatSelfTest}
 )){
     $count=[regex]::Matches($text,[regex]::Escape($repair.Target),[Text.RegularExpressions.RegexOptions]::CultureInvariant).Count
     if($count-ne1){throw "Stage 6 V2 $($repair.Name) repair target occurrence count changed: expected 1, observed $count."}
@@ -76,11 +106,12 @@ foreach($forbidden in @(
     'pair_token_opaque)-cne([string]$r.pair_token_opaque-or',
     '[long][math]::Round(($last-$first).TotalMinutes)-ne$mSpan',
     '-and-not(Is-Blank $row.NEWS_V6_SOURCE_COUNT_24H_LAG15)',
-    '-or-not(Is-Blank $row.NEWS_V6_SOURCE_COUNT_24H_LAG15)'
+    '-or-not(Is-Blank $row.NEWS_V6_SOURCE_COUNT_24H_LAG15)',
+    'return [ordered]@{non_null=[long]0;null=[long]0'
 )){
     if($text.Contains($forbidden)){throw "Stage 6 V2 unsafe expression remained after repair: $forbidden"}
 }
-foreach($required in @('$pairMismatch=','$ordinalMismatch=','$marketSpanExpected=','$has24MatchValue=','$has24SourceValue=')){if(-not$text.Contains($required)){throw "Stage 6 V2 repair marker missing: $required"}}
+foreach($required in @('$pairMismatch=','$ordinalMismatch=','$marketSpanExpected=','$has24MatchValue=','$has24SourceValue=','return @{non_null=[long]0;null=[long]0','$statProbe=New-Stat','Statistics accumulator self-test failed.')){if(-not$text.Contains($required)){throw "Stage 6 V2 repair marker missing: $required"}}
 
 $tokens=$null;$parseErrors=$null
 [System.Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$parseErrors)|Out-Null
