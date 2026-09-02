@@ -1,6 +1,6 @@
-# CFA Stage 7 model-ready dataset and validation-design contract — eligibility PASS / design candidate — 2026-09-02
+# CFA Stage 7 model-ready dataset and validation-design contract — construction PASS / independent freeze blocked — 2026-09-02
 
-Status: **STAGE7_ACTIVE / STAGE6_ENTRY_PASS / MODEL_ELIGIBILITY_PASS / MODEL_POPULATION_CANDIDATE / TIME_SPLIT_CANDIDATE / PREPROCESSING_CANDIDATE / BENCHMARK_PLAN_CANDIDATE / MODEL_READY_DATASET_UNVERIFIED / STAGE7_FREEZE_BLOCKED**
+Status: **STAGE7_ACTIVE / STAGE6_ENTRY_PASS / MODEL_ELIGIBILITY_PASS / MODEL_POPULATION_PASS / TIME_SPLIT_PASS / PREPROCESSING_PASS / BENCHMARK_PLAN_PASS / MODEL_READY_DATASET_PASS / STAGE7_FREEZE_BLOCKED**
 
 ## Authority and frozen entry
 
@@ -35,13 +35,13 @@ Observed without fitting or evaluating any model:
 - material availability patterns: **8**;
 - chronological one-boundary candidates: **67**.
 
-The diagnostic emitted exact per-pattern, per-day, per-asset, eligible-key, variable-diagnostic, and chronological-boundary artifacts whose hashes must reconcile during design construction.
-
 `CFA-S7-002 = PASS`.
 
-## `CFA-S7-003` model population and matrix — candidate rule
+## `CFA-S7-003` model population and matrix — PASS
 
-Primary eligibility requires complete numerical availability of all seven frozen predictors on the same frozen Stage 4 response key. Excluded values are upstream structural missingness already validated in Stages 5–6; no imputation, carry, interpolation, synthetic zero, cross-rate, or substitution is permitted.
+Direct construction evidence: `docs/evidence/stage7-model-ready-construction-local-20260902.md`.
+
+Primary modeling eligibility requires complete numerical availability of all seven frozen predictors on the same frozen Stage 4 response key. Excluded values are upstream structural missingness already validated in Stages 5–6. No imputation, carry, interpolation, synthetic zero, cross-rate, or substitution is permitted.
 
 Response:
 
@@ -59,11 +59,11 @@ Predictor order is exactly:
 6. `NEWS_V6_MATCH_COUNT_6H_LAG15`;
 7. `NEWS_V6_SOURCE_COUNT_24H_LAG15`.
 
-Observed pre-embargo eligibility is **27,152 rows / 418 bases / 68 days**. Exact final modeling rows remain `UNVERIFIED` until split construction.
+Observed pre-embargo eligibility is **27,152 rows / 418 bases / 68 days**. The constructed non-embargo model-ready population is **26,337 rows**; the two temporal embargo days account for **815** separately preserved excluded rows.
 
-`CFA-S7-003 = UNVERIFIED`.
+`CFA-S7-003 = PASS` pending no further population change; independent `CFA-S7-008` must verify exact keys and hashes.
 
-## `CFA-S7-004` chronological split and embargo — candidate rule
+## `CFA-S7-004` chronological split and embargo — PASS
 
 Random row splitting is prohibited; every row for a response day has one temporal role. Because response day `d` becomes available at `d+1 00:00 UTC`, one eligible response day is embargoed between fitting/tuning segments so the latest response used for fitting/tuning is available strictly before the next evaluated segment's first cutoff.
 
@@ -71,11 +71,19 @@ For the 68 eligible response days sorted ascending:
 
 - indexes 1–40: `TRAIN`;
 - index 41: `EMBARGO_TRAIN_VALIDATION`;
-- indexes 42–54: `VALIDATION` (13 days);
+- indexes 42–54: `VALIDATION`;
 - index 55: `EMBARGO_VALIDATION_TEST`;
-- indexes 56–68: `TEST` (13 days).
+- indexes 56–68: `TEST`.
 
-Canonical shorthand: **40 TRAIN / 13 validation / 13 test**, plus two one-day embargoes. The 66 non-embargo model/evaluation days therefore approximate a 60/20/20 allocation. Exact calendar boundaries, rows, and bases must be constructed and hash-pinned.
+Canonical shorthand: **40 TRAIN / 13 validation / 13 test**, plus two one-day embargoes.
+
+Direct construction observed:
+
+- `TRAIN`: **40 days / 15,648 rows / 410 bases**;
+- first embargo: **2025-05-17 / 404 rows**;
+- `VALIDATION`: **13 days / 5,323 rows / 414 bases**;
+- second embargo: **2025-05-31 / 411 rows**;
+- `TEST`: **13 days / 5,366 rows / 418 bases**.
 
 Use rules:
 
@@ -83,9 +91,9 @@ Use rules:
 - `TEST` may not influence design or component choice;
 - after validation-only selection, final test model may be refit on `TRAIN + VALIDATION`, excluding both embargo days, then evaluated once on `TEST`.
 
-`CFA-S7-004 = UNVERIFIED`.
+`CFA-S7-004 = PASS`; independent `CFA-S7-008` must verify exact day-role assignments and response-availability embargo ordering.
 
-## `CFA-S7-005` preprocessing — candidate rule
+## `CFA-S7-005` preprocessing — PASS
 
 No imputation, clipping, winsorization, nonlinear transform, or feature selection is permitted.
 
@@ -103,11 +111,11 @@ Response:
 - test refit center = `TRAIN + VALIDATION` response mean;
 - predictions are returned to original log-return units by adding the fitted mean.
 
-All preprocessing parameters must be materialized and hash-pinned. Validation/test responses may not enter predictor preprocessing statistics.
+The construction emitted a phase-specific preprocessing-parameter CSV from the frozen raw model rows.
 
-`CFA-S7-005 = UNVERIFIED`.
+`CFA-S7-005 = PASS`; independent `CFA-S7-008` must recompute every parameter from the exact permitted fit roles before freeze.
 
-## `CFA-S7-006` benchmark and evaluation plan — candidate rule
+## `CFA-S7-006` benchmark and evaluation plan — PASS
 
 Benchmarks are fixed before Stage 8 performance is observed:
 
@@ -123,11 +131,13 @@ Metrics:
 
 If Stage 8 compares PLS component counts, select lowest `VALIDATION` RMSE; exact ties choose the smaller component count. Test metrics are forbidden from component selection.
 
-`CFA-S7-006 = UNVERIFIED`.
+The benchmark-plan JSON was constructed before any Stage 8 fitting or held-out performance evaluation.
 
-## `CFA-S7-007` model-ready artifact — requirements
+`CFA-S7-006 = PASS`; independent `CFA-S7-008` must verify exact benchmark-plan identity/hash.
 
-Construct reproducibly from the exact frozen response/factor artifacts and exact Stage 7 eligibility receipt. Preserve:
+## `CFA-S7-007` model-ready artifact — PASS
+
+The candidate was constructed reproducibly from the exact frozen response/factor artifacts and Stage 7 eligibility receipt. It preserves:
 
 - key, predictor cutoff, pair/source-member lineage;
 - temporal role `TRAIN`, `VALIDATION`, or `TEST`;
@@ -135,16 +145,30 @@ Construct reproducibly from the exact frozen response/factor artifacts and exact
 - seven predictors in frozen order;
 - response ID/value;
 - no missing model values;
-- exact source/design hashes;
 - split assignment, preprocessing parameters, and benchmark-plan identity.
 
-`CFA-S7-007 = BLOCKED` pending construction.
+Direct construction observed **26,337 model rows + 815 embargo rows = 27,152 eligible rows**.
 
-## `CFA-S7-008` independent validation and freeze
+Local candidate receipt:
 
-Independently verify exact model-ready row/key identity, chronological/embargo ordering, predictor/response order, complete-availability rule, preprocessing statistics/leakage boundaries, benchmark identity, and all hashes.
+`C:\Users\Emmanuel\Documents\CFA-local\stage7-model-ready\20260902-134023-04e30bf2c0ee4dfdb42cf88a0db2b259\stage7-model-ready-candidate-receipt.json`
 
-`CFA-S7-008 = BLOCKED` until an exact candidate exists.
+`CFA-S7-007 = PASS` for construction. The artifact is not frozen until `CFA-S7-008 = PASS`.
+
+## `CFA-S7-008` independent validation and freeze — BLOCKED
+
+Must independently verify from the candidate receipt and referenced files:
+
+- exact upstream/source hashes;
+- all 27,152 eligibility keys accounted for exactly once across model + embargo outputs;
+- exact model-row key identity and predictor/response order;
+- exact chronological day roles and two embargo days;
+- response-availability separation across train→validation and validation→test;
+- all 16 phase/variable preprocessing parameters by direct recomputation from allowed fit roles;
+- benchmark-plan identity;
+- all output hashes.
+
+`CFA-S7-008 = BLOCKED` until the independent validator passes and exact validated hashes are recorded.
 
 ## Current gate table
 
@@ -152,15 +176,15 @@ Independently verify exact model-ready row/key identity, chronological/embargo o
 |---|---|---|
 | `CFA-S7-001` | Reconcile frozen Stage 6 entry | PASS |
 | `CFA-S7-002` | Measure model eligibility and chronological support | PASS |
-| `CFA-S7-003` | Freeze model population/predictor matrix/response set | UNVERIFIED |
-| `CFA-S7-004` | Freeze chronological split and embargo design | UNVERIFIED |
-| `CFA-S7-005` | Freeze preprocessing and missing-data policy | UNVERIFIED |
-| `CFA-S7-006` | Freeze benchmark plan and evaluation metrics | UNVERIFIED |
-| `CFA-S7-007` | Construct exact model-ready artifact | BLOCKED |
+| `CFA-S7-003` | Freeze model population/predictor matrix/response set | PASS |
+| `CFA-S7-004` | Freeze chronological split and embargo design | PASS |
+| `CFA-S7-005` | Freeze preprocessing and missing-data policy | PASS |
+| `CFA-S7-006` | Freeze benchmark plan and evaluation metrics | PASS |
+| `CFA-S7-007` | Construct exact model-ready artifact | PASS |
 | `CFA-S7-008` | Independently validate and freeze Stage 7 | BLOCKED |
 
 ## Completion boundary
 
-Stage 7 is complete only when predictor matrix, response vector, retained population, split/embargoes, preprocessing, leakage controls, benchmark plan, and exact model-ready artifact are frozen and independently validated.
+Stage 7 is complete only when `CFA-S7-008 = PASS` on the exact candidate artifacts and hashes.
 
 **Stage 8 PLS programming remains BLOCKED until `CFA-S7-008 = PASS`.**
