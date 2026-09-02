@@ -60,7 +60,7 @@ jobs:
           $validator=Get-Content '.\scripts\windows\Validate-CfaStage8PlsRun.ps1' -Raw
           foreach($marker in @('Get-CfaIndependentPlsPath','Solve-CfaIndependentSystem','Test-CfaStage8IndependentCore')){if($core -notmatch [regex]::Escape($marker)){throw "Independent core marker missing: $marker"}}
           foreach($marker in @('New-CfaIndependentProcessedData','Get-CfaIndependentBenchmarkPredictions','Test-CfaStage8IndependentData')){if($data -notmatch [regex]::Escape($marker)){throw "Independent data marker missing: $marker"}}
-          foreach($marker in @('CFA-S8-007','components 1 through 7','selectedComponents','Assert-CfaPredictionRows','selected_coefficients','stage8-pls-independent-validation.json')){if($validator -notmatch [regex]::Escape($marker)){throw "Independent validator marker missing: $marker"}}
+          foreach($marker in @('CFA-S8-007','componentCount=1','selectedComponents','Assert-CfaPredictionRows','selected_coefficients','stage8-pls-independent-validation.json')){if($validator -notmatch [regex]::Escape($marker)){throw "Independent validator marker missing: $marker"}}
           $all=$core+"`n"+$data+"`n"+$validator
           if($all -match '(?i)CfaStage8PlsCore\.ps1|CfaStage8PlsData\.ps1'){throw 'Independent validator must not reuse production Stage 8 core/data helpers.'}
           if($all -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Independent Stage 8 validation must remain offline and database-free.'}
