@@ -1,0 +1,67 @@
+name: CFA Stage 8 Independent PLS Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/CfaStage8IndependentPlsCore.ps1'
+      - 'scripts/windows/CfaStage8IndependentData.ps1'
+      - 'scripts/windows/Validate-CfaStage8PlsRun.ps1'
+      - 'docs/evidence/stage8-pls-contract.md'
+      - '.github/workflows/stage8-pls-independent-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/CfaStage8IndependentPlsCore.ps1'
+      - 'scripts/windows/CfaStage8IndependentData.ps1'
+      - 'scripts/windows/Validate-CfaStage8PlsRun.ps1'
+      - 'docs/evidence/stage8-pls-contract.md'
+      - '.github/workflows/stage8-pls-independent-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse independent validator with PowerShell 7
+        shell: pwsh
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8IndependentPlsCore.ps1','.\scripts\windows\CfaStage8IndependentData.ps1','.\scripts\windows\Validate-CfaStage8PlsRun.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 independent validator parse failed.'}
+          }
+
+      - name: Parse independent validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8IndependentPlsCore.ps1','.\scripts\windows\CfaStage8IndependentData.ps1','.\scripts\windows\Validate-CfaStage8PlsRun.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 independent validator parse failed.'}
+          }
+
+      - name: Run independent validator self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Validate-CfaStage8PlsRun.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run independent validator self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage8PlsRun.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce independent recomputation surface
+        shell: powershell
+        run: |
+          $core=Get-Content '.\scripts\windows\CfaStage8IndependentPlsCore.ps1' -Raw
+          $data=Get-Content '.\scripts\windows\CfaStage8IndependentData.ps1' -Raw
+          $validator=Get-Content '.\scripts\windows\Validate-CfaStage8PlsRun.ps1' -Raw
+          foreach($marker in @('Get-CfaIndependentPlsPath','Solve-CfaIndependentSystem','Test-CfaStage8IndependentCore')){if($core -notmatch [regex]::Escape($marker)){throw "Independent core marker missing: $marker"}}
+          foreach($marker in @('New-CfaIndependentProcessedData','Get-CfaIndependentBenchmarkPredictions','Test-CfaStage8IndependentData')){if($data -notmatch [regex]::Escape($marker)){throw "Independent data marker missing: $marker"}}
+          foreach($marker in @('CFA-S8-007','components 1 through 7','selectedComponents','Assert-CfaPredictionRows','selected_coefficients','stage8-pls-independent-validation.json')){if($validator -notmatch [regex]::Escape($marker)){throw "Independent validator marker missing: $marker"}}
+          $all=$core+"`n"+$data+"`n"+$validator
+          if($all -match '(?i)CfaStage8PlsCore\.ps1|CfaStage8PlsData\.ps1'){throw 'Independent validator must not reuse production Stage 8 core/data helpers.'}
+          if($all -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Independent Stage 8 validation must remain offline and database-free.'}
+          if($all -match '(?i)numpy|scikit|sklearn|pip\s+install|conda\s+install'){throw 'Independent Stage 8 validation must not assume external packages.'}
