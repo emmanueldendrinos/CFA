@@ -47,6 +47,30 @@ jobs:
         run: |
           $v2=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifactV2.ps1' -Raw
           $source=Get-Content '.\scripts\windows\Validate-CfaStage5FactorArtifact.ps1' -Raw
-          foreach($marker in @("Name='day-summary'","Name='review-property'",'repair target occurrence count changed','Ambiguous day-summary cast remained after V2 repair','Ambiguous dynamic review property access remained after V2 repair','$expectedValue=[long]($dayAgg[$k][$p])','$reviewProp=$rv.PSObject.Properties[$p.Name]','CFA repository-root preflight failed')){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 repair marker missing: $marker"}}
-          foreach($marker in @('-ne[long]$dayAgg[$k][$p]','$rv.($p.Name)')){if($source -notmatch [regex]::Escape($marker)){throw "Source validator repair target missing: $marker"}}
+          foreach($marker in @(
+            "Name='day-summary'",
+            "Name='review-property'",
+            "Name='stage3-summary-constant'",
+            "Name='receipt-source-hash'",
+            "Name='stage3-match-hash'",
+            "Name='batch-stage3-hash'",
+            'repair target occurrence count changed',
+            'Ambiguous day-summary cast remained after V2 repair',
+            'Ambiguous dynamic review property access remained after V2 repair',
+            'Stage 3 summary SHA remains mislabeled as match CSV SHA',
+            '$expectedValue=[long]($dayAgg[$k][$p])',
+            '$reviewProp=$rv.PSObject.Properties[$p.Name]',
+            '$ExpectedStage3SummarySha=',
+            'stage3-match-summary.json',
+            '$stage3SummaryMatchSha=([string]$stage3Summary.output.matches_sha256).ToLowerInvariant()',
+            '$batchStage3Sha=([string]$batchReceipt.sources.stage3_matches_sha256).ToLowerInvariant()',
+            'CFA repository-root preflight failed'
+          )){if($v2 -notmatch [regex]::Escape($marker)){throw "V2 repair marker missing: $marker"}}
+          foreach($marker in @(
+            '-ne[long]$dayAgg[$k][$p]',
+            '$rv.($p.Name)',
+            "$ExpectedStage3Sha='c1741dc7ae8de4272fa3c55f59c9efb035e4e72b0c330939b1e12caa6742d20c'",
+            'receipt.sources.stage3_matches_sha256-ne$ExpectedStage3Sha',
+            "if((Get-Sha $stage3Path)-ne$ExpectedStage3Sha)"
+          )){if($source -notmatch [regex]::Escape($marker)){throw "Source validator repair target missing: $marker"}}
           if($v2 -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'V2 validator launcher must remain offline.'}
