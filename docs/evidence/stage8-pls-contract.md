@@ -94,7 +94,7 @@ Numerical tolerance for singularity/degeneracy checks: `1e-12` in the implementa
 
 ## `CFA-S8-003` validation component sweep
 
-Candidate component counts are exactly **1 through 7**.
+Candidate component counts are exactly **1 through 7**. Canonical implementation shorthand: **components 1 through 7**.
 
 For each component count:
 
@@ -108,7 +108,7 @@ For each component count:
 
 Select the component count with the lowest VALIDATION RMSE. Exact RMSE ties select the smaller component count.
 
-No TEST metric or TEST prediction may influence selection.
+No TEST metric or TEST prediction may influence selection. TEST metrics are forbidden from component selection.
 
 ## `CFA-S8-005` final refit and TEST evaluation
 
