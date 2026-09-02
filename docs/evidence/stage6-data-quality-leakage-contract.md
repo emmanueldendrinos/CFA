@@ -1,19 +1,15 @@
-# CFA Stage 6 data-quality and leakage contract — entry defined — 2026-09-02
+# CFA Stage 6 data-quality and leakage contract — frozen — 2026-09-02
 
-Status: **STAGE6_ACTIVE / STAGE5_ENTRY_PASS / STRUCTURAL_DQ_UNVERIFIED / MISSINGNESS_DQ_UNVERIFIED / NUMERIC_DQ_UNVERIFIED / LEAKAGE_UNVERIFIED / STAGE6_COMPLETION_BLOCKED**
+Status: **STAGE6_FROZEN / STAGE5_ENTRY_PASS / STRUCTURAL_DQ_PASS / MISSINGNESS_DQ_PASS / NUMERIC_DQ_PASS / LEAKAGE_PASS / CFA-S6-009_PASS**
 
-## Authority and entry condition
+## Authority and frozen entry
 
-This contract is subordinate to the CFA Source of Truth and the frozen Stage 5 factor contract.
-
-Stage 6 may inspect only the exact frozen artifacts and authorized lineage already established upstream. It does not redefine asset identities, news matching, responses, factor formulas, factor windows, or information-availability policy.
+This contract is subordinate to the CFA Source of Truth and the frozen Stage 5 factor contract. Stage 6 does not redefine asset identities, news matching, responses, factor formulas, factor windows, or the information-availability policy.
 
 Frozen Stage 4 response artifact:
 
 - response ID: `RET_USD_UTC_DAY_OBS_LOG`;
-- rows: **37,058**;
-- bases: **434**;
-- days: **91**;
+- rows / bases / days: **37,058 / 434 / 91**;
 - SHA-256: `8e0cc38607be227339c71cb5daecbbb48af1e05c064472a019f0ffe9be11a004`.
 
 Frozen Stage 5 factor artifact:
@@ -26,160 +22,120 @@ Frozen Stage 5 factor artifact:
 - `CFA-S5-014 = PASS`;
 - `CFA-S5-009 = PASS`.
 
-Stage 6 begins only from these exact hashes. A hash mismatch is blocking.
+Stage 6 is valid only for these exact hashes. A hash mismatch is blocking.
 
 ## Scope
 
-Stage 6 tests data quality and leakage. It does not choose model preprocessing, training/test splits, benchmarks, or PLS hyperparameters; those are Stage 7/8 concerns.
+Stage 6 tests data quality and leakage. It does not choose model preprocessing, training/test splits, benchmarks, or PLS hyperparameters; those are downstream Stage 7/8 concerns.
 
-Hard failures must be based on violated frozen contracts, malformed/non-finite data, invalid timing, duplicate/grain defects, impossible domains, inconsistent missingness, or unreconciled lineage. Descriptive extremeness alone is not a failure without an upstream contract boundary.
+Hard failures are limited to violated frozen contracts, malformed/non-finite data, invalid timing, duplicate/grain defects, impossible domains, inconsistent missingness, or unreconciled lineage. Descriptive extremeness alone is not a failure without an upstream contract boundary.
 
-## Required structural tests
+## Structural tests — PASS
 
-`CFA-S6-001` — frozen-entry reconciliation.
+`CFA-S6-001 = PASS` — frozen-entry reconciliation verified the exact Stage 4 response SHA-256, Stage 5 validation identity, frozen Stage 5 factor SHA-256, exact **37,058 / 434 / 91** cardinalities, and frozen seven-factor identity.
 
-Must verify:
+`CFA-S6-002 = PASS` — grain/schema/encoding/cardinality validation verified one response and one factor row per `(base_asset_id,response_day_utc)`, exact key-set equality, deterministic factor ordering, required material columns, valid day/cutoff serialization, valid material booleans/numerics, and no replacement-character corruption in material fields.
 
-- Stage 4 response SHA-256;
-- Stage 5 validation receipt status and identity;
-- frozen Stage 5 factor SHA-256;
-- exact 37,058 / 434 / 91 cardinalities;
-- exact seven-factor identifier set/order from the frozen Stage 5 contract.
+## Missingness tests — PASS
 
-`CFA-S6-002` — grain, schema, encoding, and cardinality.
+`CFA-S6-003 = PASS` — missingness semantics and exact frozen partitions reconcile.
 
-Must verify:
-
-- one and only one factor row per `(base_asset_id,response_day_utc)`;
-- one and only one response row per same key;
-- exact key-set equality between factors and responses;
-- deterministic factor-row ordering;
-- required factor, timing, missingness, and source-lineage columns present;
-- no malformed response day or cutoff serialization;
-- no malformed booleans/numerics in material columns;
-- input CSVs are readable without replacement-character corruption in material fields.
-
-## Missingness tests
-
-`CFA-S6-003` — missingness semantics.
-
-Market factors:
+Market policy:
 
 - `market_missing_reason='NONE'` requires all four market factors and required witness fields non-null;
 - `market_missing_reason='NO_PRIOR_ACTIVE_MARKET_DAY'` requires all four market factors and market witness/value fields null;
 - no other market missingness reason is permitted.
 
-News factors:
+News policy:
 
-- `news_*_missing_reason='NONE'` requires numerical factor values and `news_*_window_complete=True`;
+- `news_*_missing_reason='NONE'` requires numerical factor values and complete source windows;
 - `SOURCE_WINDOW_INCOMPLETE` requires numerical news values null and completeness false;
 - `OUTSIDE_NEWS_POPULATION` requires numerical news values null;
-- no other news missingness reason is permitted;
-- complete in-population zero-news rows remain valid zero, never null.
+- complete in-population no-news rows remain valid zero, never null.
 
-Expected frozen partitions:
+Frozen partitions:
 
 - market: **36,505 available / 553 missing**;
 - news 24h: **27,267 available / 9,518 source-incomplete / 273 outside-population**;
 - news 6h: **28,849 available / 7,936 source-incomplete / 273 outside-population**.
 
-## Numeric/domain tests
+## Numeric/domain tests — PASS
 
-`CFA-S6-004` — finite values and impossible-domain checks.
+`CFA-S6-004 = PASS` — all defined responses/factors are finite and satisfy the frozen domains:
 
-For every defined value:
+- market log range `>= 0`;
+- market observation count integer `>= 1`;
+- market observation span integer in `[0,1439]`;
+- news counts integer `>= 0`;
+- distinct 24h source count cannot exceed the 24h match count;
+- when both are defined, the 6h match count cannot exceed the 24h match count.
 
-- response is finite;
-- `MKT_RET_USD_UTC_DAY_OBS_L1` is finite;
-- `MKT_RANGE_LOG_UTC_DAY_L1` is finite and `>= 0`;
-- `MKT_OBS_COUNT_UTC_DAY_L1` is an integer `>= 1`;
-- `MKT_OBS_SPAN_MIN_UTC_DAY_L1` is an integer in `[0,1439]`;
-- `NEWS_V6_MATCH_COUNT_24H_LAG15` is an integer `>= 0`;
-- `NEWS_V6_MATCH_COUNT_6H_LAG15` is an integer `>= 0`;
-- `NEWS_V6_SOURCE_COUNT_24H_LAG15` is an integer `>= 0` and cannot exceed the 24h match count;
-- when both 24h and 6h counts are defined, the 6h count cannot exceed the 24h count.
+Descriptive min/max/unique-count diagnostics were emitted separately and are not treated as arbitrary hard thresholds.
 
-Stage 6 must emit descriptive min/max/unique-count diagnostics for each response/factor without treating statistical extremeness alone as a hard failure.
+## Timing and leakage tests — PASS
 
-## Timing and leakage tests
+`CFA-S6-005 = PASS` — response/cutoff ordering verified predictor cutoff exactly at `response_day_utc 00:00:00Z`, response-window start at cutoff, and response availability after the response window under the frozen Stage 4 contract.
 
-`CFA-S6-005` — response/cutoff ordering.
+`CFA-S6-006 = PASS` — market leakage validation verified exact prior-day windows `[d-1 day,d)`, first/last/high/low witnesses strictly before cutoff and within the lookback, first `<=` last, frozen formulas reconcile to preserved witnesses, and structurally missing rows contain no substituted prior-day witness.
 
-For every key:
+`CFA-S6-007 = PASS` — news leakage validation verified the frozen 15-minute availability lag, exact 24h/6h availability windows, equivalent batch windows ending at `d-15m`, and null enforcement for source-incomplete/outside-population rows. No same-batch or post-cutoff news use was observed.
 
-- predictor cutoff is exactly `response_day_utc 00:00:00Z`;
-- Stage 4 response window starts at cutoff and is not used by any predictor;
-- response availability is after the response window, consistent with the frozen Stage 4 contract.
+## Cross-field and failure-path tests — PASS
 
-`CFA-S6-006` — market leakage.
+`CFA-S6-008 = PASS` — pair/source-member lineage reconciles between responses and factors; material witness SHA-256 strings are valid when present; physical record numbers are positive integers when present; and fail-closed self-tests cover altered hashes, duplicate keys, invalid missingness, non-finite numerics, and cutoff violations.
 
-For every defined market row:
+## Exact frozen Stage 6 artifacts
 
-- market window is exactly `[d-1 day,d)`;
-- first/last/high/low witness candle timestamps are all `< cutoff` and `>= d-1 day`;
-- first timestamp `<=` last timestamp;
-- market factor values reconcile with preserved witnesses under the frozen formulas.
+Direct local validation root:
 
-For structurally missing market rows, no witness from another active day may be present.
+`C:\Users\Emmanuel\Documents\CFA-local\stage6-data-quality\20260902-080054-d46d9306cf4240ecb9a07f5f0a1d15eb`
 
-`CFA-S6-007` — news leakage.
+Validation receipt:
 
-For every row:
+- file: `stage6-dq-leakage-validation.json`;
+- SHA-256: `5c8fd64d367af847ea1efa25e34cddca05239186282c6d97a4ca70de104a3089`.
 
-- `news_availability_lag_minutes = 15`;
-- 24h availability window is exactly `[d-24h,d)`;
-- 6h availability window is exactly `[d-6h,d)`;
-- equivalent batch windows end at `d-15m` and begin exactly 24h/6h earlier;
-- no approved news value may use same-batch information at or after cutoff;
-- source-incomplete/outside-population rows may not contain numerical news values.
+Reject artifact:
 
-Stage 6 relies on the already-PASS Stage 5 independent recomputation of V6 counts and source completeness; it must still recheck the frozen per-row timing/null invariants from the exact factor CSV.
+- file: `stage6-dq-leakage-rejects.csv`;
+- SHA-256: `501d085b1edc7d5c7eac425b190e5ee3a503ec66ee2e2876ad3b42c9e56fe07b`;
+- verified header-only, consistent with **0 blocking violations**.
 
-## Cross-field and failure-path tests
+Descriptive diagnostics:
 
-`CFA-S6-008` — cross-field consistency and failure paths.
+- file: `stage6-dq-descriptive-diagnostics.csv`;
+- SHA-256: `f3c06e7414c80cf07f5d9186961019d737da6a2980b8e18ae0e535b1a978849e`;
+- verified expected response plus seven-factor diagnostic variable set.
 
-Must test at minimum:
+Freeze candidate:
 
-- pair/source-member lineage agrees between frozen response and factor rows;
-- all material SHA-256 witness strings are exactly 64 hexadecimal characters when present;
-- physical record numbers are positive integers when present;
-- malformed inputs and altered frozen hashes fail closed in executable self-tests;
-- duplicate keys, invalid missingness labels, non-finite values, and predictor timestamps at/after cutoff are blocking failures.
+- file: `stage6-freeze-candidate.json`;
+- SHA-256: `cce6e7772beb385880390c943e04cc4e987bbaa12b87cdf049d81e9223aa83a2`.
 
-## Stage 6 result artifact
+Full local evidence is recorded in:
 
-The Stage 6 validator must emit a reproducible local receipt containing:
+`docs/evidence/stage6-data-quality-leakage-local-20260902.md`
 
-- input paths and SHA-256 hashes;
-- row/base/day cardinalities;
-- all gate statuses;
-- exact missingness partitions;
-- exact null/non-null counts by factor;
-- finite/domain violation counts;
-- timing/leakage violation counts;
-- response/factor descriptive min/max/unique-count diagnostics;
-- any rejects with key and reason;
-- overall `PASS` only when all blocking violation counts are zero.
+Final freeze evidence is recorded in:
 
-No PostgreSQL write and no external network access is permitted.
+`docs/evidence/stage6-data-quality-leakage-freeze-20260902.md`
 
 ## Stage 6 gates
 
 | ID | Requirement | Status |
 |---|---|---|
-| `CFA-S6-001` | Reconcile exact frozen Stage 4/5 entry hashes and cardinalities | UNVERIFIED |
-| `CFA-S6-002` | Verify grain/schema/encoding/key cardinality | UNVERIFIED |
-| `CFA-S6-003` | Verify missingness semantics and partitions | UNVERIFIED |
-| `CFA-S6-004` | Verify finite values and numeric domains; emit descriptive diagnostics | UNVERIFIED |
-| `CFA-S6-005` | Verify response/cutoff ordering | UNVERIFIED |
-| `CFA-S6-006` | Verify market timing/formulas/no leakage | UNVERIFIED |
-| `CFA-S6-007` | Verify news timing/null rules/no leakage | UNVERIFIED |
-| `CFA-S6-008` | Verify cross-field lineage and failure paths | UNVERIFIED |
-| `CFA-S6-009` | Freeze Stage 6 DQ/leakage validation result | BLOCKED |
+| `CFA-S6-001` | Reconcile exact frozen Stage 4/5 entry hashes and cardinalities | PASS |
+| `CFA-S6-002` | Verify grain/schema/encoding/key cardinality | PASS |
+| `CFA-S6-003` | Verify missingness semantics and partitions | PASS |
+| `CFA-S6-004` | Verify finite values and numeric domains; emit descriptive diagnostics | PASS |
+| `CFA-S6-005` | Verify response/cutoff ordering | PASS |
+| `CFA-S6-006` | Verify market timing/formulas/no leakage | PASS |
+| `CFA-S6-007` | Verify news timing/null rules/no leakage | PASS |
+| `CFA-S6-008` | Verify cross-field lineage and failure paths | PASS |
+| `CFA-S6-009` | Freeze Stage 6 DQ/leakage validation result | PASS |
 
 ## Completion boundary
 
-Stage 6 is complete only when `CFA-S6-001` through `CFA-S6-008` are PASS and the exact validation receipt/reject artifact is frozen under `CFA-S6-009 = PASS`.
+**Stage 6 is complete and frozen on the exact artifacts and hashes above.**
 
-Stage 7 model-ready dataset and validation design remain blocked until then. PLS remains blocked until Stage 7 freezes the predictor matrix, response set, time split, preprocessing, leakage controls, and benchmark plan.
+The required sequence may now advance to Stage 7: freeze the model-ready dataset and validation design. Stage 7 must explicitly freeze the retained predictor/response population, time split, preprocessing, leakage controls, and benchmark plan before Stage 8 PLS programming may begin.
