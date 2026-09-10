@@ -1,0 +1,65 @@
+name: CFA Stage 9 News Incremental Validation
+
+on:
+  push:
+    paths:
+      - 'docs/evidence/stage9-news-incremental-contract.md'
+      - 'scripts/windows/CfaStage9AnalysisData.ps1'
+      - 'scripts/windows/Run-CfaStage9NewsIncrementalAnalysis.ps1'
+      - '.github/workflows/stage9-news-incremental-validation.yml'
+  pull_request:
+    paths:
+      - 'docs/evidence/stage9-news-incremental-contract.md'
+      - 'scripts/windows/CfaStage9AnalysisData.ps1'
+      - 'scripts/windows/Run-CfaStage9NewsIncrementalAnalysis.ps1'
+      - '.github/workflows/stage9-news-incremental-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 9 scripts with PowerShell 7
+        shell: pwsh
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage9AnalysisData.ps1','.\scripts\windows\Run-CfaStage9NewsIncrementalAnalysis.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 Stage 9 parse failed.'}
+          }
+
+      - name: Parse Stage 9 scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage9AnalysisData.ps1','.\scripts\windows\Run-CfaStage9NewsIncrementalAnalysis.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 Stage 9 parse failed.'}
+          }
+
+      - name: Run Stage 9 self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Run-CfaStage9NewsIncrementalAnalysis.ps1 -Stage7ValidationReceiptPath . -Stage8ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run Stage 9 self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage9NewsIncrementalAnalysis.ps1 -Stage7ValidationReceiptPath . -Stage8ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce Stage 9 frozen comparison and exploratory boundary
+        shell: powershell
+        run: |
+          $contract=Get-Content '.\docs\evidence\stage9-news-incremental-contract.md' -Raw
+          $runner=Get-Content '.\scripts\windows\Run-CfaStage9NewsIncrementalAnalysis.ps1' -Raw
+          $data=Get-Content '.\scripts\windows\CfaStage9AnalysisData.ps1' -Raw
+          foreach($marker in @('S9_MARKET_ONLY','S9_NEWS_ONLY','S9_FULL_7','S9_INTERNAL_EVALUATION','INCREMENTAL_R2_NEWS_OVER_MARKET','POSTHOC_STAGE8_SPLIT','post-hoc/exploratory')){if($contract -notmatch [regex]::Escape($marker)){throw "Stage 9 contract marker missing: $marker"}}
+          foreach($marker in @('Invoke-CfaStage9FamilySurface','Add-CfaStage9SurfaceResults','delta_rmse_full_minus_market','incremental_r2_news_over_market','POSTHOC_STAGE8_SPLIT','Interpretation status: POSTHOC / EXPLORATORY / LEAKAGE-CONTROLLED')){if($runner -notmatch [regex]::Escape($marker)){throw "Stage 9 runner marker missing: $marker"}}
+          foreach($marker in @('Get-CfaStage9PositiveMedian','Get-CfaStage9FactorSummary','Get-CfaStage9IntensityGroups','pearson_signed_return','pearson_absolute_return')){if($data -notmatch [regex]::Escape($marker)){throw "Stage 9 diagnostic marker missing: $marker"}}
+          $all=$runner+"`n"+$data
+          if($all -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Stage 9 must remain offline and database-free.'}
+          if($all -match '(?i)Get-Random|Shuffle|Random\('){throw 'Stage 9 must not randomize chronological roles.'}
+          if($all -match '(?i)numpy|scikit|sklearn|pip\s+install|conda\s+install'){throw 'Stage 9 must not introduce undeclared external packages.'}
