@@ -1,6 +1,6 @@
-# CFA Stage 10 per-symbol heterogeneity and scanner-prerequisite contract — active — 2026-09-10
+# CFA Stage 10 per-symbol heterogeneity and scanner-prerequisite contract — frozen — 2026-09-10
 
-Status: **STAGE10_ACTIVE / STAGE9_ENTRY_PASS / PER_SYMBOL_EFFECTS_UNVERIFIED / EVENT_ATTRIBUTION_UNVERIFIED / SCANNER_DESIGN_BLOCKED**
+Status: **STAGE10_FROZEN / STAGE9_ENTRY_PASS / PER_SYMBOL_EFFECTS_PASS / EVENT_ATTRIBUTION_PASS / INDEPENDENT_VALIDATION_PASS / SCANNER_PREREQUISITES_FROZEN**
 
 ## Purpose
 
@@ -153,6 +153,33 @@ Non-large-move rows are `NON_EVENT`; insufficient event-threshold history is `UN
 
 These labels distinguish broad co-movement from news-associated abnormal movement without claiming causality.
 
+## Frozen validation result
+
+Independent Stage 10 validation passed on the exact candidate outputs.
+
+Frozen hashes:
+
+- run receipt: `5736a74a5d20021b88589e066ad0a98b3ea7efc5d346c3413e2298b7c007bf34`;
+- symbol news sensitivity: `94887a0473f909302c8154e362602776625f0d326c406e72c3cb97dc92e18df1`;
+- temporal stability: `5a48c47af45cfa25a45af391b7f4d04b3685c34db3043fa58b257e8641571cee`;
+- symbol profile summary: `2d625ed8a79f17cf2a6ac21e22fea62fa3a1a04f9cfa51d9b0ec7ef861e304fd`;
+- market reference: `9954083409423fb58f1dedc761bac1fe570dcf89b88f4a4bb92cf0891704d86e`;
+- event attribution: `37f3a22060337be4a5ecb972589b341005b65c6edcb775659e817307315ef6b6`;
+- event summary: `6a138a99f262f7ca7a6591bcc659a91a66880a55be7293c26e6f35c6b0310050`;
+- independent-validation checks: `8cac50bef8f498f5090a13304cb611987ee02a52c611648194ee58a69e7c88df`;
+- independent-validation receipt: `5f65a24eebbe386dfed2ac840ff0cd730b3b8eb0b17b2ff05e34e70a4a050c85`.
+
+Frozen population summary:
+
+- 26,337 model-ready rows;
+- 418 base assets;
+- 66 represented response days;
+- 83 symbols with sufficient ALL-period 24h news support;
+- 32 symbols with at least one `NEWS_ASSOCIATED_ABNORMAL` large-move event;
+- 330 symbols with at least one `MARKET_DOMINANT` large-move event.
+
+Freeze evidence: `docs/evidence/stage10-symbol-heterogeneity-independent-validation-freeze-20260910.md`.
+
 ## Scanner implication boundary
 
 Stage 10 is not the live scanner itself. It produces the per-symbol calibration tables required to design one.
@@ -185,12 +212,12 @@ Intraday scanner horizons, broad-market construction, alert thresholds and calib
 | ID | Requirement | Status |
 |---|---|---|
 | `CFA-S10-001` | Reconcile frozen Stage 9 / Stage 7 entry | PASS |
-| `CFA-S10-002` | Compute per-symbol news sensitivity/support diagnostics | BLOCKED |
-| `CFA-S10-003` | Compute per-symbol temporal stability | BLOCKED |
-| `CFA-S10-004` | Construct diagnostic broad-market reference | BLOCKED |
-| `CFA-S10-005` | Construct rolling symbol-relative news-burst measures | BLOCKED |
-| `CFA-S10-006` | Produce large-move realized event-attribution labels | BLOCKED |
-| `CFA-S10-007` | Independently validate exact Stage 10 outputs | BLOCKED |
-| `CFA-S10-008` | Freeze per-symbol findings / scanner prerequisites | BLOCKED |
+| `CFA-S10-002` | Compute per-symbol news sensitivity/support diagnostics | PASS |
+| `CFA-S10-003` | Compute per-symbol temporal stability | PASS |
+| `CFA-S10-004` | Construct diagnostic broad-market reference | PASS |
+| `CFA-S10-005` | Construct rolling symbol-relative news-burst measures | PASS |
+| `CFA-S10-006` | Produce large-move realized event-attribution labels | PASS |
+| `CFA-S10-007` | Independently validate exact Stage 10 outputs | PASS |
+| `CFA-S10-008` | Freeze per-symbol findings / scanner prerequisites | PASS |
 
-No scanner implementation may be treated as validated until these per-symbol prerequisites are resolved and a separate live-time scanner contract is frozen.
+Stage 10 is frozen. Subsequent scanner work must start from these exact frozen outputs and may not mutate Stage 10.
