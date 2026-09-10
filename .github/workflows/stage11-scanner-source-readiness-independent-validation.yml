@@ -1,0 +1,40 @@
+name: CFA Stage 11 Independent Scanner Source Readiness Validation
+
+on:
+  push:
+    branches:
+      - cfa/stage11-live-scanner-contract-20260910
+    paths:
+      - 'scripts/windows/Validate-CfaStage11ScannerSourceReadiness.ps1'
+      - '.github/workflows/stage11-scanner-source-readiness-independent-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse independent Stage 11 validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Validate-CfaStage11ScannerSourceReadiness.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 independent Stage 11 parse failed.'}
+      - name: Parse independent Stage 11 validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Validate-CfaStage11ScannerSourceReadiness.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 independent Stage 11 parse failed.'}
+      - name: Run independent Stage 11 self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Validate-CfaStage11ScannerSourceReadiness.ps1 -RunReceiptPath x -SelfTest
+      - name: Run independent Stage 11 self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage11ScannerSourceReadiness.ps1 -RunReceiptPath x -SelfTest
+      - name: Enforce independent recomputation boundary
+        shell: pwsh
+        run: |
+          $script=Get-Content '.\scripts\windows\Validate-CfaStage11ScannerSourceReadiness.ps1' -Raw
+          foreach($marker in @('RANGE BETWEEN interval','stage11-source-readiness-independent-validation','Forward outcomes inspected: False','default_transaction_read_only=on')){if($script -notmatch [regex]::Escape($marker)){throw "Missing independent validator marker: $marker"}}
+          if($script -match 'Run-CfaStage11ScannerSourceReadiness|\.\s+.*Run-CfaStage11|FWD_ABNORMAL|FWD_RETURN|hit_rate|alert_precision|alert_recall'){throw 'Independent Stage 11 validator reuses production runner or contains forward-performance logic.'}
