@@ -1,0 +1,53 @@
+name: CFA Stage 10 Independent Symbol Heterogeneity Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage10SymbolHeterogeneity.ps1'
+      - 'docs/evidence/stage10-symbol-heterogeneity-contract.md'
+      - '.github/workflows/stage10-symbol-heterogeneity-independent-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage10SymbolHeterogeneity.ps1'
+      - 'docs/evidence/stage10-symbol-heterogeneity-contract.md'
+      - '.github/workflows/stage10-symbol-heterogeneity-independent-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse independent Stage 10 validator with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Validate-CfaStage10SymbolHeterogeneity.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 independent Stage 10 parse failed.'}
+
+      - name: Parse independent Stage 10 validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Validate-CfaStage10SymbolHeterogeneity.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 independent Stage 10 parse failed.'}
+
+      - name: Run independent Stage 10 self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Validate-CfaStage10SymbolHeterogeneity.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run independent Stage 10 self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage10SymbolHeterogeneity.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce independent Stage 10 recomputation surface
+        shell: powershell
+        run: |
+          $validator=Get-Content '.\scripts\windows\Validate-CfaStage10SymbolHeterogeneity.ps1' -Raw
+          foreach($marker in @('Metric-S10v','Stability-S10v','DayCache-S10v','LeaveOneOut-S10v','RollingFit-S10v','NEWS_ASSOCIATED_ABNORMAL','CFA-S10-007')){if($validator -notmatch [regex]::Escape($marker)){throw "Independent Stage 10 marker missing: $marker"}}
+          if($validator -match '(?i)Run-CfaStage10SymbolHeterogeneity\.ps1|CfaStage9AnalysisData\.ps1'){throw 'Independent Stage 10 validator must not reuse production Stage 10/Stage 9 calculation helpers.'}
+          if($validator -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|psql|PGPASSWORD|Get-Random|Random|Shuffle'){throw 'Independent Stage 10 validation must remain offline and deterministic.'}
