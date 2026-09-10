@@ -1,6 +1,6 @@
-# CFA Stage 9 news-incremental analysis contract — active — 2026-09-10
+# CFA Stage 9 news-incremental analysis contract — FROZEN — 2026-09-10
 
-Status: **STAGE9_ACTIVE / STAGE8_ENTRY_PASS / NEWS_INCREMENTAL_ANALYSIS_UNVERIFIED / FACTOR_LEVEL_NEWS_DIAGNOSTICS_UNVERIFIED / STAGE9_FREEZE_BLOCKED**
+Status: **STAGE9_FROZEN / STAGE8_ENTRY_PASS / NEWS_INCREMENTAL_ANALYSIS_PASS / FACTOR_LEVEL_NEWS_DIAGNOSTICS_PASS / INDEPENDENT_VALIDATION_PASS / CFA-S9-008_PASS**
 
 ## Authority and purpose
 
@@ -8,47 +8,39 @@ This contract is subordinate to the CFA Source of Truth and the exact frozen Sta
 
 Stage 9 answers the research question that Stage 8 did not isolate: **what predictive or descriptive information, if any, is contributed by the three frozen GDELT-derived news-intensity factors relative to the four frozen market factors?**
 
-Stage 9 may not redefine source coverage, asset identity, news matching, response, factor values, availability timestamps, leakage policy, or the frozen Stage 7 model-ready rows.
+Stage 9 does not redefine source coverage, asset identity, news matching, response, factor values, availability timestamps, leakage policy, or the frozen Stage 7 model-ready rows.
 
 ## Frozen inputs
-
-Use the exact Stage 7 model-ready dataset and Stage 8 freeze lineage:
 
 - model-ready CSV SHA-256: `fc0498881957688acffd6fe3805ac96037ca884304bff9964e1e248b4ec0e024`;
 - Stage 7 independent validation receipt SHA-256: `e3e9088e511b74e875e1bccc3e8d292acc9c49209c93943117195f8ace5b3756`;
 - Stage 8 independent validation receipt SHA-256: `950503a0400cd42be9c33b78fc9744c11cdf03b5c860c6f37c2abf9253c9ed33`;
 - Stage 8 frozen selected model SHA-256: `8aaf69b56756dd45001514e4029065719bec9e1cde425830e2b7e4219f632250`.
 
-Frozen response:
+Frozen response: `RET_USD_UTC_DAY_OBS_LOG` / `response_value_log_return`.
 
-- `RET_USD_UTC_DAY_OBS_LOG` / `response_value_log_return`.
-
-Frozen market predictors, in order:
+Market predictors:
 
 1. `MKT_RET_USD_UTC_DAY_OBS_L1`;
 2. `MKT_RANGE_LOG_UTC_DAY_L1`;
 3. `MKT_OBS_COUNT_UTC_DAY_L1`;
 4. `MKT_OBS_SPAN_MIN_UTC_DAY_L1`.
 
-Frozen GDELT/news predictors, in order:
+GDELT/news predictors:
 
 1. `NEWS_V6_MATCH_COUNT_24H_LAG15`;
 2. `NEWS_V6_MATCH_COUNT_6H_LAG15`;
 3. `NEWS_V6_SOURCE_COUNT_24H_LAG15`.
 
-No missing values are introduced or imputed. Stage 9 uses only the exact 26,337 non-embargo Stage 7 model-ready rows unless a diagnostic explicitly restricts to a frozen temporal role.
+No imputation, clipping, winsorization, nonlinear transform, randomization, or feature selection is permitted.
 
 ## Interpretation boundary
 
-Stage 8 already exposed VALIDATION and TEST performance for the full seven-factor model. Therefore **no Stage 9 comparison may describe the original Stage 8 VALIDATION or TEST periods as a fresh confirmatory holdout**.
+Stage 8 had already exposed its VALIDATION and TEST performance before Stage 9 was designed. Stage 9 findings are therefore **POSTHOC / EXPLORATORY / LEAKAGE-CONTROLLED**, not a fresh confirmatory holdout test. A future confirmatory claim requires new, previously unseen source/market data and a newly frozen external holdout.
 
-Stage 9 conclusions are **post-hoc/exploratory but leakage-controlled**. Any future confirmatory claim requires new, previously unseen source/market data and a newly frozen external holdout.
+## Primary nested chronological comparison
 
-## Primary nested chronological comparison inside original TRAIN
-
-Use only rows whose frozen Stage 7 role is `TRAIN` (40 distinct eligible response days; 15,648 rows).
-
-Sort the 40 distinct TRAIN response days ascending and assign by ordinal:
+Within the original Stage 7 TRAIN population, the 40 eligible response days were frozen before Stage 9 performance was observed as:
 
 - days 1–17: `S9_DEV_TRAIN`;
 - day 18: `S9_EMBARGO_DEV_SELECTION`;
@@ -56,114 +48,101 @@ Sort the 40 distinct TRAIN response days ascending and assign by ordinal:
 - day 27: `S9_EMBARGO_SELECTION_EVALUATION`;
 - days 28–40: `S9_INTERNAL_EVALUATION`.
 
-All rows on a response day inherit that role. Embargo rows are excluded from fitting and evaluation. The one-day embargo rule preserves response availability strictly before the next segment's first predictor cutoff.
+Validated rows:
 
-This nested split is frozen before any Stage 9 performance result is observed.
+- DEV: **6,475**;
+- selection validation: **3,140**;
+- internal evaluation: **5,246**;
+- embargo: **787**;
+- embargo days: **2025-04-20** and **2025-05-01**.
+
+The one-day embargo rule preserves response availability strictly before the next segment's predictor cutoff.
 
 ## Predeclared model families
 
-Exactly three PLS1 families are compared, using the already validated Stage 8 PLS1/NIPALS algorithm:
+Exactly three PLS1 families use the frozen Stage 8 PLS1/NIPALS algorithm:
 
-### `S9_MARKET_ONLY`
+- `S9_MARKET_ONLY`: four market factors; components 1–4;
+- `S9_NEWS_ONLY`: three GDELT/news factors; components 1–3;
+- `S9_FULL_7`: all seven factors; components 1–7.
 
-Predictors: the four frozen market factors.
-Component grid: 1 through 4.
-
-### `S9_NEWS_ONLY`
-
-Predictors: the three frozen GDELT/news factors.
-Component grid: 1 through 3.
-
-### `S9_FULL_7`
-
-Predictors: all four market factors followed by all three news factors.
-Component grid: 1 through 7.
-
-For each family:
-
-1. fit centering/scaling and PLS only on `S9_DEV_TRAIN`;
-2. select the component count by lowest RMSE on `S9_SELECTION_VALIDATION`; exact ties select the smaller component count;
-3. after component count is fixed, refit predictor preprocessing and response centering on `S9_DEV_TRAIN + S9_SELECTION_VALIDATION` only;
-4. refit PLS at the selected component count on those same rows;
-5. evaluate once on `S9_INTERNAL_EVALUATION`.
-
-Predictors are centered and divided by sample standard deviation fit only on the permitted fit rows. Response is centered only. No imputation, clipping, winsorization, nonlinear transform, randomization, or feature selection is permitted.
+For each family, preprocessing and PLS are fit only on the permitted fit rows, component count is selected by lowest selection-validation RMSE with smaller-component tie break, then the model is refit on DEV+selection rows and evaluated once on the internal evaluation rows.
 
 Metrics: RMSE, MAE, SSE, and predictive R² versus the corresponding response-mean benchmark.
 
-## Primary news-incremental estimands
+## Primary independently validated news-incremental result
 
-On `S9_INTERNAL_EVALUATION`, compute:
+Selected components, market/news/full: **2 / 1 / 3**.
 
-- `DELTA_RMSE_FULL_MINUS_MARKET = RMSE(S9_FULL_7) - RMSE(S9_MARKET_ONLY)`;
-- `DELTA_MAE_FULL_MINUS_MARKET = MAE(S9_FULL_7) - MAE(S9_MARKET_ONLY)`;
-- `INCREMENTAL_R2_NEWS_OVER_MARKET = 1 - SSE(S9_FULL_7) / SSE(S9_MARKET_ONLY)`.
+On `S9_INTERNAL_EVALUATION`:
 
-Interpretation:
+- `DELTA_RMSE_FULL_MINUS_MARKET = 2.9218036524114588E-06`;
+- `INCREMENTAL_R2_NEWS_OVER_MARKET = -7.3767574650718259E-05`;
+- `S9_NEWS_ONLY` predictive R² versus response mean = `8.2697538891007838E-05`.
 
-- negative delta RMSE/MAE or positive incremental R² means adding the three GDELT factors improved that metric relative to market-only;
-- positive delta RMSE/MAE or negative incremental R² means adding the GDELT factors worsened that metric;
-- these are exploratory/post-hoc estimates, not fresh confirmatory evidence.
+Positive delta RMSE and negative incremental R² mean that adding the three GDELT factors made the market-only model microscopically worse on this primary exploratory surface. The news-only predictive R² is microscopically positive but effectively zero in magnitude.
 
-Also report `S9_NEWS_ONLY` performance versus the response-mean benchmark to measure stand-alone directional predictive information in the three news factors.
+## Secondary post-hoc original Stage 8 split
 
-## Secondary original-Stage-8-split comparison
+Selected components, market/news/full: **2 / 1 / 3**.
 
-For descriptive replication only, run the same three model families on the original frozen Stage 7 roles:
+On the original Stage 8 TEST surface, explicitly labeled `POSTHOC_STAGE8_SPLIT`:
 
-- fit TRAIN, select components on VALIDATION;
-- refit TRAIN+VALIDATION, evaluate TEST once.
+- `DELTA_RMSE_FULL_MINUS_MARKET = -3.6509444382992751E-07`;
+- `INCREMENTAL_R2_NEWS_OVER_MARKET = 1.2391442775427919E-05`;
+- `S9_NEWS_ONLY` predictive R² versus response mean = `-3.9589693545449833E-05`.
 
-Label every such output `POSTHOC_STAGE8_SPLIT`. Because Stage 8 full-model VALIDATION/TEST results were already observed, this surface is explicitly **post-hoc descriptive** and must not be presented as a fresh holdout test.
+Here adding news microscopically improves RMSE, while news-only predictive R² is microscopically negative. The direction reverses relative to the primary nested surface, while magnitudes remain extremely close to zero.
 
-## Factor-level GDELT diagnostics
+## Frozen model-family research finding
 
-For each of the three frozen news factors, report on `S9_INTERNAL_EVALUATION` and separately on original `TEST` as post-hoc descriptive:
+The independently validated model-family evidence supports the following narrow conclusion:
 
-1. row count, mean, sample SD, minimum, maximum, and zero share;
-2. Pearson correlation with signed `response_value_log_return`;
-3. Pearson correlation with `ABS_RESPONSE_DIAGNOSTIC = abs(response_value_log_return)`.
+> **The three tested GDELT news-intensity proxies — prior-24h matched-record count, prior-6h matched-record count, and prior-24h distinct-source count — show no stable or economically material incremental predictive value for next-day signed log return beyond the four tested market-history factors in this Q2 2025 exploratory design.**
 
-`ABS_RESPONSE_DIAGNOSTIC` is an explicitly post-hoc descriptive diagnostic outcome only. It is not a replacement frozen response and is not used for component selection.
+This does **not** establish that GDELT, news content, sentiment, event type, or news generally is irrelevant to crypto markets. It concerns only these three frozen intensity/source-breadth proxies, the tested response horizon, population, and period.
 
-For each news factor, construct intensity groups using cutpoints learned only from the corresponding permitted fit population:
+## Factor-level diagnostic design
 
-- `ZERO`: factor = 0;
-- among positive factor values, calculate the median positive value on fit rows;
-- `LOW_POSITIVE`: factor > 0 and <= fitted positive median;
-- `HIGH_POSITIVE`: factor > fitted positive median.
+For each news factor, Stage 9 also reports on the nested internal evaluation and separately on original TEST:
 
-For each group on the evaluation segment report n, mean signed response, and mean absolute response. Group cutpoints must never be fitted on the evaluation segment.
+- n, mean, sample SD, min, max, zero share;
+- Pearson correlation with signed next-day log return;
+- Pearson correlation with absolute next-day log return;
+- ZERO / LOW_POSITIVE / HIGH_POSITIVE groups using positive-median cutpoints learned only from the permitted fit population;
+- group n, mean signed response, and mean absolute response.
 
-These diagnostics describe association only; they do not establish causality.
+These diagnostics are independently validated and hash-pinned, but specific interpretation of whether aggregate near-zero signed prediction masks offsetting direction effects or absolute-movement association must be based on their exact values, not inferred from the aggregate PLS comparison alone.
 
-## Required outputs
+## Exact frozen Stage 9 hashes
 
-The Stage 9 constructor must emit at minimum:
+- run receipt: `f505f5a3210d543aaa71a5bf352cbb8849c8cb2237923aa7dc018f65cfe5abda`;
+- nested day roles: `8b4b88debd58579c6c70342e6abf48c935d528d6a59e0abf1f89ba0b26bbd3b1`;
+- component metrics: `a7efc10fb25fd92845b3abf9e41dbbe7e353faeff8cb9296e797076e44500607`;
+- evaluation metrics: `d28b4688f55c2382655e584d4d29a5121b1547d44d9642c2fd515a7eb6f2a18e`;
+- evaluation predictions: `a8d4797cab3fa500ea2d171cfb23f884156fddd2615667b0f8338e11fec3ebee`;
+- incremental comparison: `ee42ac6926300e757a88eff6c0e26fc0d12e1bdb6631d91901853d5d7eee4b3e`;
+- factor diagnostics: `14dd27caeff16a2b5a75fd2ad5fd49efaa7d6a8a1830499040ee2bd0788dd8c7`;
+- intensity groups: `6380fef1863f0fc7580baa608b8bf86a8427074b330b09ca71c66790458cf3f3`;
+- post-hoc metrics: `4409fbe93477eaf72fc02433d52181a0110f9a8d367bc5bd4ef8bb392b823f25`;
+- independent validation checks: `2fd662d493daee12391a07cd4a969e83734b78cd2be3fa92be013b8587bdf2b7`;
+- independent validation receipt: `fee93242132aa46dd11a6f969a49679d51559533a9870255cc928f4a875079bf`.
 
-- nested day-role assignment CSV;
-- model-family component-selection metrics CSV;
-- model-family evaluation metrics CSV;
-- model-family evaluation predictions CSV;
-- news incremental comparison CSV;
-- news factor diagnostics CSV;
-- news intensity-group diagnostics CSV;
-- post-hoc original Stage 8 split model-family metrics CSV;
-- Stage 9 run receipt with exact source/output hashes and gate statuses.
-
-All row-level outputs must preserve `(base_asset_id,response_day_utc)` and deterministic chronological ordering.
+Repository freeze evidence: `docs/evidence/stage9-news-incremental-independent-validation-freeze-20260910.md`.
 
 ## Gates
 
 | ID | Requirement | Status |
 |---|---|---|
 | `CFA-S9-001` | Reconcile exact frozen Stage 8 / Stage 7 entry | PASS |
-| `CFA-S9-002` | Construct frozen nested TRAIN-only chronological roles and embargoes | UNVERIFIED |
-| `CFA-S9-003` | Run market-only, news-only, and full model-family selection/evaluation | BLOCKED |
-| `CFA-S9-004` | Compute primary news incremental estimands | BLOCKED |
-| `CFA-S9-005` | Compute factor-level news diagnostics | BLOCKED |
-| `CFA-S9-006` | Compute post-hoc original Stage 8 split comparison | BLOCKED |
-| `CFA-S9-007` | Independently validate exact Stage 9 outputs | BLOCKED |
-| `CFA-S9-008` | Freeze Stage 9 research findings | BLOCKED |
+| `CFA-S9-002` | Construct frozen nested TRAIN-only chronological roles and embargoes | PASS |
+| `CFA-S9-003` | Run market-only, news-only, and full model-family selection/evaluation | PASS |
+| `CFA-S9-004` | Compute primary news incremental estimands | PASS |
+| `CFA-S9-005` | Compute factor-level news diagnostics | PASS |
+| `CFA-S9-006` | Compute post-hoc original Stage 8 split comparison | PASS |
+| `CFA-S9-007` | Independently validate exact Stage 9 outputs | PASS |
+| `CFA-S9-008` | Freeze Stage 9 research findings | PASS |
 
-No substantive conclusion about GDELT/news relevance may be frozen before `CFA-S9-007 = PASS`.
+## Completion boundary
+
+**Stage 9 is frozen for the defined exploratory news-incremental analysis.** Any change to source data, mappings, response, factor formulas, row population, temporal design, PLS algorithm, model families, diagnostic definitions, or pinned artifacts requires a new versioned analysis and independent validation.
