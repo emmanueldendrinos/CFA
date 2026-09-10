@@ -33,8 +33,8 @@ $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).ProviderPath
 
 function Sha-S11e {param([string]$Path);return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()}
 function File-S11e {param([string]$Path,[string]$Label);$p=(Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath;if(-not(Test-Path -LiteralPath $p -PathType Leaf)){throw "$Label is not a file: $p"};return $p}
-function Bool-S11e {param($Value,[string]$Label='boolean');$x=([string]$Value).Trim().ToLowerInvariant();if($x-in@('true','t')){return $true};if($x-in@('false','f')){return $false};throw "Malformed $Label: '$Value'"}
-function D-S11e {param($Value,[string]$Label);$x=0.0;if(-not[double]::TryParse(([string]$Value),[Globalization.NumberStyles]::Float,$Inv,[ref]$x)){throw "Malformed numeric $Label: '$Value'"};if([double]::IsNaN($x)-or[double]::IsInfinity($x)){throw "Non-finite numeric $Label: '$Value'"};return $x}
+function Bool-S11e {param($Value,[string]$Label='boolean');$x=([string]$Value).Trim().ToLowerInvariant();if($x-in@('true','t')){return $true};if($x-in@('false','f')){return $false};throw "Malformed ${Label}: '$Value'"}
+function D-S11e {param($Value,[string]$Label);$x=0.0;if(-not[double]::TryParse(([string]$Value),[Globalization.NumberStyles]::Float,$Inv,[ref]$x)){throw "Malformed numeric ${Label}: '$Value'"};if([double]::IsNaN($x)-or[double]::IsInfinity($x)){throw "Non-finite numeric ${Label}: '$Value'"};return $x}
 function Utc-S11e {param([datetime]$Value);return $Value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'",$Inv)}
 function Json-S11e {param([string]$Path,$Value);[IO.File]::WriteAllText($Path,(($Value|ConvertTo-Json -Depth 12)+[Environment]::NewLine),(New-Object Text.UTF8Encoding($false)))}
 function Pctl-S11e {param([double[]]$Values,[double]$P);if($Values.Count-lt1){throw 'Percentile on empty array'};[double[]]$s=@($Values|Sort-Object);$rank=[int][math]::Ceiling($P*$s.Count);if($rank-lt1){$rank=1};if($rank-gt$s.Count){$rank=$s.Count};return [double]$s[$rank-1]}
