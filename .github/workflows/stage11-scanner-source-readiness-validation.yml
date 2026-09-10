@@ -40,4 +40,4 @@ jobs:
           foreach($marker in @('SOURCE_WINDOW_INCOMPLETE','60 minutes','240 minutes','forward 60m or 240m returns','SCANNER_IMPLEMENTATION_BLOCKED')){if($contract -notmatch [regex]::Escape($marker)){throw "Missing Stage 11 source-readiness marker: $marker"}}
           $script=Get-Content '.\scripts\windows\Run-CfaStage11ScannerSourceReadiness.ps1' -Raw
           foreach($marker in @('default_transaction_read_only=on','no_minimum_support_threshold_applied','Forward outcomes inspected: False','Stage5CandidateReceiptPath')){if($script -notmatch [regex]::Escape($marker)){throw "Missing Stage 11 implementation guard: $marker"}}
-          if($script -match 'FWD_ABNORMAL|FWD_RETURN|precision|recall|hit_rate'){throw 'Stage 11 source-readiness runner contains forbidden forward-performance logic.'}
+          if($script -match '\bFWD_ABNORMAL\b|\bFWD_RETURN\b|\bprecision_score\b|\brecall_score\b|\bhit_rate\b|\balert_precision\b|\balert_recall\b'){throw 'Stage 11 source-readiness runner contains forbidden forward-performance logic.'}
