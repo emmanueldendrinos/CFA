@@ -1,0 +1,63 @@
+name: CFA Stage 9 Independent News Incremental Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Validate-CfaStage9NewsIncrementalAnalysis.ps1'
+      - 'scripts/windows/CfaStage8IndependentPlsCore.ps1'
+      - 'docs/evidence/stage9-news-incremental-contract.md'
+      - '.github/workflows/stage9-news-incremental-independent-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Validate-CfaStage9NewsIncrementalAnalysis.ps1'
+      - 'scripts/windows/CfaStage8IndependentPlsCore.ps1'
+      - 'docs/evidence/stage9-news-incremental-contract.md'
+      - '.github/workflows/stage9-news-incremental-independent-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse independent Stage 9 validator with PowerShell 7
+        shell: pwsh
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8IndependentPlsCore.ps1','.\scripts\windows\Validate-CfaStage9NewsIncrementalAnalysis.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 independent Stage 9 parse failed.'}
+          }
+
+      - name: Parse independent Stage 9 validator with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach($file in @('.\scripts\windows\CfaStage8IndependentPlsCore.ps1','.\scripts\windows\Validate-CfaStage9NewsIncrementalAnalysis.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "$file line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 independent Stage 9 parse failed.'}
+          }
+
+      - name: Run independent Stage 9 self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Validate-CfaStage9NewsIncrementalAnalysis.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run independent Stage 9 self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Validate-CfaStage9NewsIncrementalAnalysis.ps1 -RunReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce independent Stage 9 recomputation surface
+        shell: powershell
+        run: |
+          $validator=Get-Content '.\scripts\windows\Validate-CfaStage9NewsIncrementalAnalysis.ps1' -Raw
+          foreach($marker in @('Get-CfaS9VerifyPreprocessSpec','Get-CfaS9VerifyPearson','Get-CfaS9VerifyPositiveMedian','Invoke-CfaS9VerifyFamily','Get-CfaIndependentPlsPath','NESTED_TRAIN','POSTHOC_STAGE8_SPLIT','incremental_r2_news_over_market','FACTOR_DIAGNOSTICS','INTENSITY_GROUPS','CFA-S9-007')){
+            if($validator -notmatch [regex]::Escape($marker)){throw "Independent Stage 9 marker missing: $marker"}
+          }
+          if($validator -match '(?i)CfaStage9AnalysisData\.ps1|Run-CfaStage9NewsIncrementalAnalysis\.ps1|CfaStage8PlsCore\.ps1|CfaStage8PlsData\.ps1'){throw 'Independent Stage 9 validator must not reuse production Stage 9 or Stage 8 calculation helpers.'}
+          if($validator -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|storage\.googleapis\.com|psql|PGPASSWORD'){throw 'Independent Stage 9 validation must remain offline and database-free.'}
+          if($validator -match '(?i)Random|Get-Random|Shuffle'){throw 'Independent Stage 9 validation must not randomize the frozen chronological design.'}
+          if($validator -match '(?i)numpy|scikit|sklearn|pip\s+install|conda\s+install'){throw 'Independent Stage 9 validation must not assume undeclared external packages.'}
