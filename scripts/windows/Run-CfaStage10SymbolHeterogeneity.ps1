@@ -136,6 +136,9 @@ function Test-CfaS10SelfTest {
     $median=Get-CfaS10Median @(1,2,3,4);if($median-ne2.5){throw 'Median self-test failed.'}
     $cache=[pscustomobject]@{n=4;values=[double[]]@(1,2,3,4);index_by_asset=@{A=0;B=1;C=2;D=3}}
     $exB=Get-CfaS10LeaveOneOutMedian $cache 'B';if($exB-ne3){throw 'Leave-one-out median self-test failed.'}
+    $one=@([pscustomobject]@{base_asset_id='A';design_role='TEST';response_day_utc='2025-01-01'})
+    $surfaceRows=@($one|Where-Object{[string]$_.design_role-eq'TEST'});if($surfaceRows.Count-ne1){throw 'Single-row surface collection self-test failed.'}
+    $history=@($one);$recent=@($history|Select-Object -Last 20);if($history.Count-ne1-or$recent.Count-ne1){throw 'Single-row history collection self-test failed.'}
     return $true
 }
 
@@ -163,7 +166,7 @@ try {
     foreach($asset in $assets){
         $assetRows=@($model|Where-Object{[string]$_.base_asset_id-ceq$asset}|Sort-Object response_day_utc)
         foreach($surface in @('ALL','TRAIN','VALIDATION','TEST')){
-            $surfaceRows=if($surface-eq'ALL'){$assetRows}else{@($assetRows|Where-Object{[string]$_.design_role-eq$surface})}
+            if($surface-eq'ALL'){$surfaceRows=@($assetRows)}else{$surfaceRows=@($assetRows|Where-Object{[string]$_.design_role-eq$surface})}
             if($surfaceRows.Count-lt1){continue}
             foreach($factorId in $NewsFactors){$metric=Get-CfaS10SymbolFactorMetric $surfaceRows $asset $surface $factorId;[void]$sensitivity.Add($metric);$metricMap[$asset+'|'+$surface+'|'+$factorId]=$metric}
         }
@@ -180,7 +183,9 @@ try {
     foreach($asset in $assets){
         $assetRows=@($model|Where-Object{[string]$_.base_asset_id-ceq$asset}|Sort-Object response_day_utc)
         for($i=0;$i-lt$assetRows.Count;$i++){
-            $row=$assetRows[$i];$day=[string]$row.response_day_utc;$response=Parse-CfaS10Double $row.response_value_log_return "$asset $day response";$history=if($i-gt0){@($assetRows[0..($i-1)])}else{@()};$recent=if($history.Count-gt20){@($history|Select-Object -Last 20)}else{$history}
+            $row=$assetRows[$i];$day=[string]$row.response_day_utc;$response=Parse-CfaS10Double $row.response_value_log_return "$asset $day response"
+            if($i-gt0){$history=@($assetRows[0..($i-1)])}else{$history=@()}
+            if($history.Count-gt20){$recent=@($history|Select-Object -Last 20)}else{$recent=@($history)}
             $eventThreshold=[double]::NaN;$largeMove=$false;$eventSupport=$recent.Count-ge10
             if($eventSupport){$absHistory=@($recent|ForEach-Object{[math]::Abs((Parse-CfaS10Double $_.response_value_log_return 'event history'))});$eventThreshold=Get-CfaS10NearestRank90 $absHistory;$largeMove=([math]::Abs($response)-gt$eventThreshold)}
             $burst24=$false;$burst6=$false;$burstSource=$false;$q24=[double]::NaN;$q6=[double]::NaN;$qSource=[double]::NaN
