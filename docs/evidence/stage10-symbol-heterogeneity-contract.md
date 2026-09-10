@@ -13,7 +13,7 @@ Stage 10 answers, for each symbol with sufficient support:
 3. whether news intensity is associated with subsequent absolute return for that symbol;
 4. whether the symbol behaves differently on zero-news versus positive-news days;
 5. whether news sensitivity is stable across time segments;
-6. whether large realized moves are more consistent with broad-market co-movement, symbol-specific abnormal movement associated with news, or a mixed case.
+6. whether unusually large realized moves are more consistent with broad-market co-movement, symbol-specific abnormal movement associated with news, or a mixed case.
 
 All conclusions remain exploratory/post-hoc because Stage 8 and Stage 9 results have already been observed. A future production scanner requires new unseen data for confirmatory calibration.
 
@@ -71,7 +71,7 @@ For every symbol/factor with sufficient support in both an earlier and later seg
 - Pearson absolute-return correlation;
 - positive-vs-zero absolute-return difference.
 
-Report `SAME_SIGN`, `SIGN_REVERSAL`, or `UNRESOLVED_SUPPORT` for each statistic. This directly tests whether pooled near-zero effects can result from time-varying direction.
+Report `SAME_SIGN`, `SIGN_REVERSAL`, or `UNRESOLVED_SUPPORT` for each statistic. Compare `TRAIN→VALIDATION`, `VALIDATION→TEST`, and `TRAIN→TEST` separately.
 
 ## Cross-sectional symbol profiles
 
@@ -86,6 +86,14 @@ Do not force hard causal categories. Produce continuous symbol-level scores firs
 
 A symbol can therefore be described as relatively news-sensitive, magnitude-sensitive, directionally unstable, or weakly covered without pretending that these are causal classes.
 
+## Exact empirical percentile rule
+
+Every trailing percentile in Stage 10 uses the deterministic nearest-rank rule. For sorted ascending values `x_(1)..x_(n)`, percentile `p` is:
+
+`Q_p = x_(ceil(p*n))`.
+
+For the 90th percentile, `p=0.90`. No interpolation is used.
+
 ## Broad-market reference for realized-event attribution
 
 The existing four market predictors are lagged symbol-specific predictors and are not a contemporaneous broad-market attribution measure. Stage 10 therefore defines a new **diagnostic-only realized market reference** from the already frozen response rows.
@@ -96,11 +104,9 @@ For response day `d` and target symbol `a`:
 
 This field uses realized same-day responses and is therefore **diagnostic only**. It is forbidden as a predictor for a scanner before the corresponding day has elapsed.
 
-For each symbol with at least 20 prior overlapping days, estimate a rolling trailing relationship using only days strictly before `d`:
+For each symbol/day with at least 15 prior overlapping symbol-days, estimate a rolling trailing relationship using at most the previous 20 available overlapping days strictly before `d`:
 
-`r_a,t = alpha_a,d + beta_a,d * MARKET_MEDIAN_EX_A(t) + error_a,t`
-
-using at most the previous 20 available overlapping symbol-days and requiring at least 15.
+`r_a,t = alpha_a,d + beta_a,d * MARKET_MEDIAN_EX_A(t) + error_a,t`.
 
 Then on day `d`:
 
@@ -109,14 +115,23 @@ Then on day `d`:
 
 The contemporaneous market median may be used only for retrospective event attribution, never as future information.
 
-## News-burst indicator for attribution
+## Large-move event definition
 
-For each symbol and news factor, using only prior rows strictly before day `d`, calculate a trailing 20-row empirical baseline when at least 10 historical rows exist.
+Event attribution is applied only to symbol-days that are unusually large relative to that symbol's own past.
 
-For `NEWS_V6_MATCH_COUNT_24H_LAG15`, define:
+Using only prior rows strictly before day `d`, take at most the previous 20 absolute responses. When at least 10 prior rows exist, calculate their nearest-rank 90th percentile `Q90_ABS_RETURN(a,d)`.
 
-- `NEWS_BURST_24H(a,d)=true` if current count is greater than the trailing 90th percentile of the symbol's prior 20 counts, with current count > 0;
-- otherwise false.
+`LARGE_MOVE(a,d)=true` only when `abs(r_a,d) > Q90_ABS_RETURN(a,d)`.
+
+Rows without at least 10 prior responses are `UNVERIFIED_EVENT_SUPPORT`. Rows that do not exceed the threshold are `NON_EVENT`. This prevents ordinary noise from being assigned an event driver.
+
+## News-burst indicators for attribution
+
+For each symbol and news factor, using only prior rows strictly before day `d`, take at most the previous 20 factor values. When at least 10 historical rows exist, calculate the nearest-rank trailing 90th percentile.
+
+For `NEWS_V6_MATCH_COUNT_24H_LAG15`:
+
+`NEWS_BURST_24H(a,d)=true` if current count is greater than its trailing 90th percentile and current count > 0; otherwise false.
 
 Analogous indicators are calculated for 6h match count and 24h source count.
 
@@ -126,13 +141,15 @@ This is a symbol-relative burst definition; a count that is unusual for one coin
 
 Labels are descriptive diagnostics, not causal proof.
 
-For rows with an available rolling market relationship:
+Apply driver labels only when `LARGE_MOVE=true` and the rolling market relationship is available:
 
 - `MARKET_DOMINANT`: `abs(MARKET_COMPONENT) >= abs(ABNORMAL_RETURN)` and no news-burst indicator is true;
 - `NEWS_ASSOCIATED_ABNORMAL`: at least one news-burst indicator is true and `abs(ABNORMAL_RETURN) > abs(MARKET_COMPONENT)`;
 - `MIXED`: at least one news-burst indicator is true and `abs(MARKET_COMPONENT) >= abs(ABNORMAL_RETURN)`;
 - `SYMBOL_SPECIFIC_NO_NEWS`: no news-burst indicator is true and `abs(ABNORMAL_RETURN) > abs(MARKET_COMPONENT)`;
-- `UNVERIFIED`: insufficient trailing support.
+- `UNVERIFIED`: insufficient rolling market support.
+
+Non-large-move rows are `NON_EVENT`; insufficient event-threshold history is `UNVERIFIED_EVENT_SUPPORT`.
 
 These labels distinguish broad co-movement from news-associated abnormal movement without claiming causality.
 
@@ -172,7 +189,7 @@ Intraday scanner horizons, broad-market construction, alert thresholds and calib
 | `CFA-S10-003` | Compute per-symbol temporal stability | BLOCKED |
 | `CFA-S10-004` | Construct diagnostic broad-market reference | BLOCKED |
 | `CFA-S10-005` | Construct rolling symbol-relative news-burst measures | BLOCKED |
-| `CFA-S10-006` | Produce realized event-attribution labels | BLOCKED |
+| `CFA-S10-006` | Produce large-move realized event-attribution labels | BLOCKED |
 | `CFA-S10-007` | Independently validate exact Stage 10 outputs | BLOCKED |
 | `CFA-S10-008` | Freeze per-symbol findings / scanner prerequisites | BLOCKED |
 
