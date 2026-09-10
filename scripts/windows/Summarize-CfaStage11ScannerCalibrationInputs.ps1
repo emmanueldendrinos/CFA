@@ -31,6 +31,11 @@ function SelfTest-S11c{
     if((Percentile-S11c $v 0.10)-ne1){throw 'p10 self-test failed'}
     if((Percentile-S11c $v 0.50)-ne5){throw 'p50 self-test failed'}
     if((Percentile-S11c $v 0.90)-ne9){throw 'p90 self-test failed'}
+    $distribution=[pscustomobject][ordered]@{row_type='DISTRIBUTION';horizon_minutes=60;scan_count=10;min_assets=1;p01_assets=1;p05_assets=2;p10_assets=3;p50_assets=5;p90_assets=9;max_assets=10;threshold_assets='';scans_passing='';share_passing=''}
+    $threshold=[pscustomobject][ordered]@{row_type='THRESHOLD';horizon_minutes=60;scan_count=10;min_assets='';p01_assets='';p05_assets='';p10_assets='';p50_assets='';p90_assets='';max_assets='';threshold_assets=5;scans_passing=6;share_passing='0.6'}
+    $probe=@($distribution,$threshold)
+    if(@($probe|Where-Object{$_.row_type-eq'DISTRIBUTION'-and[int]$_.p50_assets-eq5}).Count-ne1){throw 'Uniform breadth distribution schema self-test failed'}
+    if(@($probe|Where-Object{$_.row_type-eq'THRESHOLD'-and[int]$_.threshold_assets-eq5}).Count-ne1){throw 'Uniform breadth threshold schema self-test failed'}
     Write-Host 'SELF-TEST: PASS'
 }
 if($SelfTest){try{SelfTest-S11c;exit 0}catch{Write-Host 'SELF-TEST: FAIL';Write-Host $_.Exception.Message;exit 1}}
@@ -90,12 +95,23 @@ try{
     foreach($h in @(60,240)){
         $rows=@($breadth|Where-Object{[int]$_.horizon_minutes-eq$h});if($rows.Count-ne$ExpectedScans){throw "Breadth rows changed for ${h}m: $($rows.Count)"}
         [double[]]$vals=@($rows|ForEach-Object{D-S11c $_.assets_with_any "${h}m assets_with_any"})
-        [void]$breadthSummary.Add([pscustomobject][ordered]@{horizon_minutes=$h;scan_count=$rows.Count;min_assets=[int](($vals|Measure-Object -Minimum).Minimum);p01_assets=[int](Percentile-S11c $vals 0.01);p05_assets=[int](Percentile-S11c $vals 0.05);p10_assets=[int](Percentile-S11c $vals 0.10);p50_assets=[int](Percentile-S11c $vals 0.50);p90_assets=[int](Percentile-S11c $vals 0.90);max_assets=[int](($vals|Measure-Object -Maximum).Maximum)})
+        [void]$breadthSummary.Add([pscustomobject][ordered]@{
+            row_type='DISTRIBUTION';horizon_minutes=$h;scan_count=$rows.Count;
+            min_assets=[int](($vals|Measure-Object -Minimum).Minimum);p01_assets=[int](Percentile-S11c $vals 0.01);p05_assets=[int](Percentile-S11c $vals 0.05);p10_assets=[int](Percentile-S11c $vals 0.10);p50_assets=[int](Percentile-S11c $vals 0.50);p90_assets=[int](Percentile-S11c $vals 0.90);max_assets=[int](($vals|Measure-Object -Maximum).Maximum);
+            threshold_assets='';scans_passing='';share_passing=''
+        })
         foreach($t in @(50,100,150,200,250,300,350,400)){
             $pass=@($rows|Where-Object{[int]$_.assets_with_any-ge$t}).Count
-            [void]$breadthSummary.Add([pscustomobject][ordered]@{horizon_minutes=$h;scan_count=$rows.Count;threshold_assets=$t;scans_passing=$pass;share_passing=Fmt-S11c ($pass/[double]$rows.Count)})
+            [void]$breadthSummary.Add([pscustomobject][ordered]@{
+                row_type='THRESHOLD';horizon_minutes=$h;scan_count=$rows.Count;
+                min_assets='';p01_assets='';p05_assets='';p10_assets='';p50_assets='';p90_assets='';max_assets='';
+                threshold_assets=$t;scans_passing=$pass;share_passing=Fmt-S11c ($pass/[double]$rows.Count)
+            })
         }
     }
+    $breadthDistributionRows=@($breadthSummary|Where-Object{$_.row_type-eq'DISTRIBUTION'})
+    $breadthThresholdRows=@($breadthSummary|Where-Object{$_.row_type-eq'THRESHOLD'})
+    if($breadthDistributionRows.Count-ne2-or$breadthThresholdRows.Count-ne16){throw "Breadth summary shape mismatch: distribution=$($breadthDistributionRows.Count) threshold=$($breadthThresholdRows.Count)"}
 
     if([string]::IsNullOrWhiteSpace($OutputRoot)){$OutputRoot=Split-Path -Parent $RunReceiptPath}
     if(-not(Test-Path -LiteralPath $OutputRoot -PathType Container)){New-Item -ItemType Directory -Path $OutputRoot -Force|Out-Null}
@@ -124,7 +140,7 @@ try{
     Write-Host "GDELT complete scans 24h / 6h: $($n24.complete_scans) / $($n6.complete_scans)"
     Write-Host "Stage10 descriptive news-supported symbols / no-direction-reversal indicators: $supportedNews / $supportedNoReversal"
     foreach($h in @(60,240)){
-        $b=@($breadthSummary|Where-Object{[int]$_.horizon_minutes-eq$h-and$null-ne$_.p50_assets})[0]
+        $b=@($breadthDistributionRows|Where-Object{[int]$_.horizon_minutes-eq$h})[0]
         Write-Host ("Market breadth {0}m min / p10 / median / p90 / max: {1} / {2} / {3} / {4} / {5}" -f $h,$b.min_assets,$b.p10_assets,$b.p50_assets,$b.p90_assets,$b.max_assets)
     }
     Write-Host 'Forward outcomes inspected: False'
