@@ -1,0 +1,43 @@
+name: CFA Stage 11 Scanner Source-Only Eligibility Validation
+
+on:
+  push:
+    branches:
+      - cfa/stage11-live-scanner-contract-20260910
+    paths:
+      - 'scripts/windows/Build-CfaStage11ScannerEligibilitySurface.ps1'
+      - 'docs/evidence/stage11-scanner-eligibility-contract.md'
+      - '.github/workflows/stage11-scanner-source-only-eligibility-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse eligibility runner PowerShell 7
+        shell: pwsh
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage11ScannerEligibilitySurface.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count){$e|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber): $($_.Message)"};throw 'PowerShell 7 parse failed'}
+      - name: Parse eligibility runner Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Build-CfaStage11ScannerEligibilitySurface.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count){$e|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber): $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed'}
+      - name: Self-test eligibility runner PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Build-CfaStage11ScannerEligibilitySurface.ps1 -CalibrationSummaryPath x -SelfTest
+      - name: Self-test eligibility runner Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Build-CfaStage11ScannerEligibilitySurface.ps1 -CalibrationSummaryPath x -SelfTest
+      - name: Enforce source-only eligibility boundary
+        shell: pwsh
+        run: |
+          $contract=Get-Content '.\docs\evidence\stage11-scanner-eligibility-contract.md' -Raw
+          foreach($m in @('START_GAP_60 <= 15','END_GAP_60 <= 15','SPAN_60 >= 30','nearest-rank p10','HISTORY_SUPPORTED','No forward-outcome evaluation')){if($contract -notmatch [regex]::Escape($m)){throw "Missing contract marker: $m"}}
+          $script=Get-Content '.\scripts\windows\Build-CfaStage11ScannerEligibilitySurface.ps1' -Raw
+          foreach($m in @('forward_outcomes_inspected=$false','SCANNER_SOURCE_ONLY_ELIGIBILITY_V1','default_transaction_read_only=on','nearest-rank p10')){if($script -notmatch [regex]::Escape($m)){throw "Missing implementation marker: $m"}}
+          if($script -match 'FWD_RETURN|FWD_ABNORMAL|hit_rate|alert_precision|alert_recall|profit|sharpe|pnl'){throw 'Forward-performance logic forbidden in source-only eligibility stage'}
