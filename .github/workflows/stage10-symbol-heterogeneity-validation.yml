@@ -1,0 +1,55 @@
+name: CFA Stage 10 Symbol Heterogeneity Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/windows/Run-CfaStage10SymbolHeterogeneity.ps1'
+      - 'docs/evidence/stage10-symbol-heterogeneity-contract.md'
+      - '.github/workflows/stage10-symbol-heterogeneity-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows/Run-CfaStage10SymbolHeterogeneity.ps1'
+      - 'docs/evidence/stage10-symbol-heterogeneity-contract.md'
+      - '.github/workflows/stage10-symbol-heterogeneity-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse Stage 10 runner with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Run-CfaStage10SymbolHeterogeneity.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+
+      - name: Parse Stage 10 runner with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Run-CfaStage10SymbolHeterogeneity.ps1'),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){$errors|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber), col $($_.Extent.StartColumnNumber) :: <$($_.Extent.Text)> :: $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+
+      - name: Run Stage 10 self-test in PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Run-CfaStage10SymbolHeterogeneity.ps1 -Stage7ValidationReceiptPath . -Stage9ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Run Stage 10 self-test in Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Run-CfaStage10SymbolHeterogeneity.ps1 -Stage7ValidationReceiptPath . -Stage9ValidationReceiptPath . -RepoRoot . -SelfTest
+
+      - name: Enforce Stage 10 per-symbol and leakage boundary
+        shell: powershell
+        run: |
+          $runner=Get-Content '.\scripts\windows\Run-CfaStage10SymbolHeterogeneity.ps1' -Raw
+          $contract=Get-Content '.\docs\evidence\stage10-symbol-heterogeneity-contract.md' -Raw
+          foreach($m in @('MARKET_MEDIAN_EX_A','LARGE_MOVE','NEWS_BURST_24H','nearest-rank','NON_EVENT','SCANNER_DESIGN_BLOCKED')){if($contract -notmatch [regex]::Escape($m)){throw "Stage 10 contract marker missing: $m"}}
+          foreach($m in @('Get-CfaS10SymbolFactorMetric','Get-CfaS10LeaveOneOutMedian','Get-CfaS10RollingMarketFit','NEWS_ASSOCIATED_ABNORMAL','stage10-symbol-profile-summary.csv','stage10-symbol-event-attribution.csv')){if($runner -notmatch [regex]::Escape($m)){throw "Stage 10 runner marker missing: $m"}}
+          if($runner -match '(?i)Get-Random|Shuffle|Random'){throw 'Stage 10 must not randomize frozen rows.'}
+          if($runner -match '(?i)Invoke-RestMethod|Invoke-WebRequest|HttpClient|psql|PGPASSWORD'){throw 'Stage 10 analysis must remain offline and database-free.'}
