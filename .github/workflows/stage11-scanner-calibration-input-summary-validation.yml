@@ -1,0 +1,40 @@
+name: CFA Stage 11 Scanner Calibration Input Summary Validation
+
+on:
+  push:
+    branches:
+      - cfa/stage11-live-scanner-contract-20260910
+    paths:
+      - 'scripts/windows/Summarize-CfaStage11ScannerCalibrationInputs.ps1'
+      - '.github/workflows/stage11-scanner-calibration-input-summary-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse calibration summarizer PowerShell 7
+        shell: pwsh
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Summarize-CfaStage11ScannerCalibrationInputs.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count){$e|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber): $($_.Message)"};throw 'PowerShell 7 parse failed.'}
+      - name: Parse calibration summarizer Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $t=$null;$e=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\windows\Summarize-CfaStage11ScannerCalibrationInputs.ps1'),[ref]$t,[ref]$e)|Out-Null
+          if($e.Count){$e|ForEach-Object{Write-Host "line $($_.Extent.StartLineNumber): $($_.Message)"};throw 'Windows PowerShell 5.1 parse failed.'}
+      - name: Self-test calibration summarizer PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Summarize-CfaStage11ScannerCalibrationInputs.ps1 -RunReceiptPath x -ValidationReceiptPath x -SelfTest
+      - name: Self-test calibration summarizer Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Summarize-CfaStage11ScannerCalibrationInputs.ps1 -RunReceiptPath x -ValidationReceiptPath x -SelfTest
+      - name: Enforce source-only calibration boundary
+        shell: pwsh
+        run: |
+          $s=Get-Content '.\scripts\windows\Summarize-CfaStage11ScannerCalibrationInputs.ps1' -Raw
+          foreach($marker in @('forward_outcomes_inspected=$false','market_60m_observation_thresholds','market_240m_observation_thresholds','market_breadth_thresholds','full-period profile values must not be used as scan-time predictors')){if($s -notmatch [regex]::Escape($marker)){throw "Missing calibration boundary marker: $marker"}}
+          if($s -match 'FWD_RETURN|FWD_ABNORMAL|hit_rate|alert_precision|alert_recall|future_return'){throw 'Forward-outcome logic is forbidden in calibration-input summary.'}
