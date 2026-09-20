@@ -30,6 +30,9 @@ jobs:
       fail-fast: false
       matrix:
         shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +62,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Disposable PostgreSQL failed to start.' }
 
       - name: Parse, self-test and test exact census subprocess in target shell
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           .\scripts\windows\Test-CfaResourceCensus.ps1 `
