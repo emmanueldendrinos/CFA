@@ -17,7 +17,7 @@ This document freezes the Q1 2026 control entry point. It does not approve a Q1 
 
 | ID | Requirement | Pass evidence |
 |---|---|---|
-| `Q1-CTL-001-MANIFEST` | The machine-readable contract has the exact v1 schema and complete Q1 task sequence. | Exact manifest parses and validates. |
+| `Q1-CTL-001-MANIFEST` | The machine-readable contract has the exact v1 schema and complete Q1 task sequence. | Exact manifest parses and validates; its receipt hash uses `UTF8_LF_NO_BOM` canonicalization. |
 | `Q1-CTL-002-INTERVAL` | Q1 uses exact half-open UTC boundaries. | Start and end equal the calendar-derived Q1 bounds. |
 | `Q1-CTL-003-AUTHORITY` | Repository base, SoT bytes, SoT snapshot, and automation plan reconcile. | Base commit is an ancestor; exact SoT SHA-256 and snapshot source hash match. |
 | `Q1-CTL-004-DATA-IDS` | Missing `DATA-###` authority is not inferred. | All three IDs remain `UNVERIFIED` with explicit non-equivalence. |
