@@ -89,6 +89,10 @@ function Invoke-ProbeJson([string]$Database,[string]$Query,[string]$SchemaQuery)
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL search_path=pg_catalog;
 SET LOCAL TIME ZONE 'UTC';
+SELECT (s.result->>'schema_ok')::boolean AS ok,s.result::text AS observation
+FROM ($schemaSql) s(result)
+\gset q1initial_
+\if :q1initial_ok
 SELECT 1 FROM $relations WHERE false;
 SELECT (s.result->>'schema_ok')::boolean AS ok,s.result::text AS observation
 FROM ($schemaSql) s(result)
@@ -98,6 +102,9 @@ SELECT d.result || jsonb_build_object('schema_observation', :'q1schema_observati
 FROM ($dataSql) d(result);
 \else
 SELECT :'q1schema_observation'::jsonb || jsonb_build_object('schema_observation', :'q1schema_observation'::jsonb,'status','FAIL');
+\endif
+\else
+SELECT :'q1initial_observation'::jsonb || jsonb_build_object('schema_observation', :'q1initial_observation'::jsonb,'status','FAIL');
 \endif
 COMMIT;
 "@

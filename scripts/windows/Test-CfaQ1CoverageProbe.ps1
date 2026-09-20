@@ -627,6 +627,16 @@ Write-Host 'ENVIRONMENT_RESTORATION_PASS'
         Assert-ProbeTest ($schemaFailure.market.status -ceq 'FAIL' -and $schemaFailure.news.database_name -ceq 'cfa') 'Market failure must not erase independent news evidence.'
         Invoke-FixtureSql 'srp' 'ALTER TABLE srp.ohlcvt_1m_2026q1 ALTER COLUMN volume TYPE double precision;' | Out-Null
 
+        Invoke-FixtureSql 'srp' 'BEGIN; ALTER TABLE srp.ohlcvt_1m_2026q1 RENAME TO ohlcvt_1m_2026q1_fixture_table; CREATE VIEW srp.ohlcvt_1m_2026q1 AS SELECT * FROM srp.ohlcvt_1m_2026q1_fixture_table; COMMIT;' | Out-Null
+        try {
+            $viewFailure = Invoke-CollectionCase 'View replacement is rejected by the catalog gate before market relation access' $good 2 'FAIL' 'FAIL'
+            Assert-ProbeTest ($viewFailure.market.status -ceq 'FAIL' -and $viewFailure.market.schema_observation.schema_ok -eq $false) 'A view replacement must fail with the catalog schema rejection retained.'
+            Assert-ProbeTest ($viewFailure.news.database_name -ceq 'cfa') 'Rejected market relation kind must preserve independent news discovery.'
+        }
+        finally {
+            Invoke-FixtureSql 'srp' 'BEGIN; DROP VIEW srp.ohlcvt_1m_2026q1; ALTER TABLE srp.ohlcvt_1m_2026q1_fixture_table RENAME TO ohlcvt_1m_2026q1; COMMIT;' | Out-Null
+        }
+
         Invoke-FixtureSql 'srp' 'TRUNCATE srp.ohlcvt_1m_2026q1;' | Out-Null
         $emptyMarket = Invoke-CollectionCase 'Empty market is explicit mismatch with empty arrays' $good 2 'PASS' 'FAIL'
         Assert-ProbeTest ($emptyMarket.market.per_pair -is [Array] -and @($emptyMarket.market.per_pair).Count -eq 0) 'Empty market summaries must remain arrays.'
