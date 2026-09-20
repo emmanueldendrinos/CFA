@@ -1,0 +1,90 @@
+name: Resource Census Validation
+
+on:
+  push:
+    paths:
+      - 'config/quarters/**'
+      - 'scripts/windows/Invoke-CfaQuarterBootstrap.ps1'
+      - 'scripts/windows/Invoke-CfaResourceCensus.ps1'
+      - 'scripts/windows/Test-CfaResourceCensus.ps1'
+      - 'docs/q1-resource-census-contract.md'
+      - '.github/workflows/resource-census-validation.yml'
+  pull_request:
+    paths:
+      - 'config/quarters/**'
+      - 'scripts/windows/Invoke-CfaQuarterBootstrap.ps1'
+      - 'scripts/windows/Invoke-CfaResourceCensus.ps1'
+      - 'scripts/windows/Test-CfaResourceCensus.ps1'
+      - 'docs/q1-resource-census-contract.md'
+      - '.github/workflows/resource-census-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-exact-artifact:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create isolated PostgreSQL fixture instance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binaries = @(Get-ChildItem -LiteralPath "$env:ProgramFiles\PostgreSQL" -Filter initdb.exe -Recurse -File | Sort-Object FullName -Descending)
+          if ($binaries.Count -eq 0) { throw 'Windows runner has no installed PostgreSQL initdb.exe.' }
+          $pgBin = Split-Path -Parent $binaries[0].FullName
+          foreach ($exe in @('pg_ctl.exe','psql.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $pgBin $exe) -PathType Leaf)) { throw "Missing PostgreSQL executable $exe" }
+          }
+          $fixtureRoot = Join-Path $env:RUNNER_TEMP ('cfa-disposable-postgres-' + [guid]::NewGuid().ToString('N'))
+          $dataDirectory = Join-Path $fixtureRoot 'data'
+          $testOutput = Join-Path $fixtureRoot 'test-output'
+          New-Item -ItemType Directory -Path $fixtureRoot,$testOutput | Out-Null
+          "CFA_TEST_PG_BIN=$pgBin" >> $env:GITHUB_ENV
+          "CFA_TEST_PG_DATA=$dataDirectory" >> $env:GITHUB_ENV
+          "CFA_TEST_FIXTURE_ROOT=$fixtureRoot" >> $env:GITHUB_ENV
+          "CFA_TEST_OUTPUT=$testOutput" >> $env:GITHUB_ENV
+          & (Join-Path $pgBin 'initdb.exe') -D $dataDirectory -A trust -U cfa_census_ci --encoding=UTF8 --locale=C
+          if ($LASTEXITCODE -ne 0) { throw 'Disposable initdb failed.' }
+          & (Join-Path $pgBin 'pg_ctl.exe') -D $dataDirectory -l (Join-Path $fixtureRoot 'postgres.log') -o '-h 127.0.0.1 -p 55432 -F' -w start
+          if ($LASTEXITCODE -ne 0) { throw 'Disposable PostgreSQL failed to start.' }
+
+      - name: Parse, self-test and test exact census subprocess in target shell
+        shell: ${{ matrix.shell }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\windows\Test-CfaResourceCensus.ps1 `
+            -RepoRoot $env:GITHUB_WORKSPACE `
+            -TestOutputRoot $env:CFA_TEST_OUTPUT `
+            -PostgresIntegration `
+            -PsqlPath (Join-Path $env:CFA_TEST_PG_BIN 'psql.exe') `
+            -DisposableDataDirectory $env:CFA_TEST_PG_DATA
+
+      - name: Stop only the disposable fixture server
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:CFA_TEST_PG_DATA -and (Test-Path -LiteralPath (Join-Path $env:CFA_TEST_PG_DATA 'postmaster.pid'))) {
+            & (Join-Path $env:CFA_TEST_PG_BIN 'pg_ctl.exe') -D $env:CFA_TEST_PG_DATA -m fast -w stop
+            if ($LASTEXITCODE -ne 0) { throw 'Could not stop disposable fixture PostgreSQL.' }
+          }
+
+      - name: Preserve bounded synthetic test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-census-${{ matrix.shell }}-${{ github.sha }}
+          path: |
+            ${{ env.CFA_TEST_OUTPUT }}
+            ${{ env.CFA_TEST_FIXTURE_ROOT }}/postgres.log
+          if-no-files-found: warn
+          retention-days: 7
