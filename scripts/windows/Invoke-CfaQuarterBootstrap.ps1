@@ -124,6 +124,26 @@ function Get-FileSha256Lower {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-Sha256Bytes {
+    param([Parameter(Mandatory)][byte[]]$Bytes)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return (($sha.ComputeHash($Bytes) | ForEach-Object { $_.ToString('x2') }) -join '') }
+    finally { $sha.Dispose() }
+}
+
+function Get-CanonicalTextSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $offset = 0
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $offset = 3 }
+    $strictUtf8 = New-Object System.Text.UTF8Encoding($false,$true)
+    try { $text = $strictUtf8.GetString($bytes,$offset,$bytes.Length - $offset) }
+    catch { Stop-ContractValidation "Text file is not valid UTF-8: $Path" }
+    $canonicalText = $text.Replace("`r`n","`n").Replace("`r","`n")
+    $canonicalBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($canonicalText)
+    return Get-Sha256Bytes -Bytes $canonicalBytes
+}
+
 function Resolve-RepoPath {
     param(
         [Parameter(Mandatory)][string]$Root,
@@ -349,7 +369,7 @@ function Test-CfaQuarterContract {
     }
 
     $gitEvidence = Get-GitEvidence -Root $Root -BaseCommit $baseCommit
-    $manifestSha = Get-FileSha256Lower -Path $ResolvedManifestPath
+    $manifestSha = Get-CanonicalTextSha256 -Path $ResolvedManifestPath
     $checks = @(
         [pscustomobject]@{id=($quarterToken + '-CTL-001-MANIFEST');status='PASS';evidence=$manifestSha},
         [pscustomobject]@{id=($quarterToken + '-CTL-002-INTERVAL');status='PASS';evidence=('[{0},{1})' -f $startUtcText,$endExclusiveUtcText)},
@@ -368,6 +388,7 @@ function Test-CfaQuarterContract {
         validated_utc = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
         manifest_path = [System.IO.Path]::GetFullPath($ResolvedManifestPath)
         manifest_sha256 = $manifestSha
+        manifest_canonicalization = 'UTF8_LF_NO_BOM'
         sot_sha256 = $observedSotSha
         git = $gitEvidence
         checks = $checks
@@ -466,6 +487,16 @@ function Invoke-SelfTest {
     $badSequence.stage_plan[1].status = 'PASS'
     Assert-ContractRejected -Contract $badSequence -RawJson ($badSequence | ConvertTo-Json -Depth 20) -Root $inputs.root -ResolvedManifestPath $inputs.manifest -CaseName 'premature Stage 1 PASS'
 
+    $tempPath = [System.IO.Path]::GetTempFileName()
+    try {
+        [System.IO.File]::WriteAllText($tempPath,"a`r`nb`r`n",(New-Object System.Text.UTF8Encoding($true)))
+        $canonicalHash = Get-CanonicalTextSha256 -Path $tempPath
+        if ($canonicalHash -cne '911169ddaaf146aff539f58c26c489af3b892dff0fe283c1c264c65ae5aa59a2') {
+            throw 'Self-test failed: UTF8_LF_NO_BOM canonical hashing.'
+        }
+    }
+    finally { Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue }
+
     Write-Host 'SELF-TEST: PASS'
 }
 
@@ -487,7 +518,8 @@ try {
 
     Write-Host "CFA QUARTER BOOTSTRAP: $($receipt.status)"
     Write-Host "Contract: $($receipt.contract_id) | Quarter: $($receipt.quarter_id)"
-    Write-Host "Manifest SHA-256: $($receipt.manifest_sha256)"
+    Write-Host "Manifest canonical SHA-256: $($receipt.manifest_sha256)"
+    Write-Host "Manifest canonicalization: $($receipt.manifest_canonicalization)"
     Write-Host "Next gate: $($receipt.next_gate.id) = $($receipt.next_gate.status)"
 
     if (-not $NoWrite) {
