@@ -49,6 +49,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Create isolated PostgreSQL fixture instance
         shell: pwsh
@@ -96,7 +97,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: q1-coverage-probe-${{ matrix.shell }}-${{ github.sha }}
+          name: q1-coverage-probe-${{ matrix.shell }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ${{ env.CFA_TEST_OUTPUT }}
             ${{ env.CFA_TEST_FIXTURE_ROOT }}/postgres.log

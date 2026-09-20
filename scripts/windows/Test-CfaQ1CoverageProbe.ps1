@@ -565,7 +565,11 @@ try {
 
         $environmentWrapper = Join-Path $script:RunRoot 'check-environment-restoration.ps1'
         $environmentArguments = Join-Path $script:RunRoot 'environment-runner-arguments.json'
-        Write-TestJson $environmentArguments (@('-RepoRoot',$script:ResolvedRepo) + (Get-ProbeArguments $good $script:ResolvedPsql))
+        Write-TestJson $environmentArguments ([ordered]@{
+            RepoRoot=$script:ResolvedRepo;CensusDirectory=$good.census
+            ExpectedCensusReceiptSha256=(Get-Sha (Join-Path $good.census 'receipt.json'))
+            PgHost=$PgHost;PgPort=$PgPort;PgUser=$PgUser;PsqlPath=$script:ResolvedPsql
+        })
         New-TestFile $environmentWrapper @'
 #requires -Version 5.1
 param([string]$Runner,[string]$ArgumentsFile)
@@ -576,8 +580,10 @@ $env:PGOPTIONS='-c default_transaction_read_only=off'; $env:PGCONNECT_TIMEOUT='9
 $names=@('PGPASSWORD','PGOPTIONS','PGCONNECT_TIMEOUT','PGCLIENTENCODING','PGDATABASE','PGHOST','PGPORT','PGUSER','PGSERVICE','PGSERVICEFILE','PGHOSTADDR','PGTARGETSESSIONATTRS')
 $before=@{}
 foreach($name in $names) { $before[$name]=[Environment]::GetEnvironmentVariable($name,'Process') }
-$runnerArguments=@([System.IO.File]::ReadAllText($ArgumentsFile,(New-Object System.Text.UTF8Encoding($false,$true))) | ConvertFrom-Json)
-& $Runner @runnerArguments
+$argumentMetadata=[System.IO.File]::ReadAllText($ArgumentsFile,(New-Object System.Text.UTF8Encoding($false,$true))) | ConvertFrom-Json
+$runnerParameters=@{}
+foreach($property in $argumentMetadata.PSObject.Properties) { $runnerParameters[$property.Name]=$property.Value }
+& $Runner @runnerParameters
 if($LASTEXITCODE -ne 0) { throw 'Exact runner failed in environment restoration wrapper.' }
 foreach($name in $names) {
     $after=[Environment]::GetEnvironmentVariable($name,'Process')
