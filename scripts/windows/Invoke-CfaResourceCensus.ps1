@@ -78,8 +78,9 @@ function Find-Psql {
     throw 'psql executable was not found.'
 }
 function Invoke-CatalogJson([string]$Psql,[string]$Database,[string]$Query) {
-    # A database name is a literal environment value, never an expandable -d conninfo.
-    $env:PGDATABASE = $Database
+    # Fixed URI syntax plus percent-encoded UTF-8 protects both conninfo characters
+    # and Unicode from Windows psql's narrow argv/environment conversion.
+    $databaseUri = 'postgresql:///' + [Uri]::EscapeDataString($Database)
     $env:PGHOST = $PgHost
     $env:PGPORT = [string]$PgPort
     $env:PGUSER = $PgUser
@@ -89,7 +90,7 @@ function Invoke-CatalogJson([string]$Psql,[string]$Database,[string]$Query) {
         $previous = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
-            $out = @(& $Psql -X -w -A -t -q -v ON_ERROR_STOP=1 -c $sql 2>$errPath)
+            $out = @(& $Psql -X -w -A -t -q -d $databaseUri -v ON_ERROR_STOP=1 -c $sql 2>$errPath)
             $code = $LASTEXITCODE
         } finally { $ErrorActionPreference = $previous }
         if ($code -ne 0) { throw "Catalog query failed (psql exit $code). Check local server, credentials, and database access; server diagnostics are not exported." }

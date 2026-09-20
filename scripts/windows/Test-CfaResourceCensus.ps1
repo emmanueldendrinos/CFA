@@ -36,7 +36,7 @@ function Get-QuotedNativeArgument {
 }
 
 function Invoke-TestProcess {
-    param([string]$Executable,[string[]]$Arguments,[int]$TimeoutSeconds = 180)
+    param([string]$Executable,[string[]]$Arguments,[int]$TimeoutSeconds = 180,[AllowNull()][object]$InputText = $null)
     $start = New-Object System.Diagnostics.ProcessStartInfo
     $start.FileName = $Executable
     $start.Arguments = (($Arguments | ForEach-Object { Get-QuotedNativeArgument $_ }) -join ' ')
@@ -44,6 +44,7 @@ function Invoke-TestProcess {
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
+    $start.RedirectStandardInput = ($null -ne $InputText)
     $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $start.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
     $process = New-Object System.Diagnostics.Process
@@ -52,6 +53,14 @@ function Invoke-TestProcess {
         if (-not $process.Start()) { throw 'Unable to start test subprocess.' }
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
+        if ($null -ne $InputText) {
+            # Native Windows argv is not a Unicode SQL transport. Write the
+            # exact UTF-8 bytes to psql stdin, without shell or code-page conversion.
+            $inputBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes([string]$InputText)
+            $process.StandardInput.BaseStream.Write($inputBytes,0,$inputBytes.Length)
+            $process.StandardInput.BaseStream.Flush()
+            $process.StandardInput.Close()
+        }
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             $process.Kill()
             throw "Test subprocess exceeded $TimeoutSeconds seconds."
@@ -171,14 +180,20 @@ function Assert-Receipt {
 
 function Invoke-FixtureSql {
     param([string]$Database,[string]$Sql)
-    $oldDatabase = [Environment]::GetEnvironmentVariable('PGDATABASE','Process')
-    try {
-        [Environment]::SetEnvironmentVariable('PGDATABASE',$Database,'Process')
-        $result = Invoke-TestProcess $script:ResolvedPsql @('-X','-w','-h',$PgHost,'-p',[string]$PgPort,'-U',$PgUser,'-v','ON_ERROR_STOP=1','-A','-t','-c',$Sql)
-        Assert-CensusTest ($result.exit_code -eq 0) ("Disposable PostgreSQL fixture command failed: " + $result.stderr)
-        return $result.stdout.Trim()
-    }
-    finally { Restore-TestEnvironmentVariable 'PGDATABASE' $oldDatabase }
+    # Percent-encoding keeps the exact database identity in ASCII at the native
+    # process boundary. The scheme and URI structure are fixed, not user supplied.
+    $databaseUri = 'postgresql:///' + [Uri]::EscapeDataString($Database)
+    $result = Invoke-TestProcess -Executable $script:ResolvedPsql -Arguments @('-X','-w','-h',$PgHost,'-p',[string]$PgPort,'-U',$PgUser,'-d',$databaseUri,'-v','ON_ERROR_STOP=1','-A','-t','-f','-') -InputText $Sql
+    Assert-CensusTest ($result.exit_code -eq 0) ("Disposable PostgreSQL fixture command failed: " + $result.stderr)
+    return $result.stdout.Trim()
+}
+
+function Get-NameDiagnostics {
+    param([string[]]$Names)
+    $details = @($Names | ForEach-Object {
+        [pscustomobject]@{name=$_;utf16_units=@($_.ToCharArray() | ForEach-Object { 'U+{0:X4}' -f [int]$_ })}
+    })
+    return ConvertTo-Json -InputObject $details -Depth 5 -Compress
 }
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Join-Path $PSScriptRoot '..\..' }
@@ -238,10 +253,13 @@ try {
         Assert-CensusTest ([System.IO.Path]::GetFullPath($actualData).TrimEnd('\','/') -ieq $expectedData) 'Connected server must be the explicitly identified disposable instance before any DDL.'
         $script:Checks.Add('Disposable PostgreSQL identity proved before fixture DDL')
 
-        $oddDatabase = "census = 'quote' `"double`" \ " + [char]0x03A9
+        $oddDatabase = "census = 'quote' `"double`" \ " + [char]0x03A9 + ' /?#%'
         $quotedOddDatabase = '"' + $oddDatabase.Replace('"','""') + '"'
         Invoke-FixtureSql 'postgres' 'CREATE DATABASE cfa;' | Out-Null
         Invoke-FixtureSql 'postgres' ('CREATE DATABASE ' + $quotedOddDatabase + ';') | Out-Null
+        $fixtureNamesJson = Invoke-FixtureSql 'postgres' "SELECT json_build_object('names',json_agg(datname ORDER BY datname)) FROM pg_database WHERE NOT datistemplate;"
+        $fixtureNames = @((($fixtureNamesJson | ConvertFrom-Json).names))
+        Assert-CensusTest ($fixtureNames -ccontains $oddDatabase) ("Fixture creation must preserve the exact unusual database identity before census. Expected: {0}; observed: {1}" -f (Get-NameDiagnostics @($oddDatabase)),(Get-NameDiagnostics $fixtureNames))
         Invoke-FixtureSql 'cfa' 'CREATE SCHEMA empty_schema; CREATE SCHEMA "pgX"; CREATE TABLE "pgX"."quoted table" ("id space" bigint, "value" numeric(10,2), "note" text);' | Out-Null
         Invoke-FixtureSql $oddDatabase 'CREATE SCHEMA "empty odd schema"; CREATE TABLE public.fixture (id integer);' | Out-Null
         $script:Checks.Add('PostgreSQL fixtures: cfa, unusual database, pgX, empty schemas, typed columns')
@@ -276,7 +294,7 @@ try {
         $first = Assert-Receipt $firstPath 'PASS' 3
         $firstReceiptHash = Get-Sha $firstPath
         $dbNames = @($first.catalogs | ForEach-Object { $_.database_name })
-        Assert-CensusTest ($dbNames -contains 'cfa' -and $dbNames -contains 'postgres' -and $dbNames -ccontains $oddDatabase) 'Every non-template database, including cfa and the exact unusual name, must be inventoried.'
+        Assert-CensusTest ($dbNames -contains 'cfa' -and $dbNames -contains 'postgres' -and $dbNames -ccontains $oddDatabase) ("Every non-template database, including cfa and the exact unusual name, must be inventoried. Expected: {0}; observed: {1}" -f (Get-NameDiagnostics @('cfa','postgres',$oddDatabase)),(Get-NameDiagnostics $dbNames))
         Assert-CensusTest ($dbNames -notcontains 'template0' -and $dbNames -notcontains 'template1') 'Template databases must not enter the population.'
         Assert-CensusTest (@($dbNames | Select-Object -Unique).Count -eq $dbNames.Count) 'Database evidence must have no name collisions.'
         foreach ($database in $first.catalogs) {
