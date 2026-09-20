@@ -21,6 +21,12 @@ function Assert-CensusTest {
     if (-not $Condition) { throw "Resource census test failed: $Message" }
 }
 
+function Restore-TestEnvironmentVariable {
+    param([string]$Name,[AllowNull()][object]$Value)
+    if ($null -eq $Value) { Remove-Item -LiteralPath ('Env:' + $Name) -ErrorAction SilentlyContinue }
+    else { [Environment]::SetEnvironmentVariable($Name,$Value,'Process') }
+}
+
 function Get-QuotedNativeArgument {
     param([AllowEmptyString()][string]$Value)
     # Windows CommandLineToArgvW/C-runtime quoting; also accepted by .NET on Unix.
@@ -101,10 +107,16 @@ function Assert-Receipt {
     param([string]$Path,[string]$ExpectedCollectionStatus,[int]$ExpectedFiles)
     $directory = Split-Path -Parent $Path
     $receipt = [System.IO.File]::ReadAllText($Path,$script:Utf8) | ConvertFrom-Json
+    Assert-CensusTest ($receipt.schema -ceq 'cfa.resource-census/v1') 'Receipt schema must identify the frozen census format.'
+    Assert-CensusTest ($receipt.task_id -ceq 'Q1-RES-001') 'Receipt must identify the authorized resource-census task.'
+    Assert-CensusTest ($receipt.quarter_id -ceq '2026Q1') 'Receipt must identify the exact authorized quarter.'
     Assert-CensusTest ($receipt.collection_status -ceq $ExpectedCollectionStatus) 'Collection status must reflect exact collection result.'
     Assert-CensusTest ($receipt.task_status -ceq 'UNVERIFIED') 'Collection must not approve Q1-RES-001.'
     Assert-CensusTest ($receipt.stage1_status -ceq 'BLOCKED') 'Collection must not advance Stage 1.'
     Assert-CensusTest ($receipt.manifest_sha256 -ceq $script:ManifestSha) 'Canonical manifest hash must match the exact input manifest.'
+    Assert-CensusTest ($receipt.repository_head -ceq $script:RepositoryHead) 'Repository HEAD must match the exact tested checkout.'
+    Assert-CensusTest ($receipt.runner_sha256 -ceq (Get-Sha $script:Runner)) 'Runner hash must match the exact executed census file bytes.'
+    Assert-CensusTest ($receipt.sot_sha256 -ceq (Get-Sha $script:SotPath)) 'SoT hash must match the exact authority file selected by the frozen manifest.'
     Assert-CensusTest ($receipt.files_count -eq $ExpectedFiles) "File inventory count must equal $ExpectedFiles."
     Assert-CensusTest ($receipt.artifacts -is [System.Array]) 'Receipt artifacts must remain an array.'
     $paths = @($receipt.artifacts | ForEach-Object { [string]$_.path })
@@ -123,13 +135,21 @@ function Assert-Receipt {
     }
     $errorsRaw = [System.IO.File]::ReadAllText((Join-Path $directory 'errors.json'),$script:Utf8)
     Assert-CensusTest ($errorsRaw.TrimStart().StartsWith('[')) 'errors.json must be an array, including empty collections.'
-    $errors = @($errorsRaw | ConvertFrom-Json)
+    # A wrapper property preserves empty arrays in Windows PowerShell 5.1,
+    # whose top-level ConvertFrom-Json pipeline can produce one null for [].
+    $errorsContainer = ('{"items":' + $errorsRaw + '}') | ConvertFrom-Json
+    Assert-CensusTest ($errorsContainer.items -is [System.Array]) 'Error inventory must preserve an array shape.'
+    $errors = @($errorsContainer.items)
+    foreach ($issue in $errors) { Assert-CensusTest ($null -ne $issue) 'Error inventory may not contain null entries.' }
     Assert-CensusTest ($errors.Count -eq $receipt.errors_count) 'Error accounting must reconcile.'
     if ($ExpectedCollectionStatus -ceq 'PASS') { Assert-CensusTest ($errors.Count -eq 0) 'PASS collection may not hide errors.' }
     else { Assert-CensusTest ($errors.Count -gt 0) 'Failed collection must include explicit errors.' }
     $catalogRaw = [System.IO.File]::ReadAllText((Join-Path $directory 'catalogs.json'),$script:Utf8)
     Assert-CensusTest ($catalogRaw.TrimStart().StartsWith('[')) 'catalogs.json must be an array, including empty collections.'
-    $catalogs = @($catalogRaw | ConvertFrom-Json)
+    $catalogContainer = ('{"items":' + $catalogRaw + '}') | ConvertFrom-Json
+    Assert-CensusTest ($catalogContainer.items -is [System.Array]) 'Catalog inventory must preserve an array shape.'
+    $catalogs = @($catalogContainer.items)
+    foreach ($database in $catalogs) { Assert-CensusTest ($null -ne $database) 'Catalog inventory may not contain null entries.' }
     $rows = New-Object 'System.Collections.Generic.List[object]'
     foreach ($line in [System.IO.File]::ReadLines((Join-Path $directory 'files.jsonl'),$script:Utf8)) {
         Assert-CensusTest (-not [string]::IsNullOrWhiteSpace($line)) 'JSONL may not contain blank records.'
@@ -158,7 +178,7 @@ function Invoke-FixtureSql {
         Assert-CensusTest ($result.exit_code -eq 0) ("Disposable PostgreSQL fixture command failed: " + $result.stderr)
         return $result.stdout.Trim()
     }
-    finally { [Environment]::SetEnvironmentVariable('PGDATABASE',$oldDatabase,'Process') }
+    finally { Restore-TestEnvironmentVariable 'PGDATABASE' $oldDatabase }
 }
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Join-Path $PSScriptRoot '..\..' }
@@ -168,6 +188,12 @@ $script:ShellExecutable = (Get-Process -Id $PID).Path
 $script:Utf8 = $utf8
 $manifest = Join-Path $script:ResolvedRepo 'config/quarters/2026Q1.json'
 $script:ManifestSha = Get-CanonicalSha $manifest
+$manifestObject = [System.IO.File]::ReadAllText($manifest,$utf8) | ConvertFrom-Json
+$script:SotPath = Join-Path $script:ResolvedRepo ([string]$manifestObject.authority.sot_path)
+$gitExecutable = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+$headResult = Invoke-TestProcess $gitExecutable @('-C',$script:ResolvedRepo,'rev-parse','HEAD')
+Assert-CensusTest ($headResult.exit_code -eq 0 -and $headResult.stdout.Trim() -cmatch '^[0-9a-f]{40}$') 'Exact checkout HEAD must be readable before testing.'
+$script:RepositoryHead = $headResult.stdout.Trim()
 if ([string]::IsNullOrWhiteSpace($TestOutputRoot)) { $TestOutputRoot = [System.IO.Path]::GetTempPath() }
 $runRoot = Join-Path ([System.IO.Path]::GetFullPath($TestOutputRoot)) ('cfa-census-tests-' + [guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($runRoot) | Out-Null
@@ -177,7 +203,7 @@ $originalEncoding = [Environment]::GetEnvironmentVariable('PGCLIENTENCODING','Pr
 $originalConnectionEnvironment = @{}
 foreach ($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR')) {
     $originalConnectionEnvironment[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
-    [Environment]::SetEnvironmentVariable($name,$null,'Process')
+    Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
 }
 try {
     # Test-only placeholder, not a credential. It prevents an interactive prompt.
@@ -244,7 +270,7 @@ try {
         [Environment]::SetEnvironmentVariable('PGSERVICEFILE',$bogusServiceFile,'Process')
         [Environment]::SetEnvironmentVariable('PGHOSTADDR','192.0.2.1','Process')
         Invoke-RunnerTest 'Exact full census with live disposable PostgreSQL' ($baseArguments + $connectionArguments) 0 | Out-Null
-        foreach ($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR')) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+        foreach ($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR')) { Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue }
         $script:Checks.Add('Inherited libpq service/host-address overrides cannot redirect the confirmed endpoint')
         $firstPath = Get-OnlyNewReceipt $evidence @()
         $first = Assert-Receipt $firstPath 'PASS' 3
@@ -342,7 +368,7 @@ try {
     Write-Host ("PASS: {0} checks; PostgreSQL integration={1}. User-local census remains UNVERIFIED." -f $script:Checks.Count,[bool]$PostgresIntegration)
 }
 finally {
-    [Environment]::SetEnvironmentVariable('PGPASSWORD',$originalPassword,'Process')
-    [Environment]::SetEnvironmentVariable('PGCLIENTENCODING',$originalEncoding,'Process')
-    foreach ($name in $originalConnectionEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name,$originalConnectionEnvironment[$name],'Process') }
+    Restore-TestEnvironmentVariable 'PGPASSWORD' $originalPassword
+    Restore-TestEnvironmentVariable 'PGCLIENTENCODING' $originalEncoding
+    foreach ($name in $originalConnectionEnvironment.Keys) { Restore-TestEnvironmentVariable $name $originalConnectionEnvironment[$name] }
 }

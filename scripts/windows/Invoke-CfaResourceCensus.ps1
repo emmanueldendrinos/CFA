@@ -181,7 +181,7 @@ $bstr = [IntPtr]::Zero
 $oldConsoleEncoding = [Console]::OutputEncoding
 $oldOutputEncoding = $OutputEncoding
 try {
-    foreach ($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR')) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+    foreach ($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR')) { Remove-Item -LiteralPath ('Env:'+ $name) -ErrorAction SilentlyContinue }
     [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
     $OutputEncoding = New-Object Text.UTF8Encoding($false)
     if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Join-Path $PSScriptRoot '../..' }
@@ -323,7 +323,10 @@ SELECT json_build_object(
 } finally {
     if ($null -ne $writer) { $writer.Dispose() }
     if ($bstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-    foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name,$saved[$name],'Process') }
+    foreach ($name in $saved.Keys) {
+        if ($null -eq $saved[$name]) { Remove-Item -LiteralPath ('Env:'+ $name) -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name,$saved[$name],'Process') }
+    }
     [Console]::OutputEncoding = $oldConsoleEncoding
     $OutputEncoding = $oldOutputEncoding
 }

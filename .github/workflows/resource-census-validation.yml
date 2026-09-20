@@ -34,6 +34,12 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
+      - name: Preserve exact Git blob line endings in the test checkout
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          if ($LASTEXITCODE -ne 0) { throw 'Could not disable checkout line-ending conversion.' }
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
