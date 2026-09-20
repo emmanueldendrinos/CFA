@@ -70,12 +70,13 @@ function Assert-ExactStringArray {
         [Parameter(Mandatory)][string]$Context
     )
     $values = @($Actual | ForEach-Object { [string]$_ })
-    if ($values.Count -ne $Expected.Count) {
-        Stop-ContractValidation ("{0} count mismatch: expected {1}, observed {2}." -f $Context,$Expected.Count,$values.Count)
+    $expectedValues = @($Expected)
+    if ($values.Count -ne $expectedValues.Count) {
+        Stop-ContractValidation ("{0} count mismatch: expected {1}, observed {2}." -f $Context,$expectedValues.Count,$values.Count)
     }
-    for ($index = 0; $index -lt $Expected.Count; $index++) {
-        if ($values[$index] -cne $Expected[$index]) {
-            Stop-ContractValidation ("{0}[{1}] mismatch: expected '{2}', observed '{3}'." -f $Context,$index,$Expected[$index],$values[$index])
+    for ($index = 0; $index -lt $expectedValues.Count; $index++) {
+        if ($values[$index] -cne $expectedValues[$index]) {
+            Stop-ContractValidation ("{0}[{1}] mismatch: expected '{2}', observed '{3}'." -f $Context,$index,$expectedValues[$index],$values[$index])
         }
     }
 }
