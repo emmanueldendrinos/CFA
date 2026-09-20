@@ -1,0 +1,72 @@
+name: Quarter Bootstrap Validation
+
+on:
+  push:
+    paths:
+      - 'config/quarters/**'
+      - 'scripts/windows/Invoke-CfaQuarterBootstrap.ps1'
+      - 'docs/q1-2026-bootstrap.md'
+      - '.github/workflows/quarter-bootstrap-validation.yml'
+  pull_request:
+    paths:
+      - 'config/quarters/**'
+      - 'scripts/windows/Invoke-CfaQuarterBootstrap.ps1'
+      - 'docs/q1-2026-bootstrap.md'
+      - '.github/workflows/quarter-bootstrap-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse runner with PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path '.\scripts\windows\Invoke-CfaQuarterBootstrap.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if($errors.Count -gt 0){
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw 'Quarter bootstrap runner failed PowerShell 7 parsing.'
+          }
+
+      - name: Parse runner with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path '.\scripts\windows\Invoke-CfaQuarterBootstrap.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if($errors.Count -gt 0){
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw 'Quarter bootstrap runner failed Windows PowerShell 5.1 parsing.'
+          }
+
+      - name: Self-test with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Invoke-CfaQuarterBootstrap.ps1 -ManifestPath .\config\quarters\2026Q1.json -SelfTest
+
+      - name: Self-test with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Invoke-CfaQuarterBootstrap.ps1 -ManifestPath .\config\quarters\2026Q1.json -SelfTest
+
+      - name: Test exact Q1 artifact with PowerShell 7
+        shell: pwsh
+        run: .\scripts\windows\Invoke-CfaQuarterBootstrap.ps1 -ManifestPath .\config\quarters\2026Q1.json -NoWrite
+
+      - name: Test exact Q1 artifact with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\windows\Invoke-CfaQuarterBootstrap.ps1 -ManifestPath .\config\quarters\2026Q1.json -NoWrite
