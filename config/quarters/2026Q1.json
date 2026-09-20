@@ -1,0 +1,208 @@
+{
+  "contract_schema": "cfa.quarter-bootstrap/v1",
+  "contract_version": "1.0.0",
+  "contract_id": "Q1-CTL-001",
+  "quarter_id": "2026Q1",
+  "created_utc": "2026-09-20T21:27:58Z",
+  "interval": {
+    "start_utc": "2026-01-01T00:00:00Z",
+    "end_exclusive_utc": "2026-04-01T00:00:00Z",
+    "time_zone": "UTC",
+    "semantics": "HALF_OPEN"
+  },
+  "authority": {
+    "repository": "emmanueldendrinos/CFA",
+    "base_commit_sha": "5f7d0bf2d20ce61830fe4c481767aa74887dbb58",
+    "sot_path": "CFA-SoT.xlsx",
+    "sot_sha256": "a7597f4a310985ef7083ce8621e1a326370729c9f9cab1a835e04aa1a8176785",
+    "sot_snapshot_path": "docs/evidence/sot-authority-snapshot.json",
+    "automation_plan_path": "docs/automation-execution-plan.md",
+    "registered_source_ids": [
+      "AF-001",
+      "AF-002",
+      "AF-003"
+    ],
+    "required_data_ids": [
+      {
+        "id": "DATA-001",
+        "status": "UNVERIFIED",
+        "reason": "No DATA-### identifiers were found in the directly inspected CFA SoT snapshot; no equivalence to AF-001 is assumed."
+      },
+      {
+        "id": "DATA-002",
+        "status": "UNVERIFIED",
+        "reason": "No DATA-### identifiers were found in the directly inspected CFA SoT snapshot; no equivalence to AF-002 is assumed."
+      },
+      {
+        "id": "DATA-003",
+        "status": "UNVERIFIED",
+        "reason": "No DATA-### identifiers were found in the directly inspected CFA SoT snapshot; no equivalence to AF-003 is assumed."
+      }
+    ]
+  },
+  "execution": {
+    "runner_path": "scripts/windows/Invoke-CfaQuarterBootstrap.ps1",
+    "mode": "VALIDATE_ONLY",
+    "acquire_data": false,
+    "modify_source_files": false,
+    "modify_postgresql": false,
+    "advance_stage_1": false,
+    "allow_prior_quarter_observations_as_expectations": false
+  },
+  "resources": [
+    {
+      "id": "Q1-RES-001-GITHUB",
+      "kind": "GITHUB_REPOSITORY",
+      "status": "PASS",
+      "locator": "https://github.com/emmanueldendrinos/CFA",
+      "observation": "main@5f7d0bf2d20ce61830fe4c481767aa74887dbb58",
+      "reason": "Repository, default branch, commit, SoT, and authorized control files were directly inspected."
+    },
+    {
+      "id": "Q1-RES-001-KRAKEN",
+      "kind": "KRAKEN_SOURCE",
+      "status": "UNVERIFIED",
+      "locator": null,
+      "observation": null,
+      "reason": "Q1 2026 Kraken archives and manifests have not been directly inventoried."
+    },
+    {
+      "id": "Q1-RES-001-CFA-LOCAL",
+      "kind": "LOCAL_EVIDENCE_ROOT",
+      "status": "UNVERIFIED",
+      "locator": null,
+      "observation": null,
+      "reason": "The current CFA-local directory and its Q1 contents have not been directly inventoried."
+    },
+    {
+      "id": "Q1-RES-001-POSTGRESQL",
+      "kind": "POSTGRESQL",
+      "status": "UNVERIFIED",
+      "locator": null,
+      "observation": null,
+      "reason": "The current PostgreSQL server, databases, schemas, tables, and Q1 coverage have not been directly inventoried."
+    },
+    {
+      "id": "Q1-RES-001-NEWS",
+      "kind": "NEWS_SOURCE",
+      "status": "UNVERIFIED",
+      "locator": null,
+      "observation": null,
+      "reason": "No Q1 news-source product, object population, local archive location, or PostgreSQL lineage has been frozen."
+    }
+  ],
+  "stage_plan": [
+    {
+      "order": 0,
+      "id": "Q1-RES-001",
+      "status": "UNVERIFIED",
+      "depends_on": [],
+      "purpose": "Inventory local Kraken files, CFA-local evidence, and PostgreSQL state without mutation."
+    },
+    {
+      "order": 1,
+      "id": "Q1-S1-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-RES-001"],
+      "purpose": "Verify Q1 Kraken source archives and member lineage."
+    },
+    {
+      "order": 2,
+      "id": "Q1-S1-002",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S1-001"],
+      "purpose": "Verify Q1 market coverage, grain, types, time bounds, nulls, duplicates, and reconciliation."
+    },
+    {
+      "order": 3,
+      "id": "Q1-S1-003",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S1-002"],
+      "purpose": "Define and freeze the Q1 news-source contract from direct evidence."
+    },
+    {
+      "order": 4,
+      "id": "Q1-S1-004",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S1-003"],
+      "purpose": "Acquire or reconcile the frozen Q1 news-source population idempotently."
+    },
+    {
+      "order": 5,
+      "id": "Q1-S1-005",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S1-004"],
+      "purpose": "Publish and reconcile the bounded Q1 Stage 1 validation receipt."
+    },
+    {
+      "order": 6,
+      "id": "Q1-S2-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S1-005"],
+      "purpose": "Verify Q1 pair and asset identities from Q1 evidence."
+    },
+    {
+      "order": 7,
+      "id": "Q1-S2-002",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S2-001"],
+      "purpose": "Review Q1 alias carry-forward, changes, gaps, and ambiguity."
+    },
+    {
+      "order": 8,
+      "id": "Q1-S3-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S2-002"],
+      "purpose": "Freeze the eligible Q1 news-matching universe."
+    },
+    {
+      "order": 9,
+      "id": "Q1-S3-002",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S3-001"],
+      "purpose": "Execute deterministic Q1 news matching under a frozen contract."
+    },
+    {
+      "order": 10,
+      "id": "Q1-S3-003",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S3-002"],
+      "purpose": "Complete bounded semantic sample review and matching reconciliation."
+    },
+    {
+      "order": 11,
+      "id": "Q1-S4-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S3-003"],
+      "purpose": "Define and freeze responses with exact timing and missing-data semantics."
+    },
+    {
+      "order": 12,
+      "id": "Q1-S5-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S4-001"],
+      "purpose": "Define candidate factors with formulas, sources, grain, lookback, lag, and scaling."
+    },
+    {
+      "order": 13,
+      "id": "Q1-S6-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S5-001"],
+      "purpose": "Run data-quality, availability-timing, and leakage gates."
+    },
+    {
+      "order": 14,
+      "id": "Q1-S7-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S6-001"],
+      "purpose": "Freeze the model-ready dataset and validation design."
+    },
+    {
+      "order": 15,
+      "id": "Q1-S8-001",
+      "status": "BLOCKED",
+      "depends_on": ["Q1-S7-001"],
+      "purpose": "Program and validate PLS only against the exact frozen Stage 7 artifact."
+    }
+  ]
+}
