@@ -69,8 +69,10 @@ function Assert-ExactStringArray {
         [AllowEmptyCollection()][string[]]$Expected,
         [Parameter(Mandatory)][string]$Context
     )
-    $values = @($Actual | ForEach-Object { [string]$_ })
-    $expectedValues = @($Expected)
+    $values = @()
+    if ($null -ne $Actual) { $values = @($Actual | ForEach-Object { [string]$_ }) }
+    $expectedValues = @()
+    if ($null -ne $Expected) { $expectedValues = @($Expected) }
     if ($values.Count -ne $expectedValues.Count) {
         Stop-ContractValidation ("{0} count mismatch: expected {1}, observed {2}." -f $Context,$expectedValues.Count,$values.Count)
     }
