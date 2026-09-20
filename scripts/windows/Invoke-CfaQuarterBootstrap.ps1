@@ -89,13 +89,31 @@ function ConvertFrom-ExactUtcText {
     $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
     $valid = [DateTimeOffset]::TryParseExact(
         $Text,
-        'yyyy-MM-ddTHH:mm:ssZ',
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
         [Globalization.CultureInfo]::InvariantCulture,
         $styles,
         [ref]$parsed
     )
     if (-not $valid) { Stop-ContractValidation "$Context must use exact UTC format yyyy-MM-ddTHH:mm:ssZ." }
     return $parsed
+}
+
+function Get-RawUtcText {
+    param(
+        [Parameter(Mandatory)][string]$RawJson,
+        [Parameter(Mandatory)][string]$PropertyName,
+        [Parameter(Mandatory)][string]$Context
+    )
+    $pattern = '"' + [regex]::Escape($PropertyName) + '"\s*:\s*"(?<value>[^"]*)"'
+    $matches = [regex]::Matches($RawJson,$pattern,[Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    if ($matches.Count -ne 1) {
+        Stop-ContractValidation "$Context must occur exactly once as a JSON string."
+    }
+    $value = $matches[0].Groups['value'].Value
+    if ($value -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') {
+        Stop-ContractValidation "$Context must use exact UTC format yyyy-MM-ddTHH:mm:ssZ."
+    }
+    return $value
 }
 
 function Get-FileSha256Lower {
@@ -183,15 +201,18 @@ function Test-CfaQuarterContract {
     if ($contractId -cne ($quarterToken + '-CTL-001')) {
         Stop-ContractValidation "contract_id must be $quarterToken-CTL-001 for $quarterId."
     }
-    $createdUtcText = [string](Get-RequiredProperty $Contract 'created_utc' 'contract')
+    Get-RequiredProperty $Contract 'created_utc' 'contract' | Out-Null
+    $createdUtcText = Get-RawUtcText -RawJson $RawJson -PropertyName 'created_utc' -Context 'created_utc'
     $createdUtc = ConvertFrom-ExactUtcText -Text $createdUtcText -Context 'created_utc'
 
     $interval = Get-RequiredProperty $Contract 'interval' 'contract'
     Assert-ExactProperties -Object $interval -Allowed @('start_utc','end_exclusive_utc','time_zone','semantics') -Context 'interval'
     if ([string]$interval.time_zone -cne 'UTC') { Stop-ContractValidation 'interval.time_zone must be UTC.' }
     if ([string]$interval.semantics -cne 'HALF_OPEN') { Stop-ContractValidation 'interval.semantics must be HALF_OPEN.' }
-    $start = ConvertFrom-ExactUtcText -Text ([string]$interval.start_utc) -Context 'interval.start_utc'
-    $endExclusive = ConvertFrom-ExactUtcText -Text ([string]$interval.end_exclusive_utc) -Context 'interval.end_exclusive_utc'
+    $startUtcText = Get-RawUtcText -RawJson $RawJson -PropertyName 'start_utc' -Context 'interval.start_utc'
+    $endExclusiveUtcText = Get-RawUtcText -RawJson $RawJson -PropertyName 'end_exclusive_utc' -Context 'interval.end_exclusive_utc'
+    $start = ConvertFrom-ExactUtcText -Text $startUtcText -Context 'interval.start_utc'
+    $endExclusive = ConvertFrom-ExactUtcText -Text $endExclusiveUtcText -Context 'interval.end_exclusive_utc'
     $expectedStart = [DateTimeOffset]::new($year,(($quarter - 1) * 3 + 1),1,0,0,0,[TimeSpan]::Zero)
     $expectedEnd = $expectedStart.AddMonths(3)
     if ($start -ne $expectedStart -or $endExclusive -ne $expectedEnd) {
@@ -328,7 +349,7 @@ function Test-CfaQuarterContract {
     $manifestSha = Get-FileSha256Lower -Path $ResolvedManifestPath
     $checks = @(
         [pscustomobject]@{id=($quarterToken + '-CTL-001-MANIFEST');status='PASS';evidence=$manifestSha},
-        [pscustomobject]@{id=($quarterToken + '-CTL-002-INTERVAL');status='PASS';evidence=('[{0},{1})' -f $interval.start_utc,$interval.end_exclusive_utc)},
+        [pscustomobject]@{id=($quarterToken + '-CTL-002-INTERVAL');status='PASS';evidence=('[{0},{1})' -f $startUtcText,$endExclusiveUtcText)},
         [pscustomobject]@{id=($quarterToken + '-CTL-003-AUTHORITY');status='PASS';evidence=$observedSotSha},
         [pscustomobject]@{id=($quarterToken + '-CTL-004-DATA-IDS');status='PASS';evidence='DATA-001/002/003 explicitly UNVERIFIED; no AF equivalence assumed'},
         [pscustomobject]@{id=($quarterToken + '-CTL-005-NO-CARRY');status='PASS';evidence='No prior-quarter source observations or cardinalities are contracted'},
