@@ -546,6 +546,252 @@ function Update-CoverageArtifact {
     Write-TestJson $receiptPath $receipt
 }
 
+function Initialize-SnapshotTestModule {
+    # Import exact production function bodies without running collector main or
+    # exposing test hooks in the delivered runner.
+    $tokens=$null; $parseErrors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseFile($script:Runner,[ref]$tokens,[ref]$parseErrors)
+    Assert-ProbeTest ($parseErrors.Count -eq 0) 'Diagnostic function source must parse.'
+    $definitions=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text})
+    $script:SnapshotTestModule=New-Module -ScriptBlock ([scriptblock]::Create((@('Set-StrictMode -Version Latest', '$ErrorActionPreference="Stop"')+$definitions) -join "`n"))
+    & $script:SnapshotTestModule {
+        $script:Utf8=New-Object Text.UTF8Encoding($false,$true)
+        $script:StatementTimeoutSeconds=5
+        $script:SnapshotDiagnostic=New-Q1SnapshotDiagnostic
+    }
+}
+
+function Invoke-SnapshotProtocolFixture {
+    param([string]$Directory)
+    return & $script:SnapshotTestModule {
+        param($TestDirectory)
+        $script:SnapshotDiagnostic=New-Q1SnapshotDiagnostic
+        $value=$null; $failed=$false
+        try { $value=Read-Q1SnapshotProtocol (Join-Path $TestDirectory snapshot.partial) $TestDirectory }
+        catch { $failed=$true }
+        [pscustomobject]@{failed=$failed;snapshot=$value;diagnostic=$script:SnapshotDiagnostic}
+    } $Directory
+}
+
+function Test-SnapshotDiagnosticsComponents {
+    Initialize-SnapshotTestModule
+    $secret='UNEXPORTABLE_DIAGNOSTIC_SECRET_' + [char]0x03a9 + [char]0x96ea
+    $drain=& $script:SnapshotTestModule {
+        param($Secret)
+        Initialize-Q1SnapshotDrain
+        $text=($Secret*8192)+"`npsql:<stdin>:17: ERROR:  57014`n"
+        $bytes=$script:Utf8.GetBytes($text)
+        # Invalid UTF-8 and a multibyte ring boundary must not stop draining.
+        $bytes[3]=0xff
+        $stream=[IO.MemoryStream]::new($bytes,$false)
+        try {
+            $result=[CfaQ1SnapshotTransport.ErrorDrain]::Start($stream).GetAwaiter().GetResult()
+            $safe=Get-Q1SnapshotErrorDiagnostic $result.Text 3
+            [pscustomobject]@{bytes=$result.Bytes;expected_bytes=$bytes.Length;retained_characters=$result.Text.Length;diagnostic=$safe}
+            $result.Text=$null
+        } finally {$stream.Dispose()}
+    } $secret
+    Assert-ProbeTest ($drain.bytes -eq $drain.expected_bytes -and $drain.bytes -gt 65536 -and $drain.retained_characters -le 65536) 'Stderr drain must consume all bytes while retaining at most its fixed-size tail.'
+    Assert-ProbeTest ($drain.diagnostic.sqlstate -ceq '57014' -and -not (ConvertTo-Json -InputObject $drain -Compress -Depth 5).Contains($secret)) 'Bounded stderr drain must preserve a final SQLSTATE without exporting Unicode or secret input.'
+    $script:Checks.Add('Bounded stderr drain compiles, drains oversized malformed UTF8 and retains only safe final classification')
+    foreach ($state in @('57014','55P03','42501','42P01','42703','42883','42601','53100','53200','53300','53400','54000','XX000')) {
+        $result=& $script:SnapshotTestModule {param($Text) Get-Q1SnapshotErrorDiagnostic $Text 3} ("psql:<stdin>:17: ERROR:  $state`n")
+        Assert-ProbeTest ($result.sqlstate -ceq $state -and $result.failure_class -cne 'UNKNOWN') ('Allowlisted SQLSTATE must be recognized: '+$state)
+        $serialized=ConvertTo-Json -InputObject $result -Compress
+        Assert-ProbeTest ($serialized.Length -lt 256 -and @($result.PSObject.Properties).Count -eq 2) 'Classifier output must contain only bounded classification and SQLSTATE.'
+    }
+    foreach ($text in @('', $secret, "psql:<stdin>:1: ERROR:  ZZ999`n", "psql:<stdin>:1: ERROR:  57014X`n", "psql:<stdin>:1: ERROR:  55p03`n", "psql:<stdin>:1: ERROR:  $secret 57014`n", "NOTICE:  57014`n")) {
+        $result=& $script:SnapshotTestModule {param($Text) Get-Q1SnapshotErrorDiagnostic $Text 3} $text
+        Assert-ProbeTest ($result.failure_class -ceq 'UNKNOWN' -and $null -eq $result.sqlstate) 'Empty, malformed, unknown or unframed diagnostics must remain UNKNOWN.'
+        Assert-ProbeTest (-not (ConvertTo-Json -InputObject $result -Compress).Contains($secret)) 'Unknown error text must never be copied into safe diagnostics.'
+    }
+    $auth=& $script:SnapshotTestModule {param($Text) Get-Q1SnapshotErrorDiagnostic $Text 2} ('psql: error: connection to server failed: FATAL: password authentication failed for user "'+$secret+'"')
+    Assert-ProbeTest ($auth.failure_class -ceq 'AUTHENTICATION_REJECTED' -and -not (ConvertTo-Json -InputObject $auth -Compress).Contains($secret)) 'Authentication classification must omit Unicode role names and secrets.'
+    foreach($exitCode in @(0,1,3)) {
+        $unknown=& $script:SnapshotTestModule {param($Text,$Code) Get-Q1SnapshotErrorDiagnostic $Text $Code} ('FATAL: password authentication failed for user "'+$secret+'"') $exitCode
+        Assert-ProbeTest ($unknown.failure_class -ceq 'UNKNOWN' -and $null -eq $unknown.sqlstate) 'Authentication phrases outside a connection failure exit must not classify arbitrary error text.'
+    }
+    $script:Checks.Add('Snapshot diagnostics allowlist SQLSTATE and exclude unknown, malformed, Unicode and secret error text')
+
+    $schema='{"database_name":"srp","read_only":"on","transaction_isolation":"repeatable read","time_zone":"UTC","schema_ok":true}'
+    $market='{"prevalidation_ok":true,"per_pair":[],"summary":{},"source_archives":[],"processing_runs":[]}'
+    $header="pair_id`tday_utc`trows`tmin_epoch`tmax_epoch`tsha256"
+    $record="1`t2026-01-01`t1`t1767225600`t1767225600`t"+('a'*64)
+    $prefix="Q1_PHASE_SESSION_SETUP`nQ1_PHASE_SCHEMA_INITIAL`nQ1_PHASE_SCHEMA_TRANSPORT`nSCHEMA`t$schema`nQ1_PHASE_MARKET_PREVALIDATION`nQ1_PHASE_MARKET_TRANSPORT`nMARKET`t$market`nQ1_PHASE_DIGESTS`nDIGESTS`n$header`n$record`n"
+    $valid=$prefix+"Q1_PHASE_COMMIT`nEND`n"
+    $cases=@(
+        @{name='missing-schema';text='';phase='OUTPUT_PROTOCOL'},
+        @{name='invalid-schema-json';text="Q1_PHASE_SCHEMA_TRANSPORT`nSCHEMA`t{invalid-$secret`n";phase='SCHEMA_JSON'},
+        @{name='invalid-market-json';text="SCHEMA`t$schema`nQ1_PHASE_MARKET_TRANSPORT`nMARKET`t{invalid-$secret`n";phase='MARKET_JSON'},
+        @{name='wrong-header';text=$valid.Replace($header,'wrong-header');phase='OUTPUT_PROTOCOL'},
+        @{name='missing-end';text=$prefix;phase='OUTPUT_PROTOCOL'},
+        @{name='trailing-output';text=($valid+$secret+"`n");phase='OUTPUT_PROTOCOL'},
+        @{name='trailing-known-phase';text=($valid+"Q1_PHASE_COMMIT`n");phase='OUTPUT_PROTOCOL'},
+        @{name='unknown-phase';text=$valid.Replace('Q1_PHASE_SCHEMA_INITIAL','Q1_PHASE_'+$secret);phase='OUTPUT_PROTOCOL'}
+    )
+    foreach ($case in $cases) {
+        $directory=Join-Path $script:RunRoot ('diagnostic-protocol-'+$case.name)
+        [IO.Directory]::CreateDirectory($directory) | Out-Null
+        New-TestFile (Join-Path $directory snapshot.partial) $case.text
+        $result=Invoke-SnapshotProtocolFixture $directory
+        Assert-ProbeTest ($result.failed -and $result.diagnostic.runner_phase -ceq $case.phase) ('Protocol failure must retain its parser step: '+$case.name)
+        Assert-ProbeTest ($result.diagnostic.failure_class -cin @('JSON_PARSE_FAILURE','OUTPUT_PROTOCOL_FAILURE')) ('Protocol failure must have a fixed class: '+$case.name)
+        Assert-ProbeTest (-not (Test-Path -LiteralPath (Join-Path $directory snapshot.partial))) 'Malformed partial transport must be removed.'
+        Assert-ProbeTest (-not (ConvertTo-Json -InputObject $result.diagnostic -Compress).Contains($secret)) 'Protocol diagnostics must not export malformed input.'
+    }
+    $directory=Join-Path $script:RunRoot diagnostic-protocol-success
+    [IO.Directory]::CreateDirectory($directory) | Out-Null
+    New-TestFile (Join-Path $directory snapshot.partial) $valid
+    $result=Invoke-SnapshotProtocolFixture $directory
+    Assert-ProbeTest (-not $result.failed -and $result.snapshot.has_digests -and -not $result.snapshot.blocked) 'Recognized phase markers must preserve successful snapshot parsing.'
+    Assert-ProbeTest ([IO.File]::ReadAllText((Join-Path $directory market-digests.tsv),$script:Utf8) -ceq ($header+"`n"+$record+"`n")) 'SQL phase markers must never become digest records.'
+    Assert-ProbeTest ($result.diagnostic.sql_phase -ceq 'COMMIT') 'Successful protocol must retain the last recognized SQL phase.'
+    $script:Checks.Add('Snapshot protocol classifies JSON and framing failures, removes partial transport and preserves digest bytes')
+
+    # Match production cardinality and the exact exported market JSON shape.
+    # All values are synthetic: 1,467 pair metadata records and 121,264 digests.
+    $directory=Join-Path $script:RunRoot diagnostic-production-scale
+    [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $pairs=New-Object 'System.Collections.Generic.List[object]'
+    for ($pair=1; $pair -le 1467; $pair++) {
+        $days=if($pair -le 970){83}else{82}
+        $pairs.Add([pscustomobject]@{pair_id=$pair;pair_code=('SYNTH'+$pair+'USD');exchange='Kraken';pair_metadata_match_count=1;row_count=$days;rows=$days;q1_rows=$days;first_timestamp_utc='2026-01-01T00:00:00+00:00';last_timestamp_utc=([datetime]'2026-01-01').AddDays($days-1).ToString('yyyy-MM-dd')+'T00:00:00+00:00';min_epoch=1767225600L;max_epoch=(1767225600L+86400L*($days-1))})
+    }
+    $metadata=[ordered]@{database_name='srp';read_only='on';transaction_isolation='repeatable read';time_zone='UTC';server_version='synthetic';interval_start_utc='2026-01-01T00:00:00Z';interval_end_exclusive_utc='2026-04-01T00:00:00Z';relation='srp.ohlcvt_1m_2026q1';selected_archive_sha256=('a'*64);summary=@{total_rows=121264;q1_rows=121264;pair_count=1467;day_count=83};per_pair=@($pairs.ToArray());source_archives=@();processing_runs=@();row_value_equivalence='UNVERIFIED';authoritative_member_lineage='UNVERIFIED';source_approval='UNVERIFIED';prevalidation_ok=$true;prevalidation_issues=@()}
+    $writer=[IO.StreamWriter]::new((Join-Path $directory snapshot.partial),$false,$script:Utf8)
+    $writer.NewLine="`n"
+    try {
+        $writer.WriteLine("Q1_PHASE_SCHEMA_TRANSPORT`nSCHEMA`t$schema`nQ1_PHASE_MARKET_TRANSPORT")
+        $writer.WriteLine('MARKET'+[char]9+(ConvertTo-Json -InputObject $metadata -Compress -Depth 10))
+        $writer.WriteLine("Q1_PHASE_DIGESTS`nDIGESTS`n$header")
+        $rows=0
+        for($pair=1; $pair -le 1467; $pair++) {
+            $days=if($pair -le 970){83}else{82}
+            for($day=0; $day -lt $days; $day++) {
+                $date=([datetime]'2026-01-01').AddDays($day).ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+                $epoch=1767225600L+86400L*$day
+                $writer.WriteLine("$pair`t$date`t1`t$epoch`t$epoch`t"+('a'*64)); $rows++
+            }
+        }
+        $writer.WriteLine("Q1_PHASE_COMMIT`nEND")
+    } finally {$writer.Dispose()}
+    Assert-ProbeTest ($rows -eq 121264) 'Production-scale fixture must contain exactly 121,264 synthetic pair/day rows.'
+    $result=Invoke-SnapshotProtocolFixture $directory
+    Assert-ProbeTest (-not $result.failed -and $result.snapshot.has_digests -and @($result.snapshot.market.per_pair).Count -eq 1467 -and $result.snapshot.market.summary.total_rows -eq 121264) 'Production-scale market JSON must parse without truncation.'
+    $digestFile=Join-Path $directory market-digests.tsv
+    $comparison=[CfaQ1Reconciliation.MarketReconciler]::CompareDigests($digestFile,$digestFile,(Join-Path $directory comparison.tsv))
+    Assert-ProbeTest ($comparison.status -ceq 'PASS' -and $comparison.matched_day_count -eq 121264 -and $comparison.matched_row_count -eq 121264) 'Every production-scale digest must survive marker filtering and canonical validation.'
+    Assert-ProbeTest (-not (Test-Path -LiteralPath (Join-Path $directory snapshot.partial))) 'Production-scale transport must be removed after parsing.'
+    $script:Checks.Add('Production-scale snapshot parses 1467 pair metadata objects and streams 121264 canonical digest records')
+}
+
+function Assert-SnapshotFailureDiagnostic {
+    param([object]$Run,[string[]]$Classes,[string[]]$SqlStates=@(),[string[]]$SqlPhases=@())
+    $wrapper=('{"items":'+[IO.File]::ReadAllText((Join-Path $Run.directory errors.json),$script:Utf8)+'}') | ConvertFrom-Json
+    $issues=@($wrapper.items | Where-Object {$_.scope -ceq 'POSTGRESQL'})
+    Assert-ProbeTest ($issues.Count -eq 1 -and $null -ne $issues[0].diagnostic) 'Failed PostgreSQL collection must retain one structured diagnostic.'
+    $diagnostic=$issues[0].diagnostic
+    Assert-ProbeTest ($diagnostic.failure_class -cin $Classes) ('Unexpected safe PostgreSQL failure classification: '+$diagnostic.failure_class)
+    Assert-ProbeTest ($null -ne $diagnostic.process_exit_code -and $diagnostic.process_exit_code -ne 0) 'A completed failed native process must retain its nonzero exit code.'
+    Assert-ProbeTest ($diagnostic.elapsed_ms -ge 0 -and $diagnostic.stdout_bytes -ge 0 -and $diagnostic.stderr_bytes -gt 0) 'Native failure must retain bounded elapsed time and output byte counts.'
+    if($SqlStates.Count -gt 0){Assert-ProbeTest ($diagnostic.sqlstate -cin $SqlStates) 'Known SQL failure must retain its allowlisted SQLSTATE.'}
+    if($SqlPhases.Count -gt 0){Assert-ProbeTest ($diagnostic.sql_phase -cin $SqlPhases) 'Known SQL failure must retain its last literal phase marker.'}
+    Assert-ProbeTest ($Run.receipt.current_content_status -ceq 'UNVERIFIED' -and $Run.receipt.local_status -ceq 'UNVERIFIED') 'Diagnostics must not promote a failed snapshot to content or local verification.'
+    return $diagnostic
+}
+
+function Invoke-DirectSnapshotFixture {
+    param([string]$Name,[string]$Sql,[string]$FixtureUser=$PgUser)
+    $directory=Join-Path $script:RunRoot $Name
+    [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $saved=@{}
+    foreach($key in @('PGHOST','PGPORT','PGUSER','PGDATABASE','PGOPTIONS','PGCONNECT_TIMEOUT')){$saved[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
+    try {
+        $env:PGHOST=$PgHost; $env:PGPORT=[string]$PgPort; $env:PGUSER=$FixtureUser
+        $env:PGDATABASE='srp'; $env:PGOPTIONS='-c default_transaction_read_only=on'; $env:PGCONNECT_TIMEOUT='5'
+        $result=& $script:SnapshotTestModule {
+            param($Executable,$TestDirectory,$TestSql)
+            $script:ResolvedPsql=$Executable
+            $script:SnapshotDiagnostic=New-Q1SnapshotDiagnostic
+            $failed=$false; $value=$null
+            try {$value=Invoke-MarketSnapshot $TestSql $TestDirectory} catch {$failed=$true}
+            [pscustomobject]@{failed=$failed;snapshot=$value;diagnostic=$script:SnapshotDiagnostic}
+        } $script:ResolvedPsql $directory $Sql
+        Assert-ProbeTest (-not (Test-Path -LiteralPath (Join-Path $directory snapshot.partial))) 'Direct helper must remove partial transport after failure.'
+        $safeText=ConvertTo-Json -InputObject $result.diagnostic -Compress
+        Assert-ProbeTest (-not $safeText.Contains($script:Sentinel) -and -not $safeText.Contains('UNEXPORTABLE')) 'Direct helper diagnostics must exclude password and raw SQL sentinels.'
+        Write-TestJson (Join-Path $directory diagnostic.json) $result.diagnostic
+        return $result
+    } finally {foreach($key in $saved.Keys){Restore-TestEnvironmentVariable $key $saved[$key]}}
+}
+
+function Test-SnapshotAuthenticationFailure {
+    param([object]$Fixture,[string]$ExpectedDataDirectory)
+    $role='cfa_q1_diagnostic_scram'
+    $correctPassword='cfa-synthetic-scram-password-UNEXPORTABLE'
+    $hba=Invoke-FixtureSql postgres 'SHOW hba_file;'
+    $expectedHba=[IO.Path]::GetFullPath((Join-Path $ExpectedDataDirectory pg_hba.conf))
+    Assert-ProbeTest ([IO.Path]::GetFullPath($hba) -ieq $expectedHba -and -not ((Get-Item -LiteralPath $hba).Attributes -band [IO.FileAttributes]::ReparsePoint)) 'Authentication fixture may edit only the proven disposable server HBA file.'
+    $originalBytes=[IO.File]::ReadAllBytes($hba)
+    $originalHash=Get-Sha $hba
+    $controlName=if($env:OS -ceq 'Windows_NT'){'pg_ctl.exe'}else{'pg_ctl'}
+    $control=Join-Path (Split-Path -Parent $script:ResolvedPsql) $controlName
+    Assert-ProbeTest (Test-Path -LiteralPath $control -PathType Leaf) 'Disposable server reload executable must accompany psql.'
+    Invoke-FixtureSql postgres ("SET password_encryption='scram-sha-256'; CREATE ROLE $role LOGIN PASSWORD '$correctPassword';") | Out-Null
+    try {
+        $prefix=$script:Utf8.GetBytes("host srp $role 127.0.0.1/32 scram-sha-256`n")
+        $combined=New-Object byte[] ($prefix.Length+$originalBytes.Length)
+        [Array]::Copy($prefix,0,$combined,0,$prefix.Length)
+        [Array]::Copy($originalBytes,0,$combined,$prefix.Length,$originalBytes.Length)
+        [IO.File]::WriteAllBytes($hba,$combined)
+        $reload=Invoke-TestProcess $control @('-D',$ExpectedDataDirectory,'reload') 15
+        Assert-ProbeTest ($reload.exit_code -eq 0) 'Disposable server must reload its test-only SCRAM rule.'
+        # Prove the server has actually loaded the rule. A successful connection
+        # while reload is pending is discarded; no fixture mutation is attempted.
+        $watch=[Diagnostics.Stopwatch]::StartNew(); $rejection=$null
+        do {
+            $rejection=Invoke-TestProcess $script:ResolvedPsql @('-X','-w','-h',$PgHost,'-p',[string]$PgPort,'-U',$role,'-d','srp','-A','-t','-c','SELECT 1;') 10
+            if($rejection.exit_code -ne 0){break}
+        } while($watch.Elapsed.TotalSeconds -lt 10)
+        Assert-ProbeTest ($rejection.exit_code -ne 0 -and $rejection.stderr -match 'password authentication failed') 'A wrong password must be rejected by actual SCRAM authentication before the runner test.'
+
+        $auth=Copy-CoverageFixture $Fixture authentication
+        $authCensus=Join-Path $Fixture.evidence census-copy-authentication
+        [IO.Directory]::CreateDirectory($authCensus) | Out-Null
+        foreach($file in @(Get-ChildItem -LiteralPath $Fixture.census -File)){Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $authCensus $file.Name)}
+        $auth.census=$authCensus
+        $r=Read-TestJson (Join-Path $auth.census receipt.json); $r.postgres.user=$role
+        Write-TestJson (Join-Path $auth.census receipt.json) $r
+        $r=Read-TestJson (Join-Path $auth.coverage receipt.json); $r.postgres.user=$role
+        $r.census_receipt_sha256=Get-Sha (Join-Path $auth.census receipt.json)
+        Write-TestJson (Join-Path $auth.coverage receipt.json) $r
+        $arguments=@(Get-ReconciliationArguments $auth)
+        $arguments[[Array]::IndexOf($arguments,'-PgUser')+1]=$role
+        $before=@(Get-ReconciliationReceipts $auth)
+        Invoke-Reconciliation 'Real SCRAM authentication rejection leaves redacted diagnostic failure evidence' $arguments 2 | Out-Null
+        $new=@(Get-ReconciliationReceipts $auth | Where-Object {$before -notcontains $_})
+        Assert-ProbeTest ($new.Count -eq 1) 'Authentication rejection must leave one failed collection receipt.'
+        $validated=Assert-ReconciliationReceipt $new[0] FAIL FAIL
+        Assert-SnapshotFailureDiagnostic $validated @('AUTHENTICATION_REJECTED') @() @('NOT_STARTED') | Out-Null
+        foreach($file in @(Get-ChildItem -LiteralPath $validated.directory -File)){
+            Assert-ProbeTest (-not [IO.File]::ReadAllText($file.FullName,$script:Utf8).Contains($correctPassword)) 'SCRAM fixture password must never be exported.'
+        }
+
+        # Connection can fail before the caller finishes writing SQL. Force more
+        # bytes than an anonymous pipe can buffer and retain auth classification.
+        $largeSql='-- UNEXPORTABLE_SQL_' + ('x'*1048576) + "`n"
+        $direct=Invoke-DirectSnapshotFixture diagnostic-auth-early-stdin $largeSql $role
+        Assert-ProbeTest ($direct.failed -and $direct.diagnostic.failure_class -ceq 'AUTHENTICATION_REJECTED' -and $direct.diagnostic.sql_phase -ceq 'NOT_STARTED') 'Early authentication failure while writing large stdin must retain safe native diagnostics.'
+        $script:Checks.Add('Early native authentication exit with large SQL stdin preserves diagnostics and removes partial transport')
+    }
+    finally {
+        [IO.File]::WriteAllBytes($hba,$originalBytes)
+        $reload=Invoke-TestProcess $control @('-D',$ExpectedDataDirectory,'reload') 15
+        Assert-ProbeTest ($reload.exit_code -eq 0 -and (Get-Sha $hba) -ceq $originalHash) 'Authentication test must restore exact HBA bytes and reload the disposable server.'
+        Invoke-FixtureSql postgres ("DROP ROLE $role;") | Out-Null
+    }
+}
+
 function Test-ReconciliationComponents {
     Add-Type -AssemblyName System.Numerics
     Add-Type -AssemblyName System.IO.Compression
@@ -661,6 +907,7 @@ try {
     $script:Checks.Add('Parse exact runner, query module and tests; verify intended endpoint defaults')
     Invoke-Reconciliation 'Exact runner canonicalization and component self-tests' @('-SelfTest') 0 | Out-Null
     Test-ReconciliationComponents
+    Test-SnapshotDiagnosticsComponents
     Invoke-Reconciliation 'Missing bound evidence directories fail preflight' @('-CensusDirectory',(Join-Path $script:RunRoot missing),'-CoverageDirectory',(Join-Path $script:RunRoot missing2),'-PsqlPath',$script:ShellExecutable) 1 | Out-Null
 
     if ($PostgresIntegration) {
@@ -874,8 +1121,32 @@ Write-Host 'ENVIRONMENT_RESTORATION_PASS'
             Assert-ProbeTest ($watch.Elapsed.TotalSeconds -lt 45) 'Offline connection failure must be bounded.'
             $new=@(Get-ReconciliationReceipts $offline | Where-Object {$before -notcontains $_})
             Assert-ProbeTest ($new.Count -eq 1) 'Offline collection must leave one failure receipt.'
-            Assert-ReconciliationReceipt $new[0] FAIL FAIL | Out-Null
+            $offlineRun=Assert-ReconciliationReceipt $new[0] FAIL FAIL
+            Assert-SnapshotFailureDiagnostic $offlineRun @('CONNECTION_TIMEOUT') @() @('NOT_STARTED') | Out-Null
         } finally {$listener.Stop()}
+        $before=@(Get-ReconciliationReceipts $offline)
+        Invoke-Reconciliation 'Refused loopback endpoint retains a fixed connection failure diagnostic' (Get-ReconciliationArguments $offline $offlinePort) 2 | Out-Null
+        $new=@(Get-ReconciliationReceipts $offline | Where-Object {$before -notcontains $_})
+        Assert-ProbeTest ($new.Count -eq 1) 'Refused connection must leave one failed collection receipt.'
+        $refusedRun=Assert-ReconciliationReceipt $new[0] FAIL FAIL
+        Assert-SnapshotFailureDiagnostic $refusedRun @('CONNECTION_REFUSED') @() @('NOT_STARTED') | Out-Null
+
+        Test-SnapshotAuthenticationFailure $good $expectedData
+
+        $cancel=Invoke-DirectSnapshotFixture diagnostic-real-cancellation @'
+\echo Q1_PHASE_SESSION_SETUP
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout='100ms';
+\echo Q1_PHASE_SCHEMA_TRANSPORT
+SELECT E'SCHEMA\t' || '{"database_name":"srp","read_only":"on","transaction_isolation":"repeatable read","time_zone":"UTC","schema_ok":true}';
+\echo Q1_PHASE_MARKET_PREVALIDATION
+SELECT pg_catalog.pg_sleep(2);
+ROLLBACK;
+'@
+        Assert-ProbeTest ($cancel.failed -and $cancel.diagnostic.failure_class -ceq 'SQL_CANCELED' -and $cancel.diagnostic.sqlstate -ceq '57014' -and $cancel.diagnostic.sql_phase -ceq 'MARKET_PREVALIDATION' -and $cancel.diagnostic.process_exit_code -eq 3) 'Real read-only query cancellation must retain SQLSTATE and the last literal SQL phase.'
+        Assert-ProbeTest ($cancel.diagnostic.elapsed_ms -lt 15000 -and $cancel.diagnostic.stdout_bytes -gt 0 -and $cancel.diagnostic.stderr_bytes -gt 0) 'Real cancellation diagnostics must have bounded execution and measured output.'
+        Assert-ProbeTest (-not (Test-Path -LiteralPath (Join-Path $script:RunRoot 'diagnostic-real-cancellation/schema.json'))) 'Nonzero native exit must not promote a previously emitted schema record into parsed evidence.'
+        $script:Checks.Add('Real read-only statement cancellation retains SQLSTATE 57014 and last SQL phase without partial metadata')
 
         $lockStart = New-Object Diagnostics.ProcessStartInfo
         $lockStart.FileName=$script:ResolvedPsql
@@ -888,7 +1159,10 @@ Write-Host 'ENVIRONMENT_RESTORATION_PASS'
             $ready=$locker.StandardOutput.ReadLineAsync()
             Assert-ProbeTest ($ready.Wait(10000) -and $ready.Result -ceq 'LOCK_HELD') 'Lock must be confirmed before the bounded timeout test.'
             $watch=[Diagnostics.Stopwatch]::StartNew()
-            Invoke-ReconciliationCase 'Statement or lock timeout leaves failed bounded evidence' $good 2 FAIL FAIL @('-StatementTimeoutSeconds','5') | Out-Null
+            $lockRun=Invoke-ReconciliationCase 'Statement or lock timeout leaves failed bounded evidence' $good 2 FAIL FAIL @('-StatementTimeoutSeconds','10')
+            # pg_get_expr can acquire a relation lock while deparsing the
+            # partition bound in the initial catalog gate on supported servers.
+            Assert-SnapshotFailureDiagnostic $lockRun @('SQL_LOCK_TIMEOUT') @('55P03') @('SCHEMA_INITIAL','LOCK_MARKET') | Out-Null
             $watch.Stop()
             Assert-ProbeTest ($watch.Elapsed.TotalSeconds -lt 45) 'Timed-out database work must be bounded.'
         }

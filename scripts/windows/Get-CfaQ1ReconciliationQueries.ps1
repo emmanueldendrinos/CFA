@@ -278,6 +278,7 @@ function Get-Q1ReconciliationSql {
     return @"
 \set ON_ERROR_STOP on
 \set QUIET on
+\echo Q1_PHASE_SESSION_SETUP
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL TimeZone = 'UTC';
 SET LOCAL DateStyle = 'ISO, YMD';
@@ -285,22 +286,32 @@ SET LOCAL search_path = pg_catalog;
 SET LOCAL row_security = off;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL standard_conforming_strings = on;
+\echo Q1_PHASE_SCHEMA_INITIAL
 $schemaQuery
 \gset q1_schema_
 \if :q1_schema_ok
+\echo Q1_PHASE_LOCK_PAIRS
 SELECT 1 FROM ONLY srp.market_pairs WHERE false;
+\echo Q1_PHASE_LOCK_ARCHIVES
 SELECT 1 FROM ONLY srp.source_archives WHERE false;
+\echo Q1_PHASE_LOCK_RUNS
 SELECT 1 FROM ONLY srp.processing_runs WHERE false;
+\echo Q1_PHASE_LOCK_MARKET
 SELECT 1 FROM ONLY srp.ohlcvt_1m_2026q1 WHERE false;
+\echo Q1_PHASE_SCHEMA_RECHECK
 $schemaQuery
 \gset q1_schema_
 \endif
+\echo Q1_PHASE_SCHEMA_TRANSPORT
 SELECT E'SCHEMA\t' || :'q1_schema_json';
 \if :q1_schema_ok
+\echo Q1_PHASE_MARKET_PREVALIDATION
 $marketQuery
 \gset q1_market_
+\echo Q1_PHASE_MARKET_TRANSPORT
 SELECT E'MARKET\t' || :'q1_market_json';
 \if :q1_market_ok
+\echo Q1_PHASE_DIGESTS
 \echo DIGESTS
 SELECT E'pair_id\tday_utc\trows\tmin_epoch\tmax_epoch\tsha256';
 WITH row_bytes AS (
@@ -328,6 +339,7 @@ FROM digests ORDER BY pair_id,day_utc;
 \else
 \echo BLOCKED
 \endif
+\echo Q1_PHASE_COMMIT
 COMMIT;
 \echo END
 "@

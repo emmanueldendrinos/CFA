@@ -93,72 +93,220 @@ function Initialize-Reconciliation {
         } else { Add-Type -Path $helper }
     }
 }
+function New-Q1SnapshotDiagnostic {
+    return [pscustomobject][ordered]@{runner_phase='PREPARE';sql_phase='NOT_STARTED';failure_class='UNKNOWN';sqlstate=$null;process_exit_code=$null;elapsed_ms=0L;stdout_bytes=0L;stderr_bytes=0L}
+}
+function Get-Q1SnapshotSqlPhases {
+    return @('SESSION_SETUP','SCHEMA_INITIAL','LOCK_PAIRS','LOCK_ARCHIVES','LOCK_RUNS','LOCK_MARKET','SCHEMA_RECHECK','SCHEMA_TRANSPORT','MARKET_PREVALIDATION','MARKET_TRANSPORT','DIGESTS','COMMIT')
+}
+function Get-Q1SnapshotErrorDiagnostic([AllowEmptyString()][string]$StandardError,[Nullable[int]]$ExitCode) {
+    # No input text, exception text or inferred SQLSTATE may leave this function.
+    $classes=@{
+        '08000'='CONNECTION_FAILURE';'08001'='CONNECTION_FAILURE';'08003'='CONNECTION_FAILURE';'08004'='CONNECTION_FAILURE';'08006'='CONNECTION_FAILURE';'08007'='CONNECTION_FAILURE';'08P01'='CONNECTION_FAILURE'
+        '28000'='AUTHENTICATION_REJECTED';'28P01'='AUTHENTICATION_REJECTED'
+        '42501'='SQL_ACCESS_DENIED';'55P03'='SQL_LOCK_TIMEOUT';'57014'='SQL_CANCELED'
+        '53100'='SQL_RESOURCE_FAILURE';'53200'='SQL_RESOURCE_FAILURE';'53300'='SQL_RESOURCE_FAILURE';'53400'='SQL_RESOURCE_FAILURE';'54000'='SQL_RESOURCE_FAILURE';'54001'='SQL_RESOURCE_FAILURE';'54011'='SQL_RESOURCE_FAILURE';'58030'='SQL_RESOURCE_FAILURE'
+        '42601'='SQL_QUERY_ERROR';'42703'='SQL_QUERY_ERROR';'42804'='SQL_QUERY_ERROR';'42883'='SQL_QUERY_ERROR';'42P01'='SQL_QUERY_ERROR';'42P02'='SQL_QUERY_ERROR';'22003'='SQL_DATA_ERROR';'22007'='SQL_DATA_ERROR';'22008'='SQL_DATA_ERROR';'22012'='SQL_DATA_ERROR';'22P02'='SQL_DATA_ERROR';'25P02'='SQL_TRANSACTION_ERROR';'25006'='SQL_TRANSACTION_ERROR'
+        '57P01'='SERVER_UNAVAILABLE';'57P02'='SERVER_UNAVAILABLE';'57P03'='SERVER_UNAVAILABLE';'3D000'='DATABASE_UNAVAILABLE';'XX000'='SQL_INTERNAL_ERROR'
+    }
+    # VERBOSITY=sqlstate emits severity and code only after connection. Require
+    # that exact record shape; never mistake five characters in raw text for it.
+    $records=[regex]::Matches($StandardError,'(?m)^(?:psql:<stdin>:[0-9]+: )?(?:ERROR|FATAL|PANIC):[ \t]+([0-9A-Z]{5})[ \t]*\r?$')
+    foreach($record in $records) {
+        $state=$record.Groups[1].Value
+        if($classes.ContainsKey($state)){return [pscustomobject]@{failure_class=$classes[$state];sqlstate=$state}}
+    }
+    # Initial libpq failures are not governed by psql's SQLSTATE verbosity.
+    # Recognize only fixed failure phrases and retain no matching text/code.
+    $kind='UNKNOWN'
+    if($ExitCode -ne 2){return [pscustomobject]@{failure_class=$kind;sqlstate=$null}}
+    if($StandardError -match '(?im)(?:FATAL:[ \t]+(?:password authentication failed|no pg_hba\.conf entry)|fe_sendauth: no password supplied|authentication method .* not supported)') {$kind='AUTHENTICATION_REJECTED'}
+    elseif($StandardError -match '(?im)(?:connection to server .* failed: Connection refused|could not connect to server: Connection refused|actively refused it)') {$kind='CONNECTION_REFUSED'}
+    elseif($StandardError -match '(?im)(?:connection to server .* failed: timeout expired|timeout expired)') {$kind='CONNECTION_TIMEOUT'}
+    elseif($StandardError -match '(?im)(?:could not translate host name .* to address|could not resolve host name)') {$kind='HOST_RESOLUTION_FAILED'}
+    elseif($StandardError -match '(?im)(?:SSL error:|server does not support SSL, but SSL was required|certificate verify failed)') {$kind='TLS_FAILURE'}
+    return [pscustomobject]@{failure_class=$kind;sqlstate=$null}
+}
+function Initialize-Q1SnapshotDrain {
+    if($null -ne ('CfaQ1SnapshotTransport.ErrorDrain' -as [type])){return}
+    # The private ring holds at most 64 KiB, drains the entire byte stream, and
+    # never writes stderr to disk or console. UTF-8 errors cannot stop draining.
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+namespace CfaQ1SnapshotTransport {
+ public sealed class DrainResult { public string Text; public long Bytes; }
+ public static class ErrorDrain {
+  public static Task<DrainResult> Start(Stream source) {
+   return Task.Factory.StartNew(() => {
+    byte[] ring = new byte[65536], buffer = new byte[4096];
+    int position = 0, count = 0, n; long bytes = 0;
+    while ((n = source.Read(buffer, 0, buffer.Length)) != 0) {
+     bytes += n;
+     for (int i = 0; i < n; i++) { ring[position] = buffer[i]; position = (position + 1) % ring.Length; if (count < ring.Length) count++; }
+    }
+    byte[] tail = new byte[count]; int first = count == ring.Length ? position : 0;
+    for (int i = 0; i < count; i++) tail[i] = ring[(first + i) % ring.Length];
+    return new DrainResult { Text = new UTF8Encoding(false, false).GetString(tail), Bytes = bytes };
+   }, System.Threading.CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+  }
+ }
+}
+'@
+}
+function Read-Q1SnapshotRecord([IO.StreamReader]$Reader) {
+    while($null -ne ($record=$Reader.ReadLine())) {
+        if($record.StartsWith('Q1_PHASE_',[StringComparison]::Ordinal)) {
+            $phase=$record.Substring(9)
+            $phases=Get-Q1SnapshotSqlPhases
+            Require ($phases -ccontains $phase) 'Unrecognized snapshot phase marker.'
+            # The failure scan may already have observed COMMIT. Parsing an
+            # earlier record must not make that completed SQL work disappear.
+            if([Array]::IndexOf($phases,$phase) -gt [Array]::IndexOf($phases,$script:SnapshotDiagnostic.sql_phase)) {$script:SnapshotDiagnostic.sql_phase=$phase}
+        } else {return $record}
+    }
+    return $null
+}
+function Read-Q1SnapshotProtocol([string]$Transport,[string]$Directory) {
+    $script:SnapshotDiagnostic.runner_phase='OUTPUT_OPEN'
+    $reader=$null
+    $writer=$null; $schema=$null; $market=$null; $hasDigests=$false; $ended=$false; $blocked=$false
+    try {
+        $reader=[IO.StreamReader]::new($Transport,$script:Utf8,$false)
+        $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+        $line=Read-Q1SnapshotRecord $reader
+        Require ($null -ne $line -and $line.StartsWith("SCHEMA`t",[StringComparison]::Ordinal)) 'Missing schema record in snapshot.'
+        $script:SnapshotDiagnostic.runner_phase='SCHEMA_JSON'
+        $schema=$line.Substring(7) | ConvertFrom-Json
+        $script:SnapshotDiagnostic.runner_phase='OUTPUT_WRITE'
+        Write-Json (Join-Path $Directory 'schema.json') $schema
+        $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+        Require ($schema.database_name -ceq 'srp' -and $schema.read_only -ceq 'on' -and $schema.transaction_isolation -ceq 'repeatable read' -and $schema.time_zone -ceq 'UTC') 'Snapshot database, isolation or UTC identity mismatch.'
+        $line=Read-Q1SnapshotRecord $reader
+        if($null -ne $line -and $line.StartsWith("MARKET`t",[StringComparison]::Ordinal)) {
+            Require ($schema.schema_ok -eq $true) 'Market metadata followed a rejected schema.'
+            $script:SnapshotDiagnostic.runner_phase='MARKET_JSON'
+            $market=$line.Substring(7) | ConvertFrom-Json
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_WRITE'
+            Write-Json (Join-Path $Directory 'market.json') $market
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+            $line=Read-Q1SnapshotRecord $reader
+        }
+        if($line -ceq 'BLOCKED') {$blocked=$true; $line=Read-Q1SnapshotRecord $reader}
+        elseif($line -ceq 'DIGESTS') {
+            Require ($null -ne $market -and $market.prevalidation_ok -eq $true) 'Digests followed rejected market prevalidation.'
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_WRITE'
+            $writer=[IO.StreamWriter]::new((Join-Path $Directory 'market-digests.tsv'),$false,$script:Utf8)
+            $writer.NewLine="`n"
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+            $line=Read-Q1SnapshotRecord $reader
+            Require ($line -ceq "pair_id`tday_utc`trows`tmin_epoch`tmax_epoch`tsha256") 'Malformed fingerprint header.'
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_WRITE'
+            $writer.WriteLine($line); $hasDigests=$true
+            $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+            while($null -ne ($line=Read-Q1SnapshotRecord $reader) -and $line -cne 'END') {
+                $script:SnapshotDiagnostic.runner_phase='OUTPUT_WRITE';$writer.WriteLine($line)
+                $script:SnapshotDiagnostic.runner_phase='OUTPUT_PROTOCOL'
+            }
+        }
+        Require ($line -ceq 'END' -and $null -eq $reader.ReadLine()) 'Snapshot completion marker is missing or has trailing output.'
+        $ended=$true
+    } catch {
+        $script:SnapshotDiagnostic.failure_class=if($script:SnapshotDiagnostic.runner_phase -in @('SCHEMA_JSON','MARKET_JSON')){'JSON_PARSE_FAILURE'}elseif($script:SnapshotDiagnostic.runner_phase -in @('OUTPUT_OPEN','OUTPUT_WRITE')){'OUTPUT_TRANSPORT_FAILURE'}else{'OUTPUT_PROTOCOL_FAILURE'}
+        throw 'Snapshot output did not satisfy its protocol.'
+    } finally {
+        $cleanupFailed=$false
+        if($null -ne $writer){try{$writer.Dispose()}catch{$cleanupFailed=$true}}
+        if($null -ne $reader){try{$reader.Dispose()}catch{$cleanupFailed=$true}}
+        try{Remove-Item -LiteralPath $Transport -Force -ErrorAction Stop}catch{$cleanupFailed=$true}
+        if($cleanupFailed){$script:SnapshotDiagnostic.failure_class='OUTPUT_TRANSPORT_FAILURE';throw 'Snapshot transport cleanup failed.'}
+    }
+    Require ($ended) 'Incomplete market snapshot.'
+    return [pscustomobject]@{schema=$schema;market=$market;has_digests=$hasDigests;blocked=$blocked}
+}
 function Invoke-MarketSnapshot([string]$Sql,[string]$Directory) {
-    # Only metadata and fingerprints are transported. Never retain stderr.
+    $script:SnapshotDiagnostic=New-Q1SnapshotDiagnostic
+    Initialize-Q1SnapshotDrain
+    # Only metadata, fingerprints and literal phase markers reach this file.
     $transport=Join-Path $Directory 'snapshot.partial'
     $start=New-Object Diagnostics.ProcessStartInfo
     $start.FileName=$script:ResolvedPsql
-    $arguments=@('-X','-w','-A','-t','-q','-d','postgresql:///srp','-v','ON_ERROR_STOP=1','-f','-')
+    $arguments=@('-X','-w','-A','-t','-q','-d','postgresql:///srp','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate','-v','SHOW_CONTEXT=never','-f','-')
     $start.Arguments=(($arguments | ForEach-Object {Quote-Native $_}) -join ' ')
     $start.UseShellExecute=$false; $start.CreateNoWindow=$true
     $start.RedirectStandardInput=$true; $start.RedirectStandardOutput=$true; $start.RedirectStandardError=$true
     $start.StandardOutputEncoding=$script:Utf8; $start.StandardErrorEncoding=$script:Utf8
     $process=New-Object Diagnostics.Process; $process.StartInfo=$start
-    $output=$null; $transportComplete=$false
+    $output=$null; $transportComplete=$false; $startedProcess=$false; $stdout=$null; $stderr=$null; $inputTask=$null
+    $watch=[Diagnostics.Stopwatch]::StartNew(); $deadline=($StatementTimeoutSeconds*4+30)*1000
+    $writeFailed=$false; $timedOut=$false; $transportFailed=$false
     try {
+        $script:SnapshotDiagnostic.runner_phase='OUTPUT_OPEN'
         $output=[IO.File]::Open($transport,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $script:SnapshotDiagnostic.runner_phase='PROCESS_START'
         Require ($process.Start()) 'Could not start the read-only market snapshot.'
+        $startedProcess=$true
         $stdout=$process.StandardOutput.BaseStream.CopyToAsync($output)
-        $stderr=$process.StandardError.ReadToEndAsync()
+        $stderr=[CfaQ1SnapshotTransport.ErrorDrain]::Start($process.StandardError.BaseStream)
         $bytes=$script:Utf8.GetBytes($Sql)
-        $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length); $process.StandardInput.Close()
-        # The script contains bounded catalog, metadata and digest statements.
-        if(-not $process.WaitForExit(($StatementTimeoutSeconds*4+30)*1000)) {
-            $process.Kill(); $process.WaitForExit()
-            throw 'Read-only market snapshot exceeded its bounded process timeout.'
+        $script:SnapshotDiagnostic.runner_phase='INPUT_WRITE'
+        try {
+            $inputTask=$process.StandardInput.BaseStream.WriteAsync($bytes,0,$bytes.Length)
+            if(-not $inputTask.Wait([int][Math]::Max(0,($deadline-$watch.ElapsedMilliseconds)))) {$timedOut=$true}
+        } catch {$writeFailed=$true}
+        if($timedOut){try{$process.Kill();$process.WaitForExit()}catch{$transportFailed=$true}}
+        try {$process.StandardInput.Close()}catch{$writeFailed=$true}
+        if(-not $timedOut) {
+            if(-not $writeFailed){$script:SnapshotDiagnostic.runner_phase='PROCESS_WAIT'}
+            if(-not $process.WaitForExit([int][Math]::Max(0,($deadline-$watch.ElapsedMilliseconds)))) {$timedOut=$true}
         }
-        $process.WaitForExit(); $null=$stdout.GetAwaiter().GetResult(); $null=$stderr.GetAwaiter().GetResult()
-        Require ($process.ExitCode -eq 0) 'Read-only market query failed; check local access, schema or statement timeout.'
+    } catch {$transportFailed=$true}
+    finally {
+        if($startedProcess) {
+            try {if(-not $process.HasExited){$process.Kill()};$process.WaitForExit();$script:SnapshotDiagnostic.process_exit_code=$process.ExitCode}catch{$transportFailed=$true}
+        }
+        if($null -ne $inputTask){try{$null=$inputTask.GetAwaiter().GetResult()}catch{$writeFailed=$true}}
+        if($null -ne $stdout){try{$null=$stdout.GetAwaiter().GetResult()}catch{$transportFailed=$true}}
+        if($null -ne $stderr){
+            try {
+                $drained=$stderr.GetAwaiter().GetResult()
+                $script:SnapshotDiagnostic.stderr_bytes=$drained.Bytes
+                $safeError=Get-Q1SnapshotErrorDiagnostic $drained.Text $script:SnapshotDiagnostic.process_exit_code
+                $script:SnapshotDiagnostic.failure_class=$safeError.failure_class
+                $script:SnapshotDiagnostic.sqlstate=$safeError.sqlstate
+                $drained.Text=$null
+            } catch {$transportFailed=$true}
+        }
+        if($null -ne $output){
+            try{$script:SnapshotDiagnostic.stdout_bytes=$output.Length}catch{$transportFailed=$true}
+            try{$output.Dispose()}catch{$transportFailed=$true}
+        }
+        $watch.Stop();$script:SnapshotDiagnostic.elapsed_ms=$watch.ElapsedMilliseconds
+        try{$process.Dispose()}catch{$transportFailed=$true}
+    }
+    try {
+        if(Test-Path -LiteralPath $transport) {
+            # Even a nonzero process can have reached later SQL phases. Scan
+            # only literal markers; never accept partial result records here.
+            $markerReader=[IO.StreamReader]::new($transport,(New-Object Text.UTF8Encoding($false,$false)),$false)
+            try {while($null -ne ($marker=$markerReader.ReadLine())) {
+                if($marker.StartsWith('Q1_PHASE_',[StringComparison]::Ordinal) -and (Get-Q1SnapshotSqlPhases) -ccontains $marker.Substring(9)) {$script:SnapshotDiagnostic.sql_phase=$marker.Substring(9)}
+            }} finally {$markerReader.Dispose()}
+        }
+        if($timedOut){$script:SnapshotDiagnostic.failure_class='PROCESS_TIMEOUT'}
+        elseif($script:SnapshotDiagnostic.failure_class -ceq 'UNKNOWN') {
+            if(-not $startedProcess -and $script:SnapshotDiagnostic.runner_phase -ceq 'PROCESS_START'){$script:SnapshotDiagnostic.failure_class='PROCESS_START_FAILURE'}
+            elseif($writeFailed){$script:SnapshotDiagnostic.failure_class='INPUT_TRANSPORT_FAILURE'}
+            elseif($transportFailed){$script:SnapshotDiagnostic.failure_class='OUTPUT_TRANSPORT_FAILURE'}
+        }
+        Require (-not $timedOut -and -not $writeFailed -and -not $transportFailed -and $script:SnapshotDiagnostic.process_exit_code -eq 0) 'Read-only market snapshot failed.'
         $transportComplete=$true
     } finally {
-        if($null -ne $output){$output.Dispose()}
-        try {if(-not $process.HasExited){$process.Kill();$process.WaitForExit()}}catch{}
-        $process.Dispose()
         if(-not $transportComplete){Remove-Item -LiteralPath $transport -Force -ErrorAction SilentlyContinue}
     }
-    $reader=[IO.StreamReader]::new($transport,$script:Utf8,$false)
-    $writer=$null; $schema=$null; $market=$null; $hasDigests=$false; $ended=$false; $blocked=$false
-    try {
-        $line=$reader.ReadLine()
-        Require ($null -ne $line -and $line.StartsWith("SCHEMA`t",[StringComparison]::Ordinal)) 'Missing schema record in snapshot.'
-        $schema=$line.Substring(7) | ConvertFrom-Json
-        Write-Json (Join-Path $Directory 'schema.json') $schema
-        Require ($schema.database_name -ceq 'srp' -and $schema.read_only -ceq 'on' -and $schema.transaction_isolation -ceq 'repeatable read' -and $schema.time_zone -ceq 'UTC') 'Snapshot database, isolation or UTC identity mismatch.'
-        $line=$reader.ReadLine()
-        if($null -ne $line -and $line.StartsWith("MARKET`t",[StringComparison]::Ordinal)) {
-            Require ($schema.schema_ok -eq $true) 'Market metadata followed a rejected schema.'
-            $market=$line.Substring(7) | ConvertFrom-Json
-            Write-Json (Join-Path $Directory 'market.json') $market
-            $line=$reader.ReadLine()
-        }
-        if($line -ceq 'BLOCKED') {$blocked=$true; $line=$reader.ReadLine()}
-        elseif($line -ceq 'DIGESTS') {
-            Require ($null -ne $market -and $market.prevalidation_ok -eq $true) 'Digests followed rejected market prevalidation.'
-            $writer=[IO.StreamWriter]::new((Join-Path $Directory 'market-digests.tsv'),$false,$script:Utf8)
-            $writer.NewLine="`n"
-            $line=$reader.ReadLine()
-            Require ($line -ceq "pair_id`tday_utc`trows`tmin_epoch`tmax_epoch`tsha256") 'Malformed fingerprint header.'
-            $writer.WriteLine($line); $hasDigests=$true
-            while($null -ne ($line=$reader.ReadLine()) -and $line -cne 'END') {$writer.WriteLine($line)}
-        }
-        Require ($line -ceq 'END' -and $null -eq $reader.ReadLine()) 'Snapshot completion marker is missing or has trailing output.'
-        $ended=$true
-    } finally {
-        if($null -ne $writer){$writer.Dispose()}; $reader.Dispose()
-        Remove-Item -LiteralPath $transport -Force -ErrorAction SilentlyContinue
-    }
-    Require ($ended) 'Incomplete market snapshot.'
-    return [pscustomobject]@{schema=$schema;market=$market;has_digests=$hasDigests;blocked=$blocked}
+    return Read-Q1SnapshotProtocol $transport $Directory
 }
 function Inspect-InventoryReferences([object]$Market,[object[]]$CensusFiles,[hashtable]$Roots) {
     $items=New-Object 'System.Collections.Generic.List[object]'
@@ -378,7 +526,9 @@ try {
     } catch {Add-Issue 'ARCHIVE' 'Bound archive or source fingerprint verification failed.';Add-Check 'Q1-MKT-001-ARCHIVE' $false 'Inspect the local archive and bound evidence; no database probe was attempted.'}
     finally {if($null -ne $archiveLock){$archiveLock.Dispose();$archiveLock=$null}}
     if($script:Issues.Count -eq 0) {
+        $script:SnapshotDiagnostic=New-Q1SnapshotDiagnostic
         try {
+            $script:SnapshotDiagnostic.runner_phase='CONNECTION_SETUP'
             foreach($name in @('PGSERVICE','PGSERVICEFILE','PGHOSTADDR','PGDATABASE','PGTARGETSESSIONATTRS')) {Remove-Item -LiteralPath ('Env:'+$name) -ErrorAction SilentlyContinue}
             $env:PGHOST=$PgHost; $env:PGPORT=[string]$PgPort; $env:PGUSER=$PgUser
             $env:PGCONNECT_TIMEOUT='5'; $env:PGCLIENTENCODING='UTF8'
@@ -390,6 +540,7 @@ try {
             }
             Write-Host 'Computing PostgreSQL fingerprints in one read-only Q1 snapshot.'
             $snapshot=Invoke-MarketSnapshot (Get-Q1ReconciliationSql -ArchiveSha256 $sourceRow.sha256) $runDir
+            $script:SnapshotDiagnostic.runner_phase='LINEAGE_CHECKS'
             Add-Check 'Q1-MKT-001-SNAPSHOT' ($snapshot.has_digests -and -not $snapshot.blocked) 'Schema and population invariants must pass before fingerprint aggregation.'
             if($snapshot.schema.schema_ok -ne $true) {Add-Issue 'SCHEMA' 'The current source schema failed its gate; value collection was blocked.'}
             if($null -ne $snapshot.market) {
@@ -424,13 +575,17 @@ try {
                 }
                 Add-Check 'Q1-MKT-001-LINEAGE-CURRENT' $same 'Current archive registration and exact pair mapping must match the bound observations.'
                 if($snapshot.has_digests) {
+                    $script:SnapshotDiagnostic.runner_phase='DIGEST_COMPARISON'
                     $comparison=[CfaQ1Reconciliation.MarketReconciler]::CompareDigests((Join-Path $runDir 'source-digests.tsv'),(Join-Path $runDir 'market-digests.tsv'),(Join-Path $runDir 'comparison.tsv'))
                     $equal=($comparison.status -ceq 'PASS' -and $comparison.source_row_count -eq $boundRows -and $comparison.database_row_count -eq $boundRows)
                     Add-Check 'Q1-MKT-001-VALUES' $equal 'Every ordered pair/day key, row count, timestamp bound and canonical fingerprint must match.'
                     $current=if($equal -and $same){'PASS'}else{'FAIL'}
                 } else {$current='FAIL'}
             }
-        } catch {Add-Issue 'POSTGRESQL' 'Market snapshot or fingerprint reconciliation failed; partial evidence is not a passing result.';$current='UNVERIFIED'}
+        } catch {
+            $script:Issues.Add([pscustomobject]@{scope='POSTGRESQL';status='FAIL';reason='Market snapshot or fingerprint reconciliation failed; partial evidence is not a passing result.';diagnostic=$script:SnapshotDiagnostic})
+            $current='UNVERIFIED'
+        }
     }
     Write-Json (Join-Path $runDir 'lineage.json') $lineage
     $failed=@($script:Checks | Where-Object {$_.status -ceq 'FAIL'}).Count
