@@ -117,7 +117,7 @@ function Invoke-MarketSnapshot([string]$Sql,[string]$Directory) {
             $process.Kill(); $process.WaitForExit()
             throw 'Read-only market snapshot exceeded its bounded process timeout.'
         }
-        $process.WaitForExit(); $stdout.GetAwaiter().GetResult(); $null=$stderr.GetAwaiter().GetResult()
+        $process.WaitForExit(); $null=$stdout.GetAwaiter().GetResult(); $null=$stderr.GetAwaiter().GetResult()
         Require ($process.ExitCode -eq 0) 'Read-only market query failed; check local access, schema or statement timeout.'
         $transportComplete=$true
     } finally {
