@@ -410,6 +410,120 @@ function Invoke-ReconciliationCase {
     return Assert-ReconciliationReceipt $after[0] $Collection $Checks
 }
 
+function Test-RestrictedPolicyLauncher {
+    param([object]$Fixture)
+    # Run the reproduction and corrected launch inside one disposable Restricted
+    # parent. EncodedCommand carries inline commands, which Restricted permits;
+    # the candidate itself is still loaded through -File in both child launches.
+    $policyScopes = @('MachinePolicy','UserPolicy','CurrentUser','LocalMachine')
+    $persistentBefore = @($policyScopes | ForEach-Object { [string](Get-ExecutionPolicy -Scope $_) })
+    $processBefore = [string](Get-ExecutionPolicy -Scope Process)
+    $environmentBefore = [Environment]::GetEnvironmentVariable('PSExecutionPolicyPreference','Process')
+    $receiptsBefore = @(Get-ReconciliationReceipts $Fixture)
+    $reportPath = Join-Path $script:RunRoot launcher-policy-test.json
+    $settings = [ordered]@{
+        shell = $script:ShellExecutable
+        runner = $script:Runner
+        repository = $script:ResolvedRepo
+        arguments = @(Get-ReconciliationArguments $Fixture)
+        evidence_root = (Join-Path $Fixture.evidence 'q1-market-reconciliation/2026Q1')
+        report_path = $reportPath
+    }
+    $settingsBase64 = [Convert]::ToBase64String($script:Utf8.GetBytes((ConvertTo-Json -InputObject $settings -Compress -Depth 5)))
+    $wrapper = @(
+        'function Get-QuotedNativeArgument {'
+        ${function:Get-QuotedNativeArgument}.ToString()
+        '}'
+        'function Invoke-TestProcess {'
+        ${function:Invoke-TestProcess}.ToString()
+        '}'
+        ('$settingsBase64 = ''' + $settingsBase64 + '''')
+        @'
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$settings = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($settingsBase64)) | ConvertFrom-Json
+function Get-PersistentPolicies {
+    $values = [ordered]@{}
+    foreach ($scope in @('MachinePolicy','UserPolicy','CurrentUser','LocalMachine')) {
+        $values[$scope] = [string](Get-ExecutionPolicy -Scope $scope)
+    }
+    return $values
+}
+function Get-EvidenceInventory {
+    return @(Get-ChildItem -LiteralPath $settings.evidence_root -Force -Recurse | Sort-Object FullName | ForEach-Object { $_.FullName })
+}
+$parentBefore = [string](Get-ExecutionPolicy)
+$persistentBefore = Get-PersistentPolicies
+if ($parentBefore -cne 'Restricted' -or [string](Get-ExecutionPolicy -Scope Process) -cne 'Restricted') {
+    throw 'Restricted fixture policy was not effective; enforced Group Policy cannot be overridden by this test.'
+}
+$inventoryBefore = @(Get-EvidenceInventory)
+$common = @('-NoProfile','-File',[string]$settings.runner,'-RepoRoot',[string]$settings.repository) + @($settings.arguments)
+$rejected = Invoke-TestProcess ([string]$settings.shell) $common 150
+if ($rejected.exit_code -eq 0 -or ($rejected.stdout + $rejected.stderr) -notmatch 'PSSecurityException|SecurityError|UnauthorizedAccess|running scripts is disabled') {
+    throw ('Original launch did not reproduce the execution-policy rejection. stdout: ' + $rejected.stdout + ' stderr: ' + $rejected.stderr)
+}
+if ($rejected.stdout -match 'Evidence directory:' -or ($inventoryBefore -join "`n") -cne (@(Get-EvidenceInventory) -join "`n")) {
+    throw 'The rejected launch must not create an evidence directory or artifact.'
+}
+$parentAfterRejection = [string](Get-ExecutionPolicy)
+if ($parentAfterRejection -cne 'Restricted') { throw 'The rejected child changed its parent policy.' }
+$correctedArguments = @('-NoProfile','-ExecutionPolicy','RemoteSigned','-File',[string]$settings.runner,'-RepoRoot',[string]$settings.repository) + @($settings.arguments)
+$corrected = Invoke-TestProcess ([string]$settings.shell) $correctedArguments 150
+if ($corrected.exit_code -ne 0) {
+    throw ('Corrected launch failed. stdout: ' + $corrected.stdout + ' stderr: ' + $corrected.stderr)
+}
+$persistentAfter = Get-PersistentPolicies
+$parentAfter = [string](Get-ExecutionPolicy)
+if ($parentAfter -cne 'Restricted' -or [string](Get-ExecutionPolicy -Scope Process) -cne 'Restricted') {
+    throw 'Corrected child must leave its parent Restricted.'
+}
+if ((ConvertTo-Json -InputObject $persistentBefore -Compress) -cne (ConvertTo-Json -InputObject $persistentAfter -Compress)) {
+    throw 'Launcher must not change persistent execution-policy scopes.'
+}
+$report = [ordered]@{
+    task_id = 'Q1-MKT-002'
+    status = 'PASS'
+    original_exit_code = $rejected.exit_code
+    original_error = $rejected.stderr
+    rejected_launch_created_evidence = $false
+    corrected_exit_code = $corrected.exit_code
+    corrected_stdout = $corrected.stdout
+    parent_effective_before = $parentBefore
+    parent_effective_after_rejection = $parentAfterRejection
+    parent_effective_after_correction = $parentAfter
+    persistent_policies_before = $persistentBefore
+    persistent_policies_after = $persistentAfter
+}
+[IO.File]::WriteAllText([string]$settings.report_path,(ConvertTo-Json -InputObject $report -Depth 5),(New-Object Text.UTF8Encoding($false)))
+Write-Output 'Q1-MKT-002-RESTRICTED-REJECTION-PASS'
+Write-Output 'Q1-MKT-002-REMOTESIGNED-RECONCILIATION-PASS'
+Write-Output 'Q1-MKT-002-POLICY-PRESERVATION-PASS'
+'@
+    ) -join "`n"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($wrapper))
+    Assert-ProbeTest ($encoded.Length -lt 30000) 'Inline policy-test command must fit the Windows native command-line limit.'
+    $result = Invoke-TestProcess $script:ShellExecutable @('-NoProfile','-NonInteractive','-OutputFormat','Text','-ExecutionPolicy','Restricted','-EncodedCommand',$encoded) 330
+    Assert-ProbeTest (-not (($result.stdout + $result.stderr).Contains($script:Sentinel))) 'Policy regression must not disclose the password sentinel.'
+    Assert-ProbeTest ($result.exit_code -eq 0) ('Restricted-parent launcher regression failed. stdout: ' + $result.stdout + ' stderr: ' + $result.stderr)
+    foreach ($marker in @('Q1-MKT-002-RESTRICTED-REJECTION-PASS','Q1-MKT-002-REMOTESIGNED-RECONCILIATION-PASS','Q1-MKT-002-POLICY-PRESERVATION-PASS')) {
+        Assert-ProbeTest ($result.stdout.Contains($marker)) ('Missing launcher assertion: ' + $marker)
+    }
+    $persistentAfter = @($policyScopes | ForEach-Object { [string](Get-ExecutionPolicy -Scope $_) })
+    Assert-ProbeTest (($persistentBefore -join ',') -ceq ($persistentAfter -join ',') -and $processBefore -ceq [string](Get-ExecutionPolicy -Scope Process)) 'Policy test must preserve the calling test process and all persistent policy scopes.'
+    Assert-ProbeTest ($environmentBefore -ceq [Environment]::GetEnvironmentVariable('PSExecutionPolicyPreference','Process')) 'Policy test must preserve the calling process policy environment.'
+    $report = Read-TestJson $reportPath
+    Assert-ProbeTest ($report.status -ceq 'PASS' -and -not $report.rejected_launch_created_evidence -and $report.corrected_exit_code -eq 0) 'Saved policy evidence must reconcile with the subprocess assertions.'
+    Assert-ProbeTest (-not ([IO.File]::ReadAllText($reportPath,$script:Utf8).Contains($script:Sentinel))) 'Policy evidence must exclude the password sentinel.'
+    $newReceipts = @(Get-ReconciliationReceipts $Fixture | Where-Object { $receiptsBefore -notcontains $_ })
+    Assert-ProbeTest ($newReceipts.Count -eq 1) 'Only the corrected launch may create a reconciliation receipt.'
+    $validated = Assert-ReconciliationReceipt $newReceipts[0] PASS PASS
+    $name = 'Restricted parent rejects original launch; process RemoteSigned completes reconciliation and preserves policies'
+    $script:Checks.Add($name)
+    Write-Host "PASS: $name"
+    return $validated
+}
+
 function Copy-CoverageFixture {
     param([object]$Fixture,[string]$Name)
     $copy = Join-Path $Fixture.evidence ('coverage-copy-' + $Name)
@@ -597,6 +711,10 @@ try {
         foreach ($file in @(Get-ChildItem -LiteralPath $first.directory -File)) { $preserved[$file.FullName] = Get-Sha $file.FullName }
         $second = Invoke-ReconciliationCase 'Repeat execution creates a new run and preserves prior evidence' $good 0 PASS PASS
         Assert-ProbeTest ($first.directory -cne $second.directory) 'Repeated execution must not overwrite earlier evidence.'
+        if ($env:OS -ceq 'Windows_NT') {
+            $policyRun = Test-RestrictedPolicyLauncher $good
+            foreach ($file in @(Get-ChildItem -LiteralPath $policyRun.directory -File)) { $preserved[$file.FullName] = Get-Sha $file.FullName }
+        }
 
         $badExpected = @(Get-ReconciliationArguments $good)
         $badExpected[[Array]::IndexOf($badExpected,'-ExpectedCoverageReceiptSha256') + 1] = ('0' * 64)
